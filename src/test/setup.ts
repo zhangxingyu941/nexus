@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import "fake-indexeddb/auto";
 
+// ProseMirror 会读取真实浏览器的布局 API；jsdom 没有布局引擎，需要补最小实现。
 const fallbackRect = {
   bottom: 0,
   height: 0,

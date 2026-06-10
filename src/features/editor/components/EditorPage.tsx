@@ -16,6 +16,7 @@ import { EditorToolbar } from "./EditorToolbar";
 type SaveStatus = "Saved" | "Saving" | "Unsaved" | "Save failed";
 
 function nextTimestamp(document: EditorDocument) {
+  // 快速连续新增块时，用块数量错开时间戳，降低本地 ID 碰撞概率。
   return Date.now() + document.blocks.length;
 }
 
@@ -25,6 +26,7 @@ export function EditorPage() {
   const hasLoadedDocument = useRef(false);
 
   useEffect(() => {
+    // 首次进入时优先恢复 IndexedDB；失败时退回空文档，避免编辑器白屏。
     let cancelled = false;
 
     async function loadInitialDocument() {
@@ -51,6 +53,7 @@ export function EditorPage() {
   }, []);
 
   useEffect(() => {
+    // 文档变更后防抖保存，减少每次击键都写 IndexedDB 的压力。
     if (!document || !hasLoadedDocument.current) {
       return;
     }
@@ -67,6 +70,7 @@ export function EditorPage() {
   }, [document]);
 
   const applyChange = useCallback((operation: (current: EditorDocument) => EditorDocument) => {
+    // 所有编辑行为都通过纯操作函数更新，方便测试和后续接入协同层。
     setDocument((current) => (current ? operation(current) : current));
   }, []);
 

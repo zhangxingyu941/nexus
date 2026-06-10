@@ -16,6 +16,7 @@ function createBlock(type: BlockType, now: number, content = ""): Block {
 }
 
 function touchDocument(document: EditorDocument, blocks: Block[], now: number): EditorDocument {
+  // 所有结构性变更都刷新文档时间，UI 保存逻辑只需要观察 document。
   return {
     ...document,
     blocks,
@@ -131,6 +132,7 @@ export function deleteBlock(
     return document;
   }
 
+  // 编辑器必须始终保留一个可输入块，删除最后一块时立即补一个空段落。
   return touchDocument(document, blocks.length > 0 ? blocks : [createBlock("paragraph", now)], now);
 }
 

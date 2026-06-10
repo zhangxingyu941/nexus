@@ -35,6 +35,7 @@ export function RichTextBlockEditor({
         class: `rich-text-editor rich-text-editor-${variant}`,
       },
       handleKeyDown(_, event) {
+        // 第一版把 Enter 作为“新增下一个块”，不让 TipTap 在块内继续分段。
         if (event.key === "Enter" && !event.shiftKey) {
           event.preventDefault();
           onEnter();
@@ -45,11 +46,13 @@ export function RichTextBlockEditor({
       },
     },
     onUpdate({ editor: activeEditor }) {
+      // MVP 只持久化纯文本，为后续块模型和协同层保留简单边界。
       onChange(activeEditor.getText());
     },
   });
 
   useEffect(() => {
+    // 外部状态恢复或类型切换后，同步 TipTap 内部文档，避免显示旧内容。
     if (!editor || editor.getText() === content) {
       return;
     }
