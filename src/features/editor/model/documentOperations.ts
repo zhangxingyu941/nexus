@@ -27,7 +27,7 @@ function touchDocument(document: EditorDocument, blocks: Block[], now: number): 
 export function createDefaultDocument(now = Date.now()): EditorDocument {
   return {
     id: DEFAULT_DOCUMENT_ID,
-    title: "Untitled",
+    title: "未命名文档",
     blocks: [createBlock("paragraph", now)],
     updatedAt: now,
   };

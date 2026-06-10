@@ -15,7 +15,7 @@ describe("document operations", () => {
 
     expect(document).toMatchObject({
       id: "local-document",
-      title: "Untitled",
+      title: "未命名文档",
       updatedAt: 1000,
     });
     expect(document.blocks).toHaveLength(1);

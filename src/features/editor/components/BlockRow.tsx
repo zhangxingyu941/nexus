@@ -30,21 +30,28 @@ export function BlockRow({
     <article className={`block-row block-row-${block.type}`} data-testid={`block-row-${block.id}`}>
       <div className="block-controls">
         <select
-          aria-label="Block type"
+          aria-label="块类型"
           className="block-type-select"
           onChange={(event) => onChangeType(block.id, event.target.value as BlockType)}
           value={block.type}
         >
-          <option value="paragraph">Paragraph</option>
-          <option value="heading">Heading</option>
-          <option value="todo">Todo</option>
+          <option value="paragraph">段落</option>
+          <option value="heading">标题</option>
+          <option value="todo">待办</option>
         </select>
-        <button aria-label="Add block after" className="icon-button" onClick={() => onAddAfter(block.id)} type="button">
+        <button
+          aria-label="在下方添加块"
+          className="icon-button"
+          data-tooltip="添加"
+          onClick={() => onAddAfter(block.id)}
+          type="button"
+        >
           <Plus aria-hidden="true" size={16} />
         </button>
         <button
-          aria-label="Move block up"
+          aria-label="上移块"
           className="icon-button"
+          data-tooltip="上移"
           disabled={isFirst}
           onClick={() => onMove(block.id, "up")}
           type="button"
@@ -52,15 +59,22 @@ export function BlockRow({
           <ArrowUp aria-hidden="true" size={16} />
         </button>
         <button
-          aria-label="Move block down"
+          aria-label="下移块"
           className="icon-button"
+          data-tooltip="下移"
           disabled={isLast}
           onClick={() => onMove(block.id, "down")}
           type="button"
         >
           <ArrowDown aria-hidden="true" size={16} />
         </button>
-        <button aria-label="Delete block" className="icon-button danger" onClick={() => onDelete(block.id)} type="button">
+        <button
+          aria-label="删除块"
+          className="icon-button danger"
+          data-tooltip="删除"
+          onClick={() => onDelete(block.id)}
+          type="button"
+        >
           <Trash2 aria-hidden="true" size={16} />
         </button>
       </div>

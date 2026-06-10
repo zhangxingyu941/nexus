@@ -1,16 +1,23 @@
 interface EditorToolbarProps {
-  saveStatus: "Saved" | "Saving" | "Unsaved" | "Save failed";
+  saveStatus: "saved" | "saving" | "unsaved" | "failed";
 }
+
+const SAVE_STATUS_LABELS = {
+  failed: "保存失败",
+  saved: "已保存",
+  saving: "保存中",
+  unsaved: "未保存",
+} as const;
 
 export function EditorToolbar({ saveStatus }: EditorToolbarProps) {
   return (
     <header className="editor-toolbar">
       <div>
-        <p className="toolbar-kicker">Local workspace</p>
-        <h1>Untitled</h1>
+        <p className="toolbar-kicker">本地工作区</p>
+        <h1>未命名文档</h1>
       </div>
-      <span className={`save-status save-status-${saveStatus.toLowerCase().replace(" ", "-")}`}>
-        {saveStatus}
+      <span aria-live="polite" className={`save-status save-status-${saveStatus}`}>
+        {SAVE_STATUS_LABELS[saveStatus]}
       </span>
     </header>
   );

@@ -24,13 +24,13 @@ export function RichTextBlockEditor({
         heading: false,
       }),
       Placeholder.configure({
-        placeholder: variant === "heading" ? "Heading" : "Write",
+        placeholder: variant === "heading" ? "标题" : "输入内容",
       }),
     ],
     content,
     editorProps: {
       attributes: {
-        "aria-label": "Block content",
+        "aria-label": "块内容",
         "data-testid": `block-editor-${blockId}`,
         class: `rich-text-editor rich-text-editor-${variant}`,
       },

@@ -8,7 +8,7 @@ describe("editor repository", () => {
   });
 
   it("saves and loads the editor document", async () => {
-    const document = updateBlockContent(createDefaultDocument(1000), "block-1000", "Saved locally", 2000);
+    const document = updateBlockContent(createDefaultDocument(1000), "block-1000", "已本地保存", 2000);
 
     await saveDocument(document);
 

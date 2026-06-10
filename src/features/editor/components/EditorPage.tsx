@@ -13,7 +13,7 @@ import { loadDocument, saveDocument } from "../persistence/editorRepository";
 import { BlockList } from "./BlockList";
 import { EditorToolbar } from "./EditorToolbar";
 
-type SaveStatus = "Saved" | "Saving" | "Unsaved" | "Save failed";
+type SaveStatus = "saved" | "saving" | "unsaved" | "failed";
 
 function nextTimestamp(document: EditorDocument) {
   // 快速连续新增块时，用块数量错开时间戳，降低本地 ID 碰撞概率。
@@ -22,7 +22,7 @@ function nextTimestamp(document: EditorDocument) {
 
 export function EditorPage() {
   const [document, setDocument] = useState<EditorDocument | null>(null);
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>("Saved");
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
   const hasLoadedDocument = useRef(false);
 
   useEffect(() => {
@@ -39,7 +39,7 @@ export function EditorPage() {
       } catch {
         if (!cancelled) {
           setDocument(createDefaultDocument());
-          setSaveStatus("Save failed");
+          setSaveStatus("failed");
           hasLoadedDocument.current = true;
         }
       }
@@ -58,12 +58,12 @@ export function EditorPage() {
       return;
     }
 
-    setSaveStatus("Unsaved");
+    setSaveStatus("unsaved");
     const timeoutId = window.setTimeout(() => {
-      setSaveStatus("Saving");
+      setSaveStatus("saving");
       saveDocument(document)
-        .then(() => setSaveStatus("Saved"))
-        .catch(() => setSaveStatus("Save failed"));
+        .then(() => setSaveStatus("saved"))
+        .catch(() => setSaveStatus("failed"));
     }, 250);
 
     return () => window.clearTimeout(timeoutId);
@@ -119,7 +119,7 @@ export function EditorPage() {
   if (!document) {
     return (
       <main className="editor-page editor-loading">
-        <p>Loading</p>
+        <p>加载中</p>
       </main>
     );
   }

@@ -18,14 +18,14 @@ export function TodoBlockEditor({
   return (
     <div className="todo-editor">
       <input
-        aria-label="Todo complete"
+        aria-label="待办完成状态"
         checked={checked}
         className="todo-checkbox"
         onChange={onToggle}
         type="checkbox"
       />
       <input
-        aria-label="Todo content"
+        aria-label="待办内容"
         className="todo-input"
         data-testid={`block-editor-${blockId}`}
         onChange={(event) => onChange(event.target.value)}
