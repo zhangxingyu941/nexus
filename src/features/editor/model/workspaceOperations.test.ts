@@ -3,6 +3,7 @@ import { updateBlockContent } from "./documentOperations";
 import {
   createDefaultWorkspace,
   createWorkspaceDocument,
+  deleteWorkspaceDocument,
   getActiveDocument,
   switchActiveDocument,
   updateActiveDocument,
@@ -52,5 +53,21 @@ describe("workspace operations", () => {
 
     expect(getActiveDocument(next)?.blocks[0].content).toBe("当前文档内容");
     expect(next.documents.find((document) => document.id !== activeId)?.blocks[0].content).toBe("");
+  });
+
+  it("deletes the active document and selects the nearest remaining document", () => {
+    const workspace = createWorkspaceDocument(createDefaultWorkspace(1000), 2000);
+    const next = deleteWorkspaceDocument(workspace, "document-2000", 3000);
+
+    expect(next.documents.map((document) => document.id)).toEqual(["document-1000"]);
+    expect(next.activeDocumentId).toBe("document-1000");
+    expect(next.updatedAt).toBe(3000);
+  });
+
+  it("keeps the last document when deleting would empty the workspace", () => {
+    const workspace = createDefaultWorkspace(1000);
+    const next = deleteWorkspaceDocument(workspace, "document-1000", 2000);
+
+    expect(next).toBe(workspace);
   });
 });

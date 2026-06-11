@@ -210,9 +210,17 @@ input:focus-visible,
   list-style: none;
 }
 
+.page-link-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  gap: 4px;
+  align-items: center;
+}
+
 .page-link {
   position: relative;
   justify-content: space-between;
+  min-width: 0;
   min-height: 36px;
   font-size: 0.88rem;
 }
@@ -251,6 +259,77 @@ input:focus-visible,
   flex: 0 0 auto;
   color: var(--faint);
   font-size: 0.72rem;
+}
+
+.page-delete-button {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: #8b867e;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    background 140ms ease,
+    color 140ms ease,
+    opacity 140ms ease,
+    transform 140ms ease;
+}
+
+.page-link-row:hover .page-delete-button,
+.page-link-row:focus-within .page-delete-button {
+  opacity: 1;
+}
+
+.page-delete-button:hover:not(:disabled),
+.page-delete-button:focus-visible:not(:disabled) {
+  color: #a83d32;
+  background: #fff2ee;
+}
+
+.page-delete-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.page-delete-button:disabled {
+  color: #c2bcb5;
+  cursor: not-allowed;
+}
+
+.page-link-row:hover .page-delete-button:disabled,
+.page-link-row:focus-within .page-delete-button:disabled {
+  opacity: 0.38;
+}
+
+.page-delete-button[data-tooltip]::after {
+  position: absolute;
+  z-index: 30;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  padding: 4px 7px;
+  border-radius: 5px;
+  color: #ffffff;
+  background: #2f2d2a;
+  content: attr(data-tooltip);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 4px);
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
+  white-space: nowrap;
+}
+
+.page-delete-button[data-tooltip]:hover::after,
+.page-delete-button[data-tooltip]:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
 }
 
 .sidebar-footer {

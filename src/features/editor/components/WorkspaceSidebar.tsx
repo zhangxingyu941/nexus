@@ -1,9 +1,11 @@
+import { Trash2 } from "lucide-react";
 import type { EditorDocument } from "../model/block";
 
 interface WorkspaceSidebarProps {
   activeDocumentId: string;
   documents: EditorDocument[];
   onCreateDocument: () => void;
+  onDeleteDocument: (documentId: string) => void;
   onSelectDocument: (documentId: string) => void;
 }
 
@@ -15,8 +17,11 @@ export function WorkspaceSidebar({
   activeDocumentId,
   documents,
   onCreateDocument,
+  onDeleteDocument,
   onSelectDocument,
 }: WorkspaceSidebarProps) {
+  const canDeleteDocument = documents.length > 1;
+
   return (
     <aside aria-label="工作区页面" className="workspace-sidebar">
       <div className="workspace-head">
@@ -54,24 +59,37 @@ export function WorkspaceSidebar({
       <ul className="page-tree">
         {documents.map((document) => {
           const isActive = document.id === activeDocumentId;
+          const title = getDocumentTitle(document);
 
           return (
             <li key={document.id}>
-              <button
-                aria-current={isActive ? "page" : undefined}
-                className={`page-link${isActive ? " active" : ""}`}
-                data-testid={`document-nav-${document.id}`}
-                onClick={() => onSelectDocument(document.id)}
-                type="button"
-              >
-                <span className="page-link-main">
-                  <span aria-hidden="true" className="sidebar-icon">
-                    {isActive ? "▾" : "◦"}
+              <div className="page-link-row">
+                <button
+                  aria-current={isActive ? "page" : undefined}
+                  className={`page-link${isActive ? " active" : ""}`}
+                  data-testid={`document-nav-${document.id}`}
+                  onClick={() => onSelectDocument(document.id)}
+                  type="button"
+                >
+                  <span className="page-link-main">
+                    <span aria-hidden="true" className="sidebar-icon">
+                      {isActive ? "▾" : "◦"}
+                    </span>
+                    <span className="page-title">{title}</span>
                   </span>
-                  <span className="page-title">{getDocumentTitle(document)}</span>
-                </span>
-                <span className="page-meta">{document.blocks.length}</span>
-              </button>
+                  <span className="page-meta">{document.blocks.length}</span>
+                </button>
+                <button
+                  aria-label={`删除文档 ${title}`}
+                  className="page-delete-button"
+                  data-tooltip="删除文档"
+                  disabled={!canDeleteDocument}
+                  onClick={() => onDeleteDocument(document.id)}
+                  type="button"
+                >
+                  <Trash2 aria-hidden="true" size={14} />
+                </button>
+              </div>
             </li>
           );
         })}

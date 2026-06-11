@@ -59,6 +59,27 @@ export function switchActiveDocument(
   return touchWorkspace(workspace, { activeDocumentId: documentId }, now);
 }
 
+export function deleteWorkspaceDocument(
+  workspace: EditorWorkspace,
+  documentId: string,
+  now = Date.now(),
+): EditorWorkspace {
+  const documentIndex = workspace.documents.findIndex((document) => document.id === documentId);
+
+  if (documentIndex === -1 || workspace.documents.length <= 1) {
+    return workspace;
+  }
+
+  const documents = workspace.documents.filter((document) => document.id !== documentId);
+  const activeDocumentId =
+    workspace.activeDocumentId === documentId
+      ? documents[Math.max(0, documentIndex - 1)].id
+      : workspace.activeDocumentId;
+
+  // 删除当前文档后选中相邻文档，保证右侧始终有可编辑内容。
+  return touchWorkspace(workspace, { activeDocumentId, documents }, now);
+}
+
 export function updateActiveDocument(
   workspace: EditorWorkspace,
   updateDocument: (document: EditorDocument) => EditorDocument,

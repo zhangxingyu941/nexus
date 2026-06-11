@@ -11,6 +11,7 @@ import {
 import {
   createDefaultWorkspace,
   createWorkspaceDocument,
+  deleteWorkspaceDocument,
   getActiveDocument,
   switchActiveDocument,
   updateActiveDocument,
@@ -94,6 +95,32 @@ export function EditorPage() {
     setWorkspace((current) => (current ? switchActiveDocument(current, documentId, Date.now()) : current));
   }, []);
 
+  const handleDeleteDocument = useCallback(
+    (documentId: string) => {
+      if (!workspace || workspace.documents.length <= 1) {
+        return;
+      }
+
+      const document = workspace.documents.find((item) => item.id === documentId);
+
+      if (!document) {
+        return;
+      }
+
+      const title = document.title.trim() || "未命名文档";
+
+      // 删除文档是破坏性操作，先让用户明确确认。
+      if (!window.confirm(`确定删除“${title}”吗？此操作无法撤销。`)) {
+        return;
+      }
+
+      setWorkspace((current) =>
+        current ? deleteWorkspaceDocument(current, documentId, Date.now()) : current,
+      );
+    },
+    [workspace],
+  );
+
   const handleAddAfter = useCallback(
     (blockId: string) => {
       applyActiveDocumentChange((current) => insertBlockAfter(current, blockId, nextTimestamp(current)));
@@ -150,6 +177,7 @@ export function EditorPage() {
         activeDocumentId={workspace.activeDocumentId}
         documents={workspace.documents}
         onCreateDocument={handleCreateDocument}
+        onDeleteDocument={handleDeleteDocument}
         onSelectDocument={handleSelectDocument}
       />
       <DocumentEditor

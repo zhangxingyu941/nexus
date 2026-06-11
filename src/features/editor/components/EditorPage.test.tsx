@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearDocument, clearWorkspace } from "../persistence/editorRepository";
 import { EditorPage } from "./EditorPage";
 
@@ -21,6 +21,10 @@ describe("EditorPage", () => {
   beforeEach(async () => {
     await clearWorkspace();
     await clearDocument();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("renders a collaborative workspace shell with an editable document", async () => {
@@ -47,6 +51,22 @@ describe("EditorPage", () => {
     const documentButtons = await getDocumentButtons();
     expect(documentButtons[1]).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("heading", { name: "未命名文档" })).toBeInTheDocument();
+  });
+
+  it("deletes a newly created document after confirmation", async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    await renderEditor();
+
+    await user.click(screen.getByRole("button", { name: "新建文档" }));
+    await waitFor(async () => expect(await getDocumentButtons()).toHaveLength(2));
+
+    const deleteButtons = screen.getAllByLabelText("删除文档 未命名文档");
+    await user.click(deleteButtons[1]);
+
+    await waitFor(async () => expect(await getDocumentButtons()).toHaveLength(1));
+    expect(confirmSpy).toHaveBeenCalledWith("确定删除“未命名文档”吗？此操作无法撤销。");
+    expect((await getDocumentButtons())[0]).toHaveAttribute("aria-current", "page");
   });
 
   it("switches documents without leaking edited content", async () => {
