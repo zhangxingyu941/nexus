@@ -9,6 +9,7 @@ interface RichTextBlockEditorProps {
   variant: "paragraph" | "heading";
   onChange: (content: string) => void;
   onEnter: () => void;
+  onOpenCommandMenu: () => void;
 }
 
 export function RichTextBlockEditor({
@@ -17,6 +18,7 @@ export function RichTextBlockEditor({
   variant,
   onChange,
   onEnter,
+  onOpenCommandMenu,
 }: RichTextBlockEditorProps) {
   const editor = useEditor({
     extensions: [
@@ -35,6 +37,13 @@ export function RichTextBlockEditor({
         class: `rich-text-editor rich-text-editor-${variant}`,
       },
       handleKeyDown(_, event) {
+        // 输入 / 时打开块插入菜单，并避免把触发符留在正文里。
+        if (event.key === "/") {
+          event.preventDefault();
+          onOpenCommandMenu();
+          return true;
+        }
+
         // 第一版把 Enter 作为“新增下一个块”，不让 TipTap 在块内继续分段。
         if (event.key === "Enter" && !event.shiftKey) {
           event.preventDefault();

@@ -5,6 +5,7 @@ interface TodoBlockEditorProps {
   onToggle: () => void;
   onChange: (content: string) => void;
   onEnter: () => void;
+  onOpenCommandMenu: () => void;
 }
 
 export function TodoBlockEditor({
@@ -14,6 +15,7 @@ export function TodoBlockEditor({
   onToggle,
   onChange,
   onEnter,
+  onOpenCommandMenu,
 }: TodoBlockEditorProps) {
   return (
     <div className="todo-editor">
@@ -30,6 +32,11 @@ export function TodoBlockEditor({
         data-testid={`block-editor-${blockId}`}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {
+          if (event.key === "/") {
+            event.preventDefault();
+            onOpenCommandMenu();
+          }
+
           if (event.key === "Enter") {
             event.preventDefault();
             onEnter();

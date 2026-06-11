@@ -603,7 +603,7 @@ h1 {
   background: #f2eee7;
 }
 
-/* 块编辑区保留真实操作能力，但默认收起工具条，让写作区域更接近 Notion。 */
+/* 块操作收进轻量手柄里，避免正文里出现表单式控件。 */
 .block-list {
   display: grid;
   gap: 2px;
@@ -613,12 +613,12 @@ h1 {
 .block-row {
   position: relative;
   display: grid;
-  grid-template-columns: 116px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 4px;
   align-items: start;
-  min-height: 44px;
-  margin: 0 -6px;
-  padding: 4px 6px;
+  min-height: 36px;
+  margin: 0 0 0 -42px;
+  padding: 2px 0;
   border: 1px solid transparent;
   border-radius: 6px;
   transition:
@@ -629,68 +629,40 @@ h1 {
 
 .block-row:hover,
 .block-row:focus-within {
-  border-color: rgba(231, 226, 218, 0.72);
-  background: rgba(241, 237, 230, 0.72);
+  border-color: transparent;
+  background: transparent;
 }
 
 .block-controls {
-  display: grid;
-  grid-template-columns: repeat(4, 24px);
-  gap: 3px;
-  align-content: start;
-  width: 108px;
-  padding: 3px;
-  border: 1px solid transparent;
-  border-radius: 6px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  min-height: 32px;
+  padding-top: 3px;
   background: transparent;
-  opacity: 0.34;
+  opacity: 0;
   transition:
-    background 120ms ease,
-    border-color 120ms ease,
-    box-shadow 120ms ease,
     opacity 120ms ease,
     transform 120ms ease;
 }
 
 .block-row:hover .block-controls,
-.block-row:focus-within .block-controls {
-  border-color: var(--line);
-  background: rgba(255, 253, 248, 0.96);
-  box-shadow: var(--shadow-soft);
+.block-row:focus-within .block-controls,
+.block-row-menu-open .block-controls {
   opacity: 1;
   transform: translateY(0);
 }
 
-.block-type-select {
-  grid-column: 1 / -1;
-  width: 100%;
-  min-width: 0;
-  height: 26px;
-  padding: 0 6px;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  color: #4e4a44;
-  background: transparent;
-  cursor: pointer;
-  font-size: 0.74rem;
-  font-weight: 700;
-}
-
-.block-type-select:hover,
-.block-type-select:focus {
-  border-color: var(--line-strong);
-  background: var(--hover);
-  outline: none;
-}
-
-.icon-button {
+.block-gutter-button {
   position: relative;
   display: inline-grid;
   place-items: center;
   width: 24px;
   height: 24px;
   border-radius: 5px;
-  color: #77716a;
+  color: #8b867e;
   background: transparent;
   cursor: pointer;
   transition:
@@ -699,30 +671,19 @@ h1 {
     transform 140ms ease;
 }
 
-.icon-button:hover:not(:disabled),
-.icon-button:focus-visible:not(:disabled) {
+.block-gutter-button:hover:not(:disabled),
+.block-gutter-button:focus-visible:not(:disabled),
+.block-gutter-button[aria-expanded="true"] {
   color: #2f2d2a;
   background: var(--hover);
   outline: none;
 }
 
-.icon-button:active:not(:disabled) {
+.block-gutter-button:active:not(:disabled) {
   transform: translateY(1px);
 }
 
-.icon-button:disabled {
-  color: #bbb5ad;
-  cursor: not-allowed;
-  opacity: 0.58;
-}
-
-.icon-button.danger:hover:not(:disabled),
-.icon-button.danger:focus-visible:not(:disabled) {
-  color: #a83d32;
-  background: #fff2ee;
-}
-
-.icon-button[data-tooltip]::after {
+.block-gutter-button[data-tooltip]::after {
   position: absolute;
   z-index: 30;
   bottom: calc(100% + 8px);
@@ -744,14 +705,81 @@ h1 {
   white-space: nowrap;
 }
 
-.icon-button[data-tooltip]:hover::after,
-.icon-button[data-tooltip]:focus-visible::after {
+.block-gutter-button[data-tooltip]:hover::after,
+.block-gutter-button[data-tooltip]:focus-visible::after {
   opacity: 1;
   transform: translate(-50%, 0);
 }
 
+.block-menu,
+.slash-menu {
+  position: absolute;
+  z-index: 40;
+  display: grid;
+  gap: 2px;
+  width: 176px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255, 253, 248, 0.98);
+  box-shadow: var(--shadow);
+}
+
+.block-menu {
+  top: 30px;
+  left: 8px;
+}
+
+.slash-menu {
+  top: calc(100% + 6px);
+  left: 4px;
+}
+
+.block-menu button,
+.slash-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: #3d3934;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.84rem;
+  font-weight: 700;
+  text-align: left;
+}
+
+.block-menu button:hover:not(:disabled),
+.block-menu button:focus-visible:not(:disabled),
+.slash-menu button:hover,
+.slash-menu button:focus-visible {
+  color: #171614;
+  background: var(--hover);
+  outline: none;
+}
+
+.block-menu button.danger:hover,
+.block-menu button.danger:focus-visible {
+  color: #a83d32;
+  background: #fff2ee;
+}
+
+.block-menu button:disabled {
+  color: #bbb5ad;
+  cursor: not-allowed;
+}
+
+.block-menu-divider {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--line);
+}
+
 .block-editor-shell {
   grid-column: 2;
+  position: relative;
   min-width: 0;
 }
 
@@ -772,6 +800,10 @@ h1 {
 .rich-text-editor:focus {
   background: #fff8e9;
   box-shadow: inset 3px 0 0 #d5a54c;
+}
+
+.block-row-menu-open .rich-text-editor {
+  background: #fffaf0;
 }
 
 .rich-text-editor p {
@@ -856,14 +888,10 @@ h1 {
 
 @media (hover: none) {
   .block-controls {
-    width: max-content;
-    max-width: 100%;
-    border-color: var(--line);
-    background: rgba(255, 253, 248, 0.96);
     opacity: 1;
   }
 
-  .icon-button[data-tooltip]::after {
+  .block-gutter-button[data-tooltip]::after {
     display: none;
   }
 }
@@ -913,23 +941,17 @@ h1 {
   }
 
   .block-row {
-    grid-template-columns: 1fr;
-    gap: 6px;
+    grid-template-columns: 32px minmax(0, 1fr);
+    gap: 4px;
+    margin-left: 0;
   }
 
   .block-controls {
-    display: flex;
-    flex-wrap: wrap;
-    width: max-content;
-    max-width: 100%;
-    border-color: var(--line);
-    background: rgba(255, 253, 248, 0.96);
-    box-shadow: none;
     opacity: 1;
   }
 
   .block-editor-shell {
-    grid-column: 1;
+    grid-column: 2;
   }
 
   .document-cover {
@@ -968,13 +990,12 @@ h1 {
   }
 
   .block-controls {
-    flex-wrap: wrap;
     min-height: auto;
   }
 
-  .block-type-select {
-    flex: 1 1 92px;
-    width: auto;
+  .block-menu,
+  .slash-menu {
+    width: min(176px, calc(100vw - 42px));
   }
 
   .slash-hint {

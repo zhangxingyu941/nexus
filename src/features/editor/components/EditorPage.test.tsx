@@ -38,7 +38,8 @@ describe("EditorPage", () => {
     expect(screen.getByRole("button", { name: "分享" })).toBeInTheDocument();
     expect(screen.getByLabelText("文档编辑区")).toBeInTheDocument();
     expect(await getRows()).toHaveLength(1);
-    expect(screen.getByLabelText("块类型")).toHaveValue("paragraph");
+    expect(screen.queryByLabelText("块类型")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("打开块菜单")).toBeInTheDocument();
   });
 
   it("creates a new document and switches to it", async () => {
@@ -96,24 +97,42 @@ describe("EditorPage", () => {
     expect(await getRows()).toHaveLength(2);
 
     const rowsAfterAdd = await getRows();
-    await user.click(within(rowsAfterAdd[1]).getByLabelText("删除块"));
+    await user.click(within(rowsAfterAdd[1]).getByLabelText("打开块菜单"));
+    await user.click(screen.getByRole("menuitem", { name: "删除块" }));
     expect(await getRows()).toHaveLength(1);
 
     const remainingRow = (await getRows())[0];
-    await user.click(within(remainingRow).getByLabelText("删除块"));
+    await user.click(within(remainingRow).getByLabelText("打开块菜单"));
+    await user.click(screen.getByRole("menuitem", { name: "删除块" }));
     expect(await getRows()).toHaveLength(1);
   });
 
-  it("changes a block to todo and toggles it", async () => {
+  it("changes a block to todo from the block menu and toggles it", async () => {
     const user = userEvent.setup();
     await renderEditor();
 
-    await user.selectOptions(screen.getByLabelText("块类型"), "todo");
+    await user.click(screen.getByLabelText("打开块菜单"));
+    await user.click(screen.getByRole("menuitem", { name: "转为待办" }));
     const checkbox = await screen.findByRole("checkbox", { name: "待办完成状态" });
 
     await user.click(checkbox);
 
     expect(checkbox).toBeChecked();
+  });
+
+  it("opens an insert menu with slash and changes the focused block", async () => {
+    const user = userEvent.setup();
+    await renderEditor();
+
+    const editor = await screen.findByTestId(/^block-editor-/);
+    await user.click(editor);
+    await user.keyboard("/");
+
+    expect(screen.getByRole("menu", { name: "插入菜单" })).toBeInTheDocument();
+    await user.click(screen.getByRole("menuitem", { name: "标题" }));
+
+    expect((await getRows())[0]).toHaveClass("block-row-heading");
+    expect(editor).not.toHaveTextContent("/");
   });
 
   it("moves blocks up and down", async () => {
@@ -125,12 +144,14 @@ describe("EditorPage", () => {
     const firstId = originalRows[0].getAttribute("data-testid");
     const secondId = originalRows[1].getAttribute("data-testid");
 
-    await user.click(within(originalRows[1]).getByLabelText("上移块"));
+    await user.click(within(originalRows[1]).getByLabelText("打开块菜单"));
+    await user.click(screen.getByRole("menuitem", { name: "上移块" }));
     const movedUpRows = await getRows();
     expect(movedUpRows[0]).toHaveAttribute("data-testid", secondId);
     expect(movedUpRows[1]).toHaveAttribute("data-testid", firstId);
 
-    await user.click(within(movedUpRows[0]).getByLabelText("下移块"));
+    await user.click(within(movedUpRows[0]).getByLabelText("打开块菜单"));
+    await user.click(screen.getByRole("menuitem", { name: "下移块" }));
     const movedDownRows = await getRows();
     expect(movedDownRows[0]).toHaveAttribute("data-testid", firstId);
     expect(movedDownRows[1]).toHaveAttribute("data-testid", secondId);
