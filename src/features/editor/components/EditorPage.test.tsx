@@ -1,7 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
-import { clearDocument } from "../persistence/editorRepository";
+import { clearDocument, clearWorkspace } from "../persistence/editorRepository";
 import { EditorPage } from "./EditorPage";
 
 async function renderEditor() {
@@ -13,28 +13,59 @@ async function getRows() {
   return screen.findAllByTestId(/^block-row-/);
 }
 
+async function getDocumentButtons() {
+  return screen.findAllByTestId(/^document-nav-/);
+}
+
 describe("EditorPage", () => {
   beforeEach(async () => {
+    await clearWorkspace();
     await clearDocument();
   });
 
-  it("renders a default editable document", async () => {
+  it("renders a collaborative workspace shell with an editable document", async () => {
     await renderEditor();
 
-    expect(screen.getByRole("heading", { name: "未命名文档" })).toBeInTheDocument();
+    expect(within(screen.getByLabelText("工作区页面")).getByText("团队知识库")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "新建文档" })).toBeInTheDocument();
+    expect(screen.getByText("项目空间")).toBeInTheDocument();
+    expect(screen.getByLabelText("协作操作")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "评论 3" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "分享" })).toBeInTheDocument();
+    expect(screen.getByLabelText("文档编辑区")).toBeInTheDocument();
     expect(await getRows()).toHaveLength(1);
     expect(screen.getByLabelText("块类型")).toHaveValue("paragraph");
   });
 
-  it("edits paragraph block content", async () => {
+  it("creates a new document and switches to it", async () => {
     const user = userEvent.setup();
     await renderEditor();
 
-    const editor = await screen.findByTestId(/^block-editor-/);
-    await user.click(editor);
-    await user.keyboard("Project notes");
+    await user.click(screen.getByRole("button", { name: "新建文档" }));
 
-    await waitFor(() => expect(editor).toHaveTextContent("Project notes"));
+    await waitFor(async () => expect(await getDocumentButtons()).toHaveLength(2));
+    const documentButtons = await getDocumentButtons();
+    expect(documentButtons[1]).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("heading", { name: "未命名文档" })).toBeInTheDocument();
+  });
+
+  it("switches documents without leaking edited content", async () => {
+    const user = userEvent.setup();
+    await renderEditor();
+
+    const firstEditor = await screen.findByTestId(/^block-editor-/);
+    await user.click(firstEditor);
+    await user.keyboard("第一个文档");
+    await waitFor(() => expect(firstEditor).toHaveTextContent("第一个文档"));
+
+    await user.click(screen.getByRole("button", { name: "新建文档" }));
+    const secondEditor = await screen.findByTestId(/^block-editor-/);
+    expect(secondEditor).not.toHaveTextContent("第一个文档");
+
+    const documentButtons = await getDocumentButtons();
+    await user.click(documentButtons[0]);
+
+    await waitFor(() => expect(screen.getByTestId(/^block-editor-/)).toHaveTextContent("第一个文档"));
   });
 
   it("adds and deletes blocks while preserving one block", async () => {

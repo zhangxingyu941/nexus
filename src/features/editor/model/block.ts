@@ -18,4 +18,10 @@ export interface EditorDocument {
   updatedAt: number;
 }
 
+export interface EditorWorkspace {
+  documents: EditorDocument[];
+  activeDocumentId: string;
+  updatedAt: number;
+}
+
 export type MoveDirection = "up" | "down";

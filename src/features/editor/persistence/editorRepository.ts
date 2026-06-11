@@ -1,10 +1,11 @@
 import { openDB } from "idb";
-import type { EditorDocument } from "../model/block";
+import type { EditorDocument, EditorWorkspace } from "../model/block";
 
 const DATABASE_NAME = "notion-block-editor";
 const DATABASE_VERSION = 1;
 const DOCUMENT_STORE = "documents";
 const DEFAULT_DOCUMENT_KEY = "default";
+const WORKSPACE_KEY = "workspace";
 
 async function getDatabase() {
   return openDB(DATABASE_NAME, DATABASE_VERSION, {
@@ -33,4 +34,34 @@ export async function saveDocument(document: EditorDocument): Promise<void> {
 export async function clearDocument(): Promise<void> {
   const database = await getDatabase();
   await database.delete(DOCUMENT_STORE, DEFAULT_DOCUMENT_KEY);
+}
+
+export async function loadWorkspace(): Promise<EditorWorkspace | null> {
+  const database = await getDatabase();
+  const workspace = await database.get(DOCUMENT_STORE, WORKSPACE_KEY);
+
+  if (workspace) {
+    return workspace;
+  }
+
+  const legacyDocument = await loadDocument();
+
+  // 兼容第一版单文档存储，把旧文档包装成工作区。
+  return legacyDocument
+    ? {
+        documents: [legacyDocument],
+        activeDocumentId: legacyDocument.id,
+        updatedAt: legacyDocument.updatedAt,
+      }
+    : null;
+}
+
+export async function saveWorkspace(workspace: EditorWorkspace): Promise<void> {
+  const database = await getDatabase();
+  await database.put(DOCUMENT_STORE, workspace, WORKSPACE_KEY);
+}
+
+export async function clearWorkspace(): Promise<void> {
+  const database = await getDatabase();
+  await database.delete(DOCUMENT_STORE, WORKSPACE_KEY);
 }

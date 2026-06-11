@@ -1,17 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { BlockType, EditorDocument, MoveDirection } from "../model/block";
+import type { BlockType, EditorDocument, EditorWorkspace, MoveDirection } from "../model/block";
 import {
   changeBlockType,
-  createDefaultDocument,
   deleteBlock,
   insertBlockAfter,
   moveBlock,
   toggleTodo,
   updateBlockContent,
 } from "../model/documentOperations";
-import { loadDocument, saveDocument } from "../persistence/editorRepository";
-import { BlockList } from "./BlockList";
-import { EditorToolbar } from "./EditorToolbar";
+import {
+  createDefaultWorkspace,
+  createWorkspaceDocument,
+  getActiveDocument,
+  switchActiveDocument,
+  updateActiveDocument,
+} from "../model/workspaceOperations";
+import { loadWorkspace, saveWorkspace } from "../persistence/editorRepository";
+import { DocumentEditor } from "./DocumentEditor";
+import { WorkspaceSidebar } from "./WorkspaceSidebar";
 
 type SaveStatus = "saved" | "saving" | "unsaved" | "failed";
 
@@ -21,31 +27,31 @@ function nextTimestamp(document: EditorDocument) {
 }
 
 export function EditorPage() {
-  const [document, setDocument] = useState<EditorDocument | null>(null);
+  const [workspace, setWorkspace] = useState<EditorWorkspace | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
-  const hasLoadedDocument = useRef(false);
+  const hasLoadedWorkspace = useRef(false);
 
   useEffect(() => {
-    // 首次进入时优先恢复 IndexedDB；失败时退回空文档，避免编辑器白屏。
+    // 首次进入时恢复整个工作区；失败时回退到空工作区，避免编辑器白屏。
     let cancelled = false;
 
-    async function loadInitialDocument() {
+    async function loadInitialWorkspace() {
       try {
-        const savedDocument = await loadDocument();
+        const savedWorkspace = await loadWorkspace();
         if (!cancelled) {
-          setDocument(savedDocument ?? createDefaultDocument());
-          hasLoadedDocument.current = true;
+          setWorkspace(savedWorkspace ?? createDefaultWorkspace());
+          hasLoadedWorkspace.current = true;
         }
       } catch {
         if (!cancelled) {
-          setDocument(createDefaultDocument());
+          setWorkspace(createDefaultWorkspace());
           setSaveStatus("failed");
-          hasLoadedDocument.current = true;
+          hasLoadedWorkspace.current = true;
         }
       }
     }
 
-    void loadInitialDocument();
+    void loadInitialWorkspace();
 
     return () => {
       cancelled = true;
@@ -53,70 +59,84 @@ export function EditorPage() {
   }, []);
 
   useEffect(() => {
-    // 文档变更后防抖保存，减少每次击键都写 IndexedDB 的压力。
-    if (!document || !hasLoadedDocument.current) {
+    // 工作区变更后防抖保存，避免每次击键都写 IndexedDB。
+    if (!workspace || !hasLoadedWorkspace.current) {
       return;
     }
 
     setSaveStatus("unsaved");
     const timeoutId = window.setTimeout(() => {
       setSaveStatus("saving");
-      saveDocument(document)
+      saveWorkspace(workspace)
         .then(() => setSaveStatus("saved"))
         .catch(() => setSaveStatus("failed"));
     }, 250);
 
     return () => window.clearTimeout(timeoutId);
-  }, [document]);
+  }, [workspace]);
 
-  const applyChange = useCallback((operation: (current: EditorDocument) => EditorDocument) => {
-    // 所有编辑行为都通过纯操作函数更新，方便测试和后续接入协同层。
-    setDocument((current) => (current ? operation(current) : current));
+  const activeDocument = workspace ? getActiveDocument(workspace) : null;
+
+  const applyActiveDocumentChange = useCallback(
+    (operation: (document: EditorDocument) => EditorDocument) => {
+      setWorkspace((current) =>
+        current ? updateActiveDocument(current, operation, Date.now()) : current,
+      );
+    },
+    [],
+  );
+
+  const handleCreateDocument = useCallback(() => {
+    setWorkspace((current) => (current ? createWorkspaceDocument(current, Date.now()) : current));
+  }, []);
+
+  const handleSelectDocument = useCallback((documentId: string) => {
+    setWorkspace((current) => (current ? switchActiveDocument(current, documentId, Date.now()) : current));
   }, []);
 
   const handleAddAfter = useCallback(
     (blockId: string) => {
-      applyChange((current) => insertBlockAfter(current, blockId, nextTimestamp(current)));
+      applyActiveDocumentChange((current) => insertBlockAfter(current, blockId, nextTimestamp(current)));
     },
-    [applyChange],
+    [applyActiveDocumentChange],
   );
 
   const handleChangeContent = useCallback(
     (blockId: string, content: string) => {
-      applyChange((current) => updateBlockContent(current, blockId, content, Date.now()));
+      applyActiveDocumentChange((current) => updateBlockContent(current, blockId, content, Date.now()));
     },
-    [applyChange],
+    [applyActiveDocumentChange],
   );
 
   const handleChangeType = useCallback(
     (blockId: string, type: BlockType) => {
-      applyChange((current) => changeBlockType(current, blockId, type, Date.now()));
+      applyActiveDocumentChange((current) => changeBlockType(current, blockId, type, Date.now()));
     },
-    [applyChange],
+    [applyActiveDocumentChange],
   );
 
   const handleDelete = useCallback(
     (blockId: string) => {
-      applyChange((current) => deleteBlock(current, blockId, Date.now()));
+      applyActiveDocumentChange((current) => deleteBlock(current, blockId, Date.now()));
     },
-    [applyChange],
+    [applyActiveDocumentChange],
   );
 
   const handleMove = useCallback(
     (blockId: string, direction: MoveDirection) => {
-      applyChange((current) => moveBlock(current, blockId, direction, Date.now()));
+      applyActiveDocumentChange((current) => moveBlock(current, blockId, direction, Date.now()));
     },
-    [applyChange],
+    [applyActiveDocumentChange],
   );
 
   const handleToggleTodo = useCallback(
     (blockId: string) => {
-      applyChange((current) => toggleTodo(current, blockId, Date.now()));
+      applyActiveDocumentChange((current) => toggleTodo(current, blockId, Date.now()));
     },
-    [applyChange],
+    [applyActiveDocumentChange],
   );
 
-  if (!document) {
+  if (!workspace || !activeDocument) {
     return (
       <main className="editor-page editor-loading">
         <p>加载中</p>
@@ -125,17 +145,23 @@ export function EditorPage() {
   }
 
   return (
-    <main className="editor-page">
-      <EditorToolbar saveStatus={saveStatus} />
-      <BlockList
-        blocks={document.blocks}
+    <div className="app-shell">
+      <WorkspaceSidebar
+        activeDocumentId={workspace.activeDocumentId}
+        documents={workspace.documents}
+        onCreateDocument={handleCreateDocument}
+        onSelectDocument={handleSelectDocument}
+      />
+      <DocumentEditor
+        document={activeDocument}
         onAddAfter={handleAddAfter}
         onChangeContent={handleChangeContent}
         onChangeType={handleChangeType}
         onDelete={handleDelete}
         onMove={handleMove}
         onToggleTodo={handleToggleTodo}
+        saveStatus={saveStatus}
       />
-    </main>
+    </div>
   );
 }
