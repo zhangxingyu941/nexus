@@ -1,6 +1,14 @@
 import "@testing-library/jest-dom/vitest";
 import "fake-indexeddb/auto";
 
+class TestResizeObserver implements ResizeObserver {
+  disconnect() {}
+  observe() {}
+  unobserve() {}
+}
+
+globalThis.ResizeObserver ??= TestResizeObserver;
+
 // ProseMirror 会读取真实浏览器的布局 API；jsdom 没有布局引擎，需要补最小实现。
 const fallbackRect = {
   bottom: 0,
@@ -25,9 +33,11 @@ function createRectList(): DOMRectList {
   } as unknown as DOMRectList;
 }
 
-document.elementFromPoint ??= () => document.body;
+if (typeof document !== "undefined") {
+  document.elementFromPoint ??= () => document.body;
 
-Element.prototype.getBoundingClientRect ??= () => fallbackRect;
-Element.prototype.getClientRects ??= createRectList;
-Range.prototype.getBoundingClientRect ??= () => fallbackRect;
-Range.prototype.getClientRects ??= createRectList;
+  Element.prototype.getBoundingClientRect ??= () => fallbackRect;
+  Element.prototype.getClientRects ??= createRectList;
+  Range.prototype.getBoundingClientRect ??= () => fallbackRect;
+  Range.prototype.getClientRects ??= createRectList;
+}

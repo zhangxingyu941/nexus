@@ -41,4 +41,101 @@ describe("editor repository", () => {
       updatedAt: document.updatedAt,
     });
   });
+
+  it("normalizes saved workspace data from older versions", async () => {
+    const legacyWorkspace = {
+      activeDocumentId: "legacy-document",
+      updatedAt: 1000,
+      documents: [
+        {
+          id: "legacy-document",
+          title: "旧文档",
+          updatedAt: 1000,
+          blocks: [
+            {
+              id: "legacy-block",
+              type: "paragraph",
+              content: "旧内容",
+              checked: false,
+              parentId: null,
+              children: [],
+              createdAt: 1000,
+              updatedAt: 1000,
+            },
+          ],
+        },
+      ],
+    } as unknown as Parameters<typeof saveWorkspace>[0];
+
+    await saveWorkspace(legacyWorkspace);
+
+    await expect(loadWorkspace()).resolves.toMatchObject({
+      documents: [
+        {
+          blocks: [
+            {
+              comments: [],
+              assignee: "",
+              dueDate: "",
+              status: "unset",
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("normalizes older comments as unresolved", async () => {
+    const legacyWorkspace = {
+      activeDocumentId: "legacy-document",
+      updatedAt: 1000,
+      documents: [
+        {
+          id: "legacy-document",
+          title: "旧文档",
+          updatedAt: 1000,
+          blocks: [
+            {
+              id: "legacy-block",
+              type: "paragraph",
+              content: "旧内容",
+              checked: false,
+              comments: [
+                {
+                  id: "legacy-comment",
+                  author: "林夏",
+                  body: "旧评论",
+                  time: "昨天",
+                  createdAt: 900,
+                },
+              ],
+              parentId: null,
+              children: [],
+              createdAt: 1000,
+              updatedAt: 1000,
+            },
+          ],
+        },
+      ],
+    } as unknown as Parameters<typeof saveWorkspace>[0];
+
+    await saveWorkspace(legacyWorkspace);
+
+    await expect(loadWorkspace()).resolves.toMatchObject({
+      documents: [
+        {
+          blocks: [
+            {
+              comments: [
+                {
+                  id: "legacy-comment",
+                  resolved: false,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+  });
 });

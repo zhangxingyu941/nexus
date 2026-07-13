@@ -1,39 +1,82 @@
-import { ArrowDown, ArrowUp, GripVertical, Heading1, ListTodo, Plus, Trash2, Type } from "lucide-react";
+import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useEffect, useRef, useState } from "react";
-import type { Block, BlockType } from "../model/block";
+import type { CollaborationDocument } from "../collaboration/collaborationTypes";
+import type { Block, BlockData, BlockStatus, BlockType, MoveDirection } from "../model/block";
+import { AttachmentBlockEditor } from "./blocks/AttachmentBlockEditor";
+import { BlockCollabPopover } from "./blocks/BlockCollabPopover";
+import { BlockCommentsPopover } from "./blocks/BlockCommentsPopover";
+import { BlockControls } from "./blocks/BlockControls";
+import { BlockInlineActions } from "./blocks/BlockInlineActions";
+import { BlockMetaStrip } from "./blocks/BlockMetaStrip";
+import { KanbanBlockEditor } from "./blocks/KanbanBlockEditor";
+import { SLASH_COMMANDS } from "./blocks/blockMenuOptions";
+import { SlashMenu } from "./blocks/SlashMenu";
+import { TableBlockEditor } from "./blocks/TableBlockEditor";
 import { RichTextBlockEditor } from "./RichTextBlockEditor";
 import { TodoBlockEditor } from "./TodoBlockEditor";
 
 interface BlockRowProps {
   block: Block;
+  canIndent: boolean;
+  canOutdent: boolean;
+  collaborationDocument: CollaborationDocument | null;
+  depth: number;
+  focusRequest: boolean;
   isFirst: boolean;
   isLast: boolean;
+  isReadOnly: boolean;
   onAddAfter: (blockId: string) => void;
+  onAddBlockComment: (blockId: string, body: string) => void;
+  onChangeBlockAssignee: (blockId: string, assignee: string) => void;
+  onChangeBlockDueDate: (blockId: string, dueDate: string) => void;
+  onChangeBlockStatus: (blockId: string, status: BlockStatus) => void;
+  onChangeBlockData: (blockId: string, data: BlockData | null) => void;
   onChangeContent: (blockId: string, content: string) => void;
   onChangeType: (blockId: string, type: BlockType) => void;
   onDelete: (blockId: string) => void;
-  onMove: (blockId: string, direction: "up" | "down") => void;
+  onFocused: () => void;
+  onIndent: (blockId: string) => void;
+  onMove: (blockId: string, direction: MoveDirection) => void;
+  onOutdent: (blockId: string) => void;
+  onResolveBlockComment: (blockId: string, commentId: string) => void;
   onToggleTodo: (blockId: string) => void;
 }
 
-type OpenMenu = "block" | "slash" | null;
+type OpenMenu = "block" | "slash" | "collab" | "comments" | null;
 
 export function BlockRow({
   block,
+  canIndent,
+  canOutdent,
+  collaborationDocument,
+  depth,
+  focusRequest,
   isFirst,
   isLast,
+  isReadOnly,
   onAddAfter,
+  onAddBlockComment,
+  onChangeBlockAssignee,
+  onChangeBlockDueDate,
+  onChangeBlockStatus,
+  onChangeBlockData,
   onChangeContent,
   onChangeType,
   onDelete,
+  onFocused,
+  onIndent,
   onMove,
+  onOutdent,
+  onResolveBlockComment,
   onToggleTodo,
 }: BlockRowProps) {
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
+  const [activeSlashIndex, setActiveSlashIndex] = useState(0);
+  const [commentDraft, setCommentDraft] = useState("");
   const rowRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    if (!openMenu) {
+    if (openMenu !== "slash") {
       return;
     }
 
@@ -43,7 +86,7 @@ export function BlockRow({
       }
     }
 
-    function handleKeyDown(event: KeyboardEvent) {
+    function handleKeyDown(event: globalThis.KeyboardEvent) {
       if (event.key === "Escape") {
         setOpenMenu(null);
       }
@@ -63,7 +106,45 @@ export function BlockRow({
     onChangeType(block.id, type);
   };
 
-  const handleMove = (direction: "up" | "down") => {
+  const openSlashMenu = () => {
+    setActiveSlashIndex(0);
+    setOpenMenu("slash");
+  };
+
+  const handleSlashMenuKeyDown = (event: ReactKeyboardEvent) => {
+    if (openMenu !== "slash") {
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      event.stopPropagation();
+      setActiveSlashIndex((current) => (current + 1) % SLASH_COMMANDS.length);
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      event.stopPropagation();
+      setActiveSlashIndex((current) => (current - 1 + SLASH_COMMANDS.length) % SLASH_COMMANDS.length);
+      return;
+    }
+
+    if (event.key === "Enter") {
+      event.preventDefault();
+      event.stopPropagation();
+      handleChangeType(SLASH_COMMANDS[activeSlashIndex].type);
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      setOpenMenu(null);
+    }
+  };
+
+  const handleMove = (direction: MoveDirection) => {
     setOpenMenu(null);
     onMove(block.id, direction);
   };
@@ -73,114 +154,130 @@ export function BlockRow({
     onDelete(block.id);
   };
 
+  const handleSubmitComment = () => {
+    const body = commentDraft.trim();
+
+    if (!body) {
+      return;
+    }
+
+    onAddBlockComment(block.id, body);
+    setCommentDraft("");
+  };
+
   return (
     <article
       className={`block-row block-row-${block.type}${openMenu ? " block-row-menu-open" : ""}`}
+      data-block-depth={depth}
       data-testid={`block-row-${block.id}`}
+      onKeyDownCapture={handleSlashMenuKeyDown}
       ref={rowRef}
+      style={{ "--block-depth": Math.min(depth, 6) } as CSSProperties}
     >
-      <div aria-label="块操作" className="block-controls">
-        <button
-          aria-label="在下方添加块"
-          className="block-gutter-button"
-          data-tooltip="添加块"
-          onClick={() => onAddAfter(block.id)}
-          type="button"
-        >
-          <Plus aria-hidden="true" size={16} />
-        </button>
-        <button
-          aria-expanded={openMenu === "block"}
-          aria-haspopup="menu"
-          aria-label="打开块菜单"
-          className="block-gutter-button"
-          data-tooltip="块菜单"
-          onClick={() => setOpenMenu((current) => (current === "block" ? null : "block"))}
-          type="button"
-        >
-          <GripVertical aria-hidden="true" size={16} />
-        </button>
+      {!isReadOnly ? (
+        <BlockControls
+          blockId={block.id}
+          canIndent={canIndent}
+          canOutdent={canOutdent}
+          isFirst={isFirst}
+          isLast={isLast}
+          isMenuOpen={openMenu === "block"}
+          onAddAfter={onAddAfter}
+          onChangeType={handleChangeType}
+          onDelete={handleDelete}
+          onIndent={() => onIndent(block.id)}
+          onMenuOpenChange={(open) => setOpenMenu(open ? "block" : null)}
+          onMove={handleMove}
+          onOutdent={() => onOutdent(block.id)}
+        />
+      ) : <span aria-hidden="true" className="readonly-block-gutter" />}
 
-        {openMenu === "block" ? (
-          <div aria-label="块菜单" className="block-menu" role="menu">
-            <button aria-label="转为段落" onClick={() => handleChangeType("paragraph")} role="menuitem" type="button">
-              <Type aria-hidden="true" size={15} />
-              <span>转为段落</span>
-            </button>
-            <button aria-label="转为标题" onClick={() => handleChangeType("heading")} role="menuitem" type="button">
-              <Heading1 aria-hidden="true" size={15} />
-              <span>转为标题</span>
-            </button>
-            <button aria-label="转为待办" onClick={() => handleChangeType("todo")} role="menuitem" type="button">
-              <ListTodo aria-hidden="true" size={15} />
-              <span>转为待办</span>
-            </button>
-            <span className="block-menu-divider" />
-            <button
-              aria-label="上移块"
-              disabled={isFirst}
-              onClick={() => handleMove("up")}
-              role="menuitem"
-              type="button"
-            >
-              <ArrowUp aria-hidden="true" size={15} />
-              <span>上移块</span>
-            </button>
-            <button
-              aria-label="下移块"
-              disabled={isLast}
-              onClick={() => handleMove("down")}
-              role="menuitem"
-              type="button"
-            >
-              <ArrowDown aria-hidden="true" size={15} />
-              <span>下移块</span>
-            </button>
-            <button aria-label="删除块" className="danger" onClick={handleDelete} role="menuitem" type="button">
-              <Trash2 aria-hidden="true" size={15} />
-              <span>删除块</span>
-            </button>
-          </div>
-        ) : null}
-      </div>
       <div className="block-editor-shell">
-        {block.type === "todo" ? (
+        {block.type === "image" || block.type === "file" ? (
+          <AttachmentBlockEditor
+            content={block.content}
+            data={block.data?.kind === block.type ? block.data : null}
+            isReadOnly={isReadOnly}
+            kind={block.type}
+            onChangeContent={(content) => onChangeContent(block.id, content)}
+            onChangeData={(data) => onChangeBlockData(block.id, data)}
+          />
+        ) : block.type === "table" ? (
+          block.data?.kind === "table" ? (
+            <TableBlockEditor
+              data={block.data}
+              isReadOnly={isReadOnly}
+              onChange={(data) => onChangeBlockData(block.id, data)}
+            />
+          ) : null
+        ) : block.type === "kanban" ? (
+          block.data?.kind === "kanban" ? (
+            <KanbanBlockEditor
+              data={block.data}
+              isReadOnly={isReadOnly}
+              onChange={(data) => onChangeBlockData(block.id, data)}
+            />
+          ) : null
+        ) : block.type === "todo" ? (
           <TodoBlockEditor
             blockId={block.id}
             checked={block.checked}
             content={block.content}
+            focusRequest={focusRequest}
+            isReadOnly={isReadOnly}
             onChange={(content) => onChangeContent(block.id, content)}
             onEnter={() => onAddAfter(block.id)}
-            onOpenCommandMenu={() => setOpenMenu("slash")}
+            onFocused={onFocused}
+            onOpenCommandMenu={openSlashMenu}
             onToggle={() => onToggleTodo(block.id)}
           />
         ) : (
           <RichTextBlockEditor
             blockId={block.id}
+            collaborationDocument={collaborationDocument}
             content={block.content}
+            focusRequest={focusRequest}
+            isReadOnly={isReadOnly}
             onChange={(content) => onChangeContent(block.id, content)}
             onEnter={() => onAddAfter(block.id)}
-            onOpenCommandMenu={() => setOpenMenu("slash")}
+            onFocused={onFocused}
+            onMarkdownShortcut={(type) => onChangeType(block.id, type)}
+            onOpenCommandMenu={openSlashMenu}
             variant={block.type}
           />
         )}
 
-        {openMenu === "slash" ? (
-          <div aria-label="插入菜单" className="slash-menu" role="menu">
-            <button aria-label="段落" onClick={() => handleChangeType("paragraph")} role="menuitem" type="button">
-              <Type aria-hidden="true" size={15} />
-              <span>段落</span>
-            </button>
-            <button aria-label="标题" onClick={() => handleChangeType("heading")} role="menuitem" type="button">
-              <Heading1 aria-hidden="true" size={15} />
-              <span>标题</span>
-            </button>
-            <button aria-label="待办" onClick={() => handleChangeType("todo")} role="menuitem" type="button">
-              <ListTodo aria-hidden="true" size={15} />
-              <span>待办</span>
-            </button>
-          </div>
-        ) : null}
+        {block.type === "code" ? <span className="code-block-label">代码片段</span> : null}
+
+        <BlockInlineActions
+          collabContent={(
+            <BlockCollabPopover
+              block={block}
+              onChangeAssignee={onChangeBlockAssignee}
+              onChangeDueDate={onChangeBlockDueDate}
+              onChangeStatus={onChangeBlockStatus}
+            />
+          )}
+          commentsContent={(
+            <BlockCommentsPopover
+              block={block}
+              commentDraft={commentDraft}
+              isReadOnly={isReadOnly}
+              onChangeCommentDraft={setCommentDraft}
+              onResolveComment={onResolveBlockComment}
+              onSubmitComment={handleSubmitComment}
+            />
+          )}
+          isReadOnly={isReadOnly}
+          isCollabOpen={openMenu === "collab"}
+          isCommentsOpen={openMenu === "comments"}
+          onCollabOpenChange={(open) => setOpenMenu(open ? "collab" : null)}
+          onCommentsOpenChange={(open) => setOpenMenu(open ? "comments" : null)}
+        />
+
+        <BlockMetaStrip block={block} />
+
+        {openMenu === "slash" ? <SlashMenu activeIndex={activeSlashIndex} onSelect={handleChangeType} /> : null}
       </div>
     </article>
   );

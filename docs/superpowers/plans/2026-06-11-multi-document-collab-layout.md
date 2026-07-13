@@ -1,25 +1,25 @@
-# Multi Document Collab Layout Implementation Plan
+# 多文档协作布局实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **给自动化开发代理：** 必须使用 `superpowers:subagent-driven-development`（推荐）或 `superpowers:executing-plans` 按任务逐项执行本计划。步骤使用复选框（`- [ ]`）跟踪进度。
 
-**Goal:** Build the approved Notion-like multi-document workspace with a left page tree, collaborative top bar, and a focused right-side block editor.
+**目标：** 构建已确认的 Notion 风格多文档工作区，包含左侧页面树、协作顶部栏和聚焦的右侧块编辑器。
 
-**Architecture:** Add an `EditorWorkspace` model that owns many `EditorDocument` records plus the active document id. Keep existing pure document operations and compose them through workspace operations, then persist the full workspace in IndexedDB with migration from the old single-document key.
+**架构：** 新增 `EditorWorkspace` 模型，持有多个 `EditorDocument` 和当前文档 ID。保留现有纯文档操作，通过工作区操作组合使用；IndexedDB 保存整份工作区，并兼容旧的单文档 key 迁移。
 
-**Tech Stack:** React, TypeScript, TipTap, IndexedDB via `idb`, Vitest, Testing Library, Vite.
+**技术栈：** React、TypeScript、TipTap、IndexedDB（`idb`）、Vitest、Testing Library、Vite。
 
 ---
 
-### Task 1: Workspace Model
+### 任务 1：工作区模型
 
-**Files:**
-- Modify: `src/features/editor/model/block.ts`
-- Create: `src/features/editor/model/workspaceOperations.ts`
-- Create: `src/features/editor/model/workspaceOperations.test.ts`
+**文件：**
+- 修改：`src/features/editor/model/block.ts`
+- 创建：`src/features/editor/model/workspaceOperations.ts`
+- 创建：`src/features/editor/model/workspaceOperations.test.ts`
 
-- [ ] **Step 1: Write failing tests for workspace operations**
+- [ ] **步骤 1：为工作区操作编写失败测试**
 
-Add tests for:
+添加以下测试：
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -32,8 +32,8 @@ import {
 } from "./workspaceOperations";
 import { updateBlockContent } from "./documentOperations";
 
-describe("workspace operations", () => {
-  it("creates a default workspace with one active document", () => {
+describe("workspace 操作", () => {
+  it("创建包含一个当前文档的默认工作区", () => {
     const workspace = createDefaultWorkspace(1000);
 
     expect(workspace.activeDocumentId).toBe("document-1000");
@@ -46,7 +46,7 @@ describe("workspace operations", () => {
     });
   });
 
-  it("creates and selects a new document", () => {
+  it("创建并选中新文档", () => {
     const workspace = createDefaultWorkspace(1000);
     const next = createWorkspaceDocument(workspace, 2000);
 
@@ -55,7 +55,7 @@ describe("workspace operations", () => {
     expect(getActiveDocument(next)?.id).toBe("document-2000");
   });
 
-  it("switches to an existing document only", () => {
+  it("只允许切换到已存在文档", () => {
     const workspace = createWorkspaceDocument(createDefaultWorkspace(1000), 2000);
     const switched = switchActiveDocument(workspace, "document-1000", 3000);
     const unchanged = switchActiveDocument(switched, "missing", 4000);
@@ -65,7 +65,7 @@ describe("workspace operations", () => {
     expect(unchanged).toBe(switched);
   });
 
-  it("updates only the active document", () => {
+  it("只更新当前文档", () => {
     const workspace = createWorkspaceDocument(createDefaultWorkspace(1000), 2000);
     const activeId = workspace.activeDocumentId;
     const next = updateActiveDocument(
@@ -80,41 +80,41 @@ describe("workspace operations", () => {
 });
 ```
 
-- [ ] **Step 2: Verify the tests fail**
+- [ ] **步骤 2：确认测试失败**
 
-Run: `npm test -- src/features/editor/model/workspaceOperations.test.ts --run`
+运行：`npm test -- src/features/editor/model/workspaceOperations.test.ts --run`
 
-Expected: fail because `workspaceOperations.ts` does not exist.
+预期：失败，因为 `workspaceOperations.ts` 尚不存在。
 
-- [ ] **Step 3: Implement workspace operations**
+- [ ] **步骤 3：实现工作区操作**
 
-Add `EditorWorkspace` to `block.ts` and implement the pure helpers in `workspaceOperations.ts`. Reuse `createDefaultDocument`; add an optional document id parameter if needed so deterministic IDs are testable.
+在 `block.ts` 中加入 `EditorWorkspace`，并在 `workspaceOperations.ts` 中实现纯辅助函数。复用 `createDefaultDocument`；如需测试确定性 ID，可增加可选文档 ID 参数。
 
-- [ ] **Step 4: Verify model tests pass**
+- [ ] **步骤 4：确认模型测试通过**
 
-Run: `npm test -- src/features/editor/model/workspaceOperations.test.ts --run`
+运行：`npm test -- src/features/editor/model/workspaceOperations.test.ts --run`
 
-Expected: pass.
+预期：通过。
 
-### Task 2: Workspace Persistence
+### 任务 2：工作区持久化
 
-**Files:**
-- Modify: `src/features/editor/persistence/editorRepository.ts`
-- Modify: `src/features/editor/persistence/editorRepository.test.ts`
+**文件：**
+- 修改：`src/features/editor/persistence/editorRepository.ts`
+- 修改：`src/features/editor/persistence/editorRepository.test.ts`
 
-- [ ] **Step 1: Write failing persistence tests**
+- [ ] **步骤 1：编写失败的持久化测试**
 
-Cover saving/loading a workspace, clearing the workspace, and migrating an old single document into a workspace.
+覆盖保存/加载工作区、清空工作区，以及把旧单文档数据迁移为工作区。
 
-- [ ] **Step 2: Verify persistence tests fail**
+- [ ] **步骤 2：确认持久化测试失败**
 
-Run: `npm test -- src/features/editor/persistence/editorRepository.test.ts --run`
+运行：`npm test -- src/features/editor/persistence/editorRepository.test.ts --run`
 
-Expected: fail because `loadWorkspace`, `saveWorkspace`, or migration behavior is missing.
+预期：失败，因为 `loadWorkspace`、`saveWorkspace` 或迁移行为尚未实现。
 
-- [ ] **Step 3: Implement repository changes**
+- [ ] **步骤 3：实现仓储层变更**
 
-Keep `loadDocument`, `saveDocument`, and `clearDocument` only if needed for migration tests, but route the app through:
+只有迁移测试需要时才保留 `loadDocument`、`saveDocument` 和 `clearDocument`；应用主流程改为使用：
 
 ```ts
 loadWorkspace(): Promise<EditorWorkspace | null>
@@ -122,103 +122,103 @@ saveWorkspace(workspace: EditorWorkspace): Promise<void>
 clearWorkspace(): Promise<void>
 ```
 
-Use the same object store and add a new key, for example `workspace`.
+使用同一个对象存储，并新增一个 key，例如 `workspace`。
 
-- [ ] **Step 4: Verify persistence tests pass**
+- [ ] **步骤 4：确认持久化测试通过**
 
-Run: `npm test -- src/features/editor/persistence/editorRepository.test.ts --run`
+运行：`npm test -- src/features/editor/persistence/editorRepository.test.ts --run`
 
-Expected: pass.
+预期：通过。
 
-### Task 3: Workspace UI Behavior
+### 任务 3：工作区界面行为
 
-**Files:**
-- Modify: `src/features/editor/components/EditorPage.test.tsx`
-- Modify: `src/features/editor/components/EditorPage.tsx`
-- Create: `src/features/editor/components/WorkspaceSidebar.tsx`
-- Create: `src/features/editor/components/DocumentEditor.tsx`
-- Modify: `src/features/editor/components/EditorToolbar.tsx` or replace it from `DocumentEditor`
+**文件：**
+- 修改：`src/features/editor/components/EditorPage.test.tsx`
+- 修改：`src/features/editor/components/EditorPage.tsx`
+- 创建：`src/features/editor/components/WorkspaceSidebar.tsx`
+- 创建：`src/features/editor/components/DocumentEditor.tsx`
+- 修改：`src/features/editor/components/EditorToolbar.tsx`，或由 `DocumentEditor` 替代。
 
-- [ ] **Step 1: Write failing component tests**
+- [ ] **步骤 1：编写失败的组件测试**
 
-Update component tests to expect:
+更新组件测试，期望出现：
 
 - `团队知识库`
 - `新建文档`
 - `项目空间`
-- `产品方案草稿` or `未命名文档`
+- `产品方案草稿` 或 `未命名文档`
 - `评论 3`
 - `分享`
-- a right-side `文档编辑区`
+- 右侧 `文档编辑区`
 
-Add tests that clicking `新建文档` increases the document count and switches the editor to the new document.
+增加测试：点击 `新建文档` 后文档数量增加，并切换到新文档。
 
-- [ ] **Step 2: Verify component tests fail**
+- [ ] **步骤 2：确认组件测试失败**
 
-Run: `npm test -- src/features/editor/components/EditorPage.test.tsx --run`
+运行：`npm test -- src/features/editor/components/EditorPage.test.tsx --run`
 
-Expected: fail because the current UI is still single-document.
+预期：失败，因为当前 UI 仍是单文档。
 
-- [ ] **Step 3: Implement workspace state in `EditorPage`**
+- [ ] **步骤 3：在 `EditorPage` 中实现工作区状态**
 
-Load/save `EditorWorkspace`, expose handlers for create document and switch document, and wrap existing block operations so they apply to the active document only.
+加载/保存 `EditorWorkspace`，提供创建文档和切换文档处理函数，并包装现有块操作，使其只作用于当前文档。
 
-- [ ] **Step 4: Implement `WorkspaceSidebar`**
+- [ ] **步骤 4：实现 `WorkspaceSidebar`**
 
-Render a Notion-like page tree with workspace title, quick actions, `新建文档`, document buttons, active state, and sync text.
+渲染 Notion 风格页面树，包括工作区标题、快捷操作、`新建文档`、文档按钮、当前状态和同步提示。
 
-- [ ] **Step 5: Implement `DocumentEditor`**
+- [ ] **步骤 5：实现 `DocumentEditor`**
 
-Render the collaborative top bar, cover, document icon, title, save status, metadata pills, and `BlockList`.
+渲染协作顶部栏、封面、文档图标、标题、保存状态、元信息标签和 `BlockList`。
 
-- [ ] **Step 6: Verify component tests pass**
+- [ ] **步骤 6：确认组件测试通过**
 
-Run: `npm test -- src/features/editor/components/EditorPage.test.tsx --run`
+运行：`npm test -- src/features/editor/components/EditorPage.test.tsx --run`
 
-Expected: pass.
+预期：通过。
 
-### Task 4: Notion-Like Styling
+### 任务 4：Notion 风格样式
 
-**Files:**
-- Modify: `src/styles.css`
+**文件：**
+- 修改：`src/styles.css`
 
-- [ ] **Step 1: Port visual language from preview**
+- [ ] **步骤 1：迁移预览稿视觉语言**
 
-Apply the approved palette, page tree layout, sticky collaborative top bar, document cover, document icon, large title, metadata pills, hover-only block controls, inline comment callout, slash hint, and responsive behavior.
+应用已确认的色板、页面树布局、吸顶协作顶部栏、文档封面、文档图标、大标题、元信息标签、悬停显示的块控制、内联评论提示、斜杠提示和响应式行为。
 
-- [ ] **Step 2: Verify build**
+- [ ] **步骤 2：验证构建**
 
-Run: `npm run build`
+运行：`npm run build`
 
-Expected: TypeScript and Vite build pass.
+预期：TypeScript 和 Vite 构建通过。
 
-### Task 5: Full Verification
+### 任务 5：完整验证
 
-**Files:**
-- No code edits unless failures reveal a bug.
+**文件：**
+- 除非失败暴露 bug，否则不改代码。
 
-- [ ] **Step 1: Run all automated tests**
+- [ ] **步骤 1：运行全部自动化测试**
 
-Run: `npm test -- --run`
+运行：`npm test -- --run`
 
-Expected: all tests pass.
+预期：全部测试通过。
 
-- [ ] **Step 2: Run production build**
+- [ ] **步骤 2：运行生产构建**
 
-Run: `npm run build`
+运行：`npm run build`
 
-Expected: build passes.
+预期：构建通过。
 
-- [ ] **Step 3: Browser smoke test**
+- [ ] **步骤 3：浏览器冒烟测试**
 
-Open `http://127.0.0.1:5173/` and verify:
+打开 `http://127.0.0.1:5173/` 并验证：
 
-- Sidebar shows `团队知识库`, `新建文档`, and document list.
-- Right side shows document cover, title, save status, online avatars, `评论 3`, `历史`, and `分享`.
-- Existing block editing still works.
-- `新建文档` creates and selects a new document.
-- Switching documents changes the active editor.
+- 侧边栏显示 `团队知识库`、`新建文档` 和文档列表。
+- 右侧显示文档封面、标题、保存状态、在线头像、`评论 3`、`历史` 和 `分享`。
+- 现有块编辑仍可用。
+- `新建文档` 会创建并选中新文档。
+- 切换文档会更换当前编辑器内容。
 
-- [ ] **Step 4: Commit implementation**
+- [ ] **步骤 4：提交实现**
 
-Commit after tests, build, and browser smoke pass.
+测试、构建和浏览器冒烟测试通过后提交。

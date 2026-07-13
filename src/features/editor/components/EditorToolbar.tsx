@@ -1,10 +1,11 @@
 interface EditorToolbarProps {
-  saveStatus: "saved" | "saving" | "unsaved" | "failed";
+  saveStatus: "local" | "remote" | "saving" | "unsaved" | "failed";
 }
 
 const SAVE_STATUS_LABELS = {
   failed: "保存失败",
-  saved: "已保存",
+  local: "本地已保存",
+  remote: "已同步",
   saving: "保存中",
   unsaved: "未保存",
 } as const;

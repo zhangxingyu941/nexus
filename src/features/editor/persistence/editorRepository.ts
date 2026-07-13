@@ -1,5 +1,6 @@
 import { openDB } from "idb";
 import type { EditorDocument, EditorWorkspace } from "../model/block";
+import { normalizeWorkspace } from "../model/workspaceOperations";
 
 const DATABASE_NAME = "notion-block-editor";
 const DATABASE_VERSION = 1;
@@ -41,18 +42,18 @@ export async function loadWorkspace(): Promise<EditorWorkspace | null> {
   const workspace = await database.get(DOCUMENT_STORE, WORKSPACE_KEY);
 
   if (workspace) {
-    return workspace;
+    return normalizeWorkspace(workspace);
   }
 
   const legacyDocument = await loadDocument();
 
   // 兼容第一版单文档存储，把旧文档包装成工作区。
   return legacyDocument
-    ? {
+    ? normalizeWorkspace({
         documents: [legacyDocument],
         activeDocumentId: legacyDocument.id,
         updatedAt: legacyDocument.updatedAt,
-      }
+      })
     : null;
 }
 
