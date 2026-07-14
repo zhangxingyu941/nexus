@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.next/
+playwright-report/
+test-results/
+*.log
+*.tsbuildinfo
+.env
+.env.local
+vitest.config.js
+vitest.config.d.ts
+server/data/*.json
+server/data/uploads/

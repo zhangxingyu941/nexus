@@ -1,0 +1,315 @@
+import type { Pool } from "pg";
+
+const INITIAL_SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS app_users (
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE,
+    display_name TEXT NOT NULL,
+    created_at BIGINT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS schema_migrations (
+    id TEXT PRIMARY KEY,
+    applied_at BIGINT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS editor_workspaces (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    owner_id TEXT NOT NULL REFERENCES app_users(id),
+    active_document_id TEXT,
+    updated_at BIGINT NOT NULL,
+    created_at BIGINT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS workspace_members (
+    workspace_id TEXT NOT NULL REFERENCES editor_workspaces(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+    role TEXT NOT NULL CHECK (role IN ('owner', 'editor', 'viewer')),
+    created_at BIGINT NOT NULL,
+    PRIMARY KEY (workspace_id, user_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS workspace_preferences (
+    user_id TEXT PRIMARY KEY REFERENCES app_users(id) ON DELETE CASCADE,
+    workspace_id TEXT NOT NULL REFERENCES editor_workspaces(id) ON DELETE CASCADE
+  )`,
+  `CREATE TABLE IF NOT EXISTS editor_documents (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES editor_workspaces(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    template_id TEXT,
+    pinned BOOLEAN,
+    position INTEGER NOT NULL,
+    updated_at BIGINT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS document_versions (
+    workspace_id TEXT NOT NULL REFERENCES editor_workspaces(id) ON DELETE CASCADE,
+    id TEXT NOT NULL,
+    document_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    snapshot JSONB NOT NULL,
+    snapshot_hash TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    created_at BIGINT NOT NULL,
+    PRIMARY KEY (workspace_id, id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS editor_blocks (
+    id TEXT PRIMARY KEY,
+    document_id TEXT NOT NULL CONSTRAINT editor_blocks_document_id_fkey REFERENCES editor_documents(id) ON DELETE CASCADE,
+    type TEXT NOT NULL CONSTRAINT editor_blocks_type_check CHECK (type IN ('paragraph', 'heading', 'todo', 'quote', 'code')),
+    content TEXT NOT NULL,
+    checked BOOLEAN NOT NULL,
+    assignee TEXT NOT NULL,
+    due_date TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('unset', 'todo', 'in-progress', 'review', 'done')),
+    parent_id TEXT,
+    position INTEGER NOT NULL,
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS block_relationships (
+    parent_block_id TEXT NOT NULL CONSTRAINT block_relationships_parent_block_id_fkey REFERENCES editor_blocks(id) ON DELETE CASCADE,
+    child_block_id TEXT NOT NULL CONSTRAINT block_relationships_child_block_id_fkey REFERENCES editor_blocks(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    PRIMARY KEY (parent_block_id, child_block_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS block_comments (
+    id TEXT PRIMARY KEY,
+    block_id TEXT NOT NULL CONSTRAINT block_comments_block_id_fkey REFERENCES editor_blocks(id) ON DELETE CASCADE,
+    author TEXT NOT NULL,
+    body TEXT NOT NULL,
+    time_label TEXT NOT NULL,
+    created_at BIGINT NOT NULL,
+    resolved BOOLEAN NOT NULL,
+    resolved_at BIGINT
+  )`,
+  `CREATE TABLE IF NOT EXISTS auth_sessions (
+    token_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+    expires_at BIGINT NOT NULL,
+    created_at BIGINT NOT NULL
+  )`,
+  "CREATE INDEX IF NOT EXISTS workspace_members_user_idx ON workspace_members(user_id)",
+  "CREATE INDEX IF NOT EXISTS editor_documents_workspace_idx ON editor_documents(workspace_id, position)",
+  "CREATE INDEX IF NOT EXISTS document_versions_document_idx ON document_versions(workspace_id, document_id, created_at DESC)",
+  "CREATE INDEX IF NOT EXISTS editor_blocks_document_idx ON editor_blocks(document_id, position)",
+  "CREATE INDEX IF NOT EXISTS block_comments_block_idx ON block_comments(block_id, created_at)",
+  "CREATE INDEX IF NOT EXISTS auth_sessions_user_idx ON auth_sessions(user_id)",
+];
+
+const WORKSPACE_SCOPED_CONTENT_MIGRATION_ID = "2026-07-10-workspace-scoped-content-keys";
+const COMPLEX_BLOCK_DATA_MIGRATION_ID = "2026-07-10-complex-block-data";
+const PRODUCTION_AUTHENTICATION_MIGRATION_ID = "2026-07-13-production-authentication";
+const YJS_PERSISTENCE_MIGRATION_ID = "2026-07-13-yjs-persistence";
+const MIGRATION_LOCK_ID = "__migration_lock__";
+
+const WORKSPACE_SCOPED_CONTENT_SCHEMA = [
+  "ALTER TABLE editor_blocks ADD COLUMN workspace_id TEXT",
+  "ALTER TABLE block_relationships ADD COLUMN workspace_id TEXT",
+  "ALTER TABLE block_comments ADD COLUMN workspace_id TEXT",
+  `UPDATE editor_blocks
+   SET workspace_id = editor_documents.workspace_id
+   FROM editor_documents
+   WHERE document_id = editor_documents.id`,
+  `UPDATE block_relationships
+   SET workspace_id = editor_blocks.workspace_id
+   FROM editor_blocks
+   WHERE parent_block_id = editor_blocks.id`,
+  `UPDATE block_comments
+   SET workspace_id = editor_blocks.workspace_id
+   FROM editor_blocks
+   WHERE block_id = editor_blocks.id`,
+  "ALTER TABLE editor_blocks ALTER COLUMN workspace_id SET NOT NULL",
+  "ALTER TABLE block_relationships ALTER COLUMN workspace_id SET NOT NULL",
+  "ALTER TABLE block_comments ALTER COLUMN workspace_id SET NOT NULL",
+  "ALTER TABLE block_relationships DROP CONSTRAINT block_relationships_parent_block_id_fkey",
+  "ALTER TABLE block_relationships DROP CONSTRAINT block_relationships_child_block_id_fkey",
+  "ALTER TABLE block_comments DROP CONSTRAINT block_comments_block_id_fkey",
+  "ALTER TABLE editor_blocks DROP CONSTRAINT editor_blocks_document_id_fkey",
+  "ALTER TABLE block_relationships DROP CONSTRAINT block_relationships_pkey",
+  "ALTER TABLE block_comments DROP CONSTRAINT block_comments_pkey",
+  "ALTER TABLE editor_blocks DROP CONSTRAINT editor_blocks_pkey",
+  "ALTER TABLE editor_documents DROP CONSTRAINT editor_documents_pkey",
+  "ALTER TABLE editor_documents ADD PRIMARY KEY (workspace_id, id)",
+  "ALTER TABLE editor_blocks ADD PRIMARY KEY (workspace_id, id)",
+  "ALTER TABLE block_relationships ADD PRIMARY KEY (workspace_id, parent_block_id, child_block_id)",
+  "ALTER TABLE block_comments ADD PRIMARY KEY (workspace_id, id)",
+  `ALTER TABLE editor_blocks
+   ADD CONSTRAINT editor_blocks_document_fkey
+   FOREIGN KEY (workspace_id, document_id)
+   REFERENCES editor_documents(workspace_id, id)
+   ON DELETE CASCADE`,
+  `ALTER TABLE block_relationships
+   ADD CONSTRAINT block_relationships_parent_fkey
+   FOREIGN KEY (workspace_id, parent_block_id)
+   REFERENCES editor_blocks(workspace_id, id)
+   ON DELETE CASCADE`,
+  `ALTER TABLE block_relationships
+   ADD CONSTRAINT block_relationships_child_fkey
+   FOREIGN KEY (workspace_id, child_block_id)
+   REFERENCES editor_blocks(workspace_id, id)
+   ON DELETE CASCADE`,
+  `ALTER TABLE block_comments
+   ADD CONSTRAINT block_comments_block_fkey
+   FOREIGN KEY (workspace_id, block_id)
+   REFERENCES editor_blocks(workspace_id, id)
+   ON DELETE CASCADE`,
+  "DROP INDEX IF EXISTS editor_blocks_document_idx",
+  "DROP INDEX IF EXISTS block_comments_block_idx",
+  "CREATE INDEX editor_blocks_document_idx ON editor_blocks(workspace_id, document_id, position)",
+  "CREATE INDEX block_comments_block_idx ON block_comments(workspace_id, block_id, created_at)",
+  "CREATE INDEX block_relationships_child_idx ON block_relationships(workspace_id, child_block_id)",
+];
+
+const COMPLEX_BLOCK_DATA_SCHEMA = [
+  "ALTER TABLE editor_blocks ADD COLUMN data JSONB",
+  "ALTER TABLE editor_blocks DROP CONSTRAINT editor_blocks_type_check",
+  `ALTER TABLE editor_blocks
+   ADD CONSTRAINT editor_blocks_type_check
+   CHECK (type IN ('paragraph', 'heading', 'todo', 'quote', 'code', 'image', 'file', 'table', 'kanban'))`,
+];
+
+const PRODUCTION_AUTHENTICATION_SCHEMA = [
+  "ALTER TABLE app_users ADD COLUMN password_hash TEXT",
+  "ALTER TABLE app_users ADD COLUMN email_verified_at BIGINT",
+  "ALTER TABLE app_users ADD COLUMN updated_at BIGINT",
+  `CREATE TABLE oauth_accounts (
+    provider TEXT NOT NULL,
+    provider_account_id TEXT NOT NULL,
+    user_id TEXT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+    provider_email TEXT NOT NULL,
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT,
+    PRIMARY KEY (provider, provider_account_id),
+    UNIQUE (provider, user_id)
+  )`,
+  `CREATE TABLE auth_tokens (
+    token_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+    purpose TEXT NOT NULL CHECK (purpose IN ('verify-email', 'reset-password')),
+    expires_at BIGINT NOT NULL,
+    created_at BIGINT NOT NULL,
+    consumed_at BIGINT
+  )`,
+  `CREATE TABLE auth_audit_events (
+    id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    user_id TEXT REFERENCES app_users(id) ON DELETE SET NULL,
+    ip_hash TEXT NOT NULL,
+    succeeded BOOLEAN NOT NULL,
+    created_at BIGINT NOT NULL
+  )`,
+  "CREATE INDEX auth_tokens_user_purpose_idx ON auth_tokens(user_id, purpose, expires_at)",
+  "CREATE INDEX auth_audit_events_user_created_idx ON auth_audit_events(user_id, created_at DESC)",
+];
+
+const YJS_PERSISTENCE_SCHEMA = [
+  `CREATE TABLE yjs_room_snapshots (
+    workspace_id TEXT NOT NULL REFERENCES editor_workspaces(id) ON DELETE CASCADE,
+    room_name TEXT NOT NULL,
+    snapshot TEXT NOT NULL,
+    updated_at BIGINT NOT NULL,
+    PRIMARY KEY (workspace_id, room_name)
+  )`,
+  `CREATE TABLE yjs_room_updates (
+    id BIGSERIAL PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES editor_workspaces(id) ON DELETE CASCADE,
+    room_name TEXT NOT NULL,
+    update_data TEXT NOT NULL,
+    byte_length INTEGER NOT NULL,
+    created_at BIGINT NOT NULL
+  )`,
+  "CREATE INDEX yjs_room_snapshots_room_idx ON yjs_room_snapshots(room_name)",
+  "CREATE INDEX yjs_room_updates_room_idx ON yjs_room_updates(workspace_id, room_name, id)",
+];
+
+export async function migrateDatabase(pool: Pool) {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    for (const statement of INITIAL_SCHEMA) {
+      await client.query(statement);
+    }
+
+    await client.query(
+      `INSERT INTO schema_migrations (id, applied_at)
+       VALUES ($1, 0)
+       ON CONFLICT (id) DO NOTHING`,
+      [MIGRATION_LOCK_ID],
+    );
+    await client.query(
+      "SELECT id FROM schema_migrations WHERE id = $1 FOR UPDATE",
+      [MIGRATION_LOCK_ID],
+    );
+
+    const migrationResult = await client.query(
+      "SELECT id FROM schema_migrations WHERE id = $1",
+      [WORKSPACE_SCOPED_CONTENT_MIGRATION_ID],
+    );
+
+    if (migrationResult.rows.length === 0) {
+      for (const statement of WORKSPACE_SCOPED_CONTENT_SCHEMA) {
+        await client.query(statement);
+      }
+
+      await client.query(
+        "INSERT INTO schema_migrations (id, applied_at) VALUES ($1, $2)",
+        [WORKSPACE_SCOPED_CONTENT_MIGRATION_ID, Date.now()],
+      );
+    }
+
+    const complexBlockMigrationResult = await client.query(
+      "SELECT id FROM schema_migrations WHERE id = $1",
+      [COMPLEX_BLOCK_DATA_MIGRATION_ID],
+    );
+
+    if (complexBlockMigrationResult.rows.length === 0) {
+      for (const statement of COMPLEX_BLOCK_DATA_SCHEMA) {
+        await client.query(statement);
+      }
+
+      await client.query(
+        "INSERT INTO schema_migrations (id, applied_at) VALUES ($1, $2)",
+        [COMPLEX_BLOCK_DATA_MIGRATION_ID, Date.now()],
+      );
+    }
+
+    const productionAuthenticationResult = await client.query(
+      "SELECT id FROM schema_migrations WHERE id = $1",
+      [PRODUCTION_AUTHENTICATION_MIGRATION_ID],
+    );
+
+    if (productionAuthenticationResult.rows.length === 0) {
+      for (const statement of PRODUCTION_AUTHENTICATION_SCHEMA) {
+        await client.query(statement);
+      }
+
+      await client.query(
+        "INSERT INTO schema_migrations (id, applied_at) VALUES ($1, $2)",
+        [PRODUCTION_AUTHENTICATION_MIGRATION_ID, Date.now()],
+      );
+    }
+
+    const yjsPersistenceResult = await client.query(
+      "SELECT id FROM schema_migrations WHERE id = $1",
+      [YJS_PERSISTENCE_MIGRATION_ID],
+    );
+
+    if (yjsPersistenceResult.rows.length === 0) {
+      for (const statement of YJS_PERSISTENCE_SCHEMA) {
+        await client.query(statement);
+      }
+
+      await client.query(
+        "INSERT INTO schema_migrations (id, applied_at) VALUES ($1, $2)",
+        [YJS_PERSISTENCE_MIGRATION_ID, Date.now()],
+      );
+    }
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
