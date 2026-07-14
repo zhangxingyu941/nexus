@@ -27,7 +27,7 @@ const AUTH_ERROR_MESSAGES: Record<AuthErrorCode, string> = {
   email_already_registered: "该邮箱已注册，请直接登录或使用找回密码",
   email_invalid: "请输入有效的邮箱地址",
   email_not_registered: "该邮箱尚未注册，请先创建账号",
-  email_not_verified: "邮箱尚未验证，请先输入邮件中的验证码",
+  email_not_verified: "该邮箱尚未完成注册，请先完成注册再登录",
   email_required: "请输入邮箱",
   email_too_long: "邮箱不能超过 254 个字符",
   external_account_requires_password: "该邮箱已通过其他登录方式注册，请使用对应登录方式，或通过找回密码设置密码",

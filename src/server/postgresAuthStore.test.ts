@@ -201,7 +201,7 @@ describe("PostgresAuthStore", () => {
     await expect(authStore.loginWithPassword({
       email: legacySession.user.email,
       password: "replacement secure password",
-    })).rejects.toThrow("邮箱尚未验证，请先输入邮件中的验证码");
+    })).rejects.toThrow("该邮箱尚未完成注册，请先完成注册再登录");
     await expect(authStore.verifyEmail({
       code: registration.code,
       email: legacySession.user.email,
@@ -410,7 +410,7 @@ describe("PostgresAuthStore", () => {
     await expect(authStore.loginWithPassword({
       email: "linxia@example.com",
       password: "correct horse battery staple",
-    })).rejects.toThrow("邮箱尚未验证，请先输入邮件中的验证码");
+    })).rejects.toThrow("该邮箱尚未完成注册，请先完成注册再登录");
 
     await expect(authStore.verifyEmail({
       code: "123456",
