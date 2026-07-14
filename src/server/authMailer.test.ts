@@ -87,6 +87,7 @@ describe("AuthMailer", () => {
     const directory = await mkdtemp(join(tmpdir(), "auth-mail-capture-"));
     const captureFile = join(directory, "mail.jsonl");
     vi.stubEnv("AUTH_MAIL_CAPTURE_FILE", captureFile);
+    vi.stubEnv("AUTH_MAIL_CAPTURE_ALLOW_PRODUCTION", "true");
     vi.stubEnv("NODE_ENV", "production");
 
     try {
@@ -103,6 +104,18 @@ describe("AuthMailer", () => {
     } finally {
       vi.unstubAllEnvs();
       await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("requires explicit authorization for production mail capture", () => {
+    vi.stubEnv("AUTH_MAIL_CAPTURE_FILE", "/tmp/auth-mail-capture.jsonl");
+    vi.stubEnv("AUTH_MAIL_CAPTURE_ALLOW_PRODUCTION", "false");
+    vi.stubEnv("NODE_ENV", "production");
+
+    try {
+      expect(() => createAuthMailerFromEnvironment()).toThrow("生产环境邮件捕获未显式授权");
+    } finally {
+      vi.unstubAllEnvs();
     }
   });
 });

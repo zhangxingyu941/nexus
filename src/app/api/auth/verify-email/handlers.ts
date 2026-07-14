@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import type { CreatedSession } from "../../../../server/postgresAuthStore";
 import { getSessionCookieOptions, SESSION_COOKIE_NAME } from "../../../../server/sessionCookie";
 import { parseAuthJson } from "../authRequest";
-import { enforceAuthRateLimit, type RouteAuthSecurity } from "../authSecurity";
+import { authErrorResponse } from "../authErrorResponse";
+import { enforceAuthRateLimit, recordAuthAudit, type RouteAuthSecurity } from "../authSecurity";
 
 interface VerifyEmailStore {
   verifyEmail(input: { code: string; email: string }): Promise<CreatedSession>;
@@ -25,13 +26,14 @@ export function createVerifyEmailRouteHandler(authStore: VerifyEmailStore, secur
     try {
       const session = await authStore.verifyEmail({ code, email });
       await security.reset(request, "verify-email", email);
-      await security.audit(request, "email-verification", true, session.user.id);
+      await recordAuthAudit(security, request, "email-verification", true, session.user.id);
       const response = NextResponse.json({ user: session.user, verified: true });
       response.cookies.set(SESSION_COOKIE_NAME, session.token, getSessionCookieOptions(session.expiresAt));
       return response;
-    } catch {
-      await security.audit(request, "email-verification", false, null);
-      return NextResponse.json({ error: "验证码无效或已过期" }, { status: 400 });
+    } catch (error) {
+      await recordAuthAudit(security, request, "email-verification", false, null);
+      return authErrorResponse(error)
+        ?? NextResponse.json({ error: "邮箱验证服务暂时不可用，请稍后重试" }, { status: 503 });
     }
   };
 }

@@ -164,6 +164,7 @@ function escapeHtml(value: string) {
 }
 
 export function createAuthMailerFromEnvironment() {
+  const production = process.env.NODE_ENV === "production";
   const host = process.env.SMTP_HOST?.trim();
   const user = process.env.SMTP_USER?.trim();
   const password = process.env.SMTP_PASSWORD;
@@ -176,12 +177,19 @@ export function createAuthMailerFromEnvironment() {
       }) as AuthMailTransport
     : undefined;
   const captureFile = process.env.AUTH_MAIL_CAPTURE_FILE?.trim();
+  if (
+    captureFile &&
+    production &&
+    process.env.AUTH_MAIL_CAPTURE_ALLOW_PRODUCTION !== "true"
+  ) {
+    throw new Error("生产环境邮件捕获未显式授权");
+  }
 
   return new AuthMailer({
     capture: captureFile ? new JsonlAuthMailCapture(captureFile) : undefined,
     from: process.env.SMTP_FROM?.trim() || "Nexus <noreply@localhost>",
     logger: console,
-    production: process.env.NODE_ENV === "production",
+    production,
     transport,
   });
 }

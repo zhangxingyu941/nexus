@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EditorApp } from "./EditorApp";
@@ -114,14 +114,14 @@ describe("EditorApp", () => {
   });
 
   it("counts down registration resend and applies the server retry time", async () => {
-    vi.useFakeTimers();
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const user = userEvent.setup();
     const fetchSpy = vi
       .fn()
       .mockResolvedValueOnce(jsonResponse({ error: "请先进入工作区" }, 401))
       .mockResolvedValueOnce(jsonResponse({ github: false }))
-      .mockResolvedValueOnce(jsonResponse({ registered: true, retryAfterSeconds: 60 }, 201))
+      .mockResolvedValueOnce(jsonResponse({ registered: true, retryAfterSeconds: 1 }, 201))
       .mockResolvedValueOnce(jsonResponse({
+        codeAvailable: true,
         error: "请在 37 秒后重新发送验证码",
         retryAfterSeconds: 37,
       }, 429));
@@ -134,19 +134,34 @@ describe("EditorApp", () => {
     await user.type(screen.getByLabelText("密码"), "correct horse battery staple");
     await user.click(screen.getByRole("button", { name: "创建账号" }));
 
-    expect(await screen.findByRole("button", { name: "重新发送（60s）" })).toBeDisabled();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1_000);
-    });
-    expect(screen.getByRole("button", { name: "重新发送（59s）" })).toBeDisabled();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(59_000);
-    });
-    const resend = screen.getByRole("button", { name: "重新发送验证码" });
-    expect(resend).toBeEnabled();
+    expect(await screen.findByRole("button", { name: "重新发送（1s）" })).toBeDisabled();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "重新发送验证码" })).toBeEnabled();
+    }, { timeout: 2_000 });
 
-    await user.click(resend);
+    await user.click(screen.getByRole("button", { name: "重新发送验证码" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("请在 37 秒后重新发送验证码");
+    expect(screen.getByRole("button", { name: "重新发送（37s）" })).toBeDisabled();
+  });
+
+  it("enters reset-code mode when the first forgot-password request is cooling down", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ error: "请先进入工作区" }, 401))
+      .mockResolvedValueOnce(jsonResponse({ github: false }))
+      .mockResolvedValueOnce(jsonResponse({
+        codeAvailable: true,
+        error: "请在 37 秒后重新发送验证码",
+        retryAfterSeconds: 37,
+      }, 429)));
+
+    render(<EditorApp />);
+    await user.click(await screen.findByRole("button", { name: "忘记密码" }));
+    await user.type(screen.getByLabelText("邮箱"), "legacy@example.com");
+    await user.click(screen.getByRole("button", { name: "发送验证码" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("请在 37 秒后重新发送验证码");
+    expect(screen.getByLabelText("邮箱验证码")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "重新发送（37s）" })).toBeDisabled();
   });
 
@@ -166,7 +181,7 @@ describe("EditorApp", () => {
     await user.type(screen.getByLabelText("邮箱"), "legacy@example.com");
     await user.click(screen.getByRole("button", { name: "发送验证码" }));
 
-    expect(await screen.findByText("如果账号存在，验证码已发送")).toBeInTheDocument();
+    expect(await screen.findByText("验证码已发送至 legacy@example.com")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "重新发送（60s）" })).toBeDisabled();
     await user.type(screen.getByLabelText("邮箱验证码"), "654321");
     await user.type(screen.getByLabelText("新密码"), "replacement secure password");
@@ -183,6 +198,37 @@ describe("EditorApp", () => {
         }),
       }),
     );
+  });
+
+  it("explains when an authentication request cannot reach the server", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ error: "请先进入工作区" }, 401))
+      .mockResolvedValueOnce(jsonResponse({ github: false }))
+      .mockRejectedValueOnce(new TypeError("Failed to fetch")));
+
+    render(<EditorApp />);
+    await user.type(await screen.findByLabelText("邮箱"), "linxia@example.com");
+    await user.type(screen.getByLabelText("密码"), "correct horse battery staple");
+    await user.click(screen.getByRole("button", { name: "登录" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("无法连接认证服务，请检查网络后重试");
+    expect(screen.getByRole("alert")).not.toHaveTextContent("Failed to fetch");
+  });
+
+  it("explains when the authentication service returns an invalid response", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ error: "请先进入工作区" }, 401))
+      .mockResolvedValueOnce(jsonResponse({ github: false }))
+      .mockResolvedValueOnce(new Response("upstream failure", { status: 502 })));
+
+    render(<EditorApp />);
+    await user.type(await screen.findByLabelText("邮箱"), "linxia@example.com");
+    await user.type(screen.getByLabelText("密码"), "correct horse battery staple");
+    await user.click(screen.getByRole("button", { name: "登录" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("认证服务响应异常，请稍后重试");
   });
 
   it("shows GitHub login only when configured", async () => {

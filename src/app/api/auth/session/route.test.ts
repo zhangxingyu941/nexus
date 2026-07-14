@@ -114,7 +114,7 @@ describe("database session route", () => {
     expect(revoked.status).toBe(401);
   });
 
-  it("returns one generic error for invalid credentials", async () => {
+  it("explains invalid credentials and missing accounts", async () => {
     const response = await handlers.POST(
       new Request("http://localhost/api/auth/session", {
         body: JSON.stringify({ email: "linxia@example.com", password: "incorrect password" }),
@@ -124,7 +124,17 @@ describe("database session route", () => {
     );
 
     expect(response.status).toBe(401);
-    await expect(response.json()).resolves.toEqual({ error: "邮箱或密码错误" });
+    await expect(response.json()).resolves.toEqual({ error: "密码错误，请重新输入" });
+
+    const missing = await handlers.POST(
+      new Request("http://localhost/api/auth/session", {
+        body: JSON.stringify({ email: "missing@example.com", password: "correct horse battery staple" }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      }),
+    );
+    expect(missing.status).toBe(404);
+    await expect(missing.json()).resolves.toEqual({ error: "该邮箱尚未注册，请先创建账号" });
   });
 
   it("rejects non-JSON login requests", async () => {
@@ -152,6 +162,33 @@ describe("database session route", () => {
 
     expect(response.status).toBe(429);
     expect(response.headers.get("retry-after")).toBe("45");
+    await expect(response.json()).resolves.toEqual({
+      error: "请求过于频繁，请在 45 秒后重试",
+      retryAfterSeconds: 45,
+    });
     expect(loginSpy).not.toHaveBeenCalled();
+  });
+
+  it("keeps explicit login responses when audit persistence fails", async () => {
+    security.audit.mockRejectedValue(new Error("audit database unavailable"));
+
+    const invalid = await handlers.POST(
+      new Request("http://localhost/api/auth/session", {
+        body: JSON.stringify({ email: "linxia@example.com", password: "incorrect password" }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      }),
+    );
+    expect(invalid.status).toBe(401);
+    await expect(invalid.json()).resolves.toEqual({ error: "密码错误，请重新输入" });
+
+    const valid = await handlers.POST(
+      new Request("http://localhost/api/auth/session", {
+        body: JSON.stringify({ email: "linxia@example.com", password: "correct horse battery staple" }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      }),
+    );
+    expect(valid.status).toBe(200);
   });
 });

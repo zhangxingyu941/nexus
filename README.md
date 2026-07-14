@@ -4,7 +4,7 @@
 
 ## 已实现能力
 
-- 邮箱密码注册/登录、6 位邮箱验证码注册与找回密码、HttpOnly 会话和可选 GitHub OAuth。
+- 邮箱密码注册/登录、6 位邮箱验证码注册与找回密码、遗留账号原地升级、明确认证错误、60 秒重发倒计时、HttpOnly 会话和可选 GitHub OAuth。
 - Redis 认证限流、脱敏审计、会话缓存和生产环境故障关闭。
 - 多文档工作区、模板、搜索、任务、评论、历史版本和 owner/editor/viewer 权限。
 - 段落、标题、待办、引用、代码、图片、文件、表格和看板块。
@@ -72,8 +72,8 @@ docker compose run --rm migrate
 - `AUTH_COOKIE_SECURE`：HTTPS/WSS 部署保持 `true`；仅本地 HTTP/WS 开发或验收时设为 `false`。
 - `REDIS_URL`：生产认证限流必需；Redis 不可用时认证接口故障关闭，现有本地协作仍可继续。
 - `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`：可选。GitHub OAuth 回调地址为 `https://<host>/api/auth/oauth/github/callback`。
-- `SMTP_HOST`、`SMTP_PORT`、`SMTP_SECURE`、`SMTP_USER`、`SMTP_PASSWORD`、`SMTP_FROM`：生产发送 6 位注册和找回密码验证码必需。验证码 10 分钟有效，仅最新一枚可用。
-- `AUTH_MAIL_CAPTURE_FILE`：仅供 E2E 捕获验证码，配置后优先于 SMTP；正式环境不要配置。
+- `SMTP_HOST`、`SMTP_PORT`、`SMTP_SECURE`、`SMTP_USER`、`SMTP_PASSWORD`、`SMTP_FROM`：生产发送 6 位注册和找回密码验证码必需。验证码 10 分钟有效、同账号 60 秒内不可重复发送且仅最新一枚可用；邮件同时包含纯文本和 QQ 邮箱兼容 HTML 正文。
+- `AUTH_MAIL_CAPTURE_FILE`：仅供 E2E 捕获验证码，配置后优先于 SMTP；生产构建的 E2E 容器还必须临时设置 `AUTH_MAIL_CAPTURE_ALLOW_PRODUCTION=true`。正式环境不要配置这两个变量。
 - `COLLAB_ALLOWED_ORIGINS`：只填写可信 Web Origin；多项用逗号分隔。
 - `NEXT_PUBLIC_COLLABORATION_URL`：构建时注入的浏览器 WebSocket 地址，公网部署应使用 `wss://`。
 - `OBJECT_STORAGE_DRIVER`：默认 `local`；生产可改为 `s3` 并配置对应 `S3_*` 变量。
@@ -88,6 +88,8 @@ SMTP_USER=your-account@qq.com
 SMTP_PASSWORD=qq-mail-authorization-code
 SMTP_FROM=Nexus <your-account@qq.com>
 ```
+
+认证接口会明确区分邮箱未注册、邮箱已注册、邮箱未验证、密码错误以及验证码未发送、错误或过期，并提供对应操作提示。无密码且未验证的旧账号重新注册时会保留原用户 ID、工作区和文档，只补齐姓名、密码哈希和邮箱验证码。明确账号状态会降低防邮箱枚举能力，生产环境应继续启用 Redis 限流和认证审计。
 
 ## 备份恢复
 

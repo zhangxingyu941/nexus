@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { AuthDomainError } from "../../../../../server/authErrors";
 import { createResetPasswordRouteHandler } from "./handlers";
 
 describe("reset password route", () => {
@@ -30,9 +31,9 @@ describe("reset password route", () => {
     );
   });
 
-  it("rejects invalid reset codes", async () => {
+  it("explains expired reset codes", async () => {
     const authStore = {
-      resetPassword: vi.fn().mockRejectedValue(new Error("验证码无效或已过期")),
+      resetPassword: vi.fn().mockRejectedValue(new AuthDomainError("reset_code_expired")),
     };
     const response = await createResetPasswordRouteHandler(authStore, createSecurity())(jsonRequest({
       code: "123456",
@@ -40,7 +41,8 @@ describe("reset password route", () => {
       password: "replacement secure password",
     }));
 
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(410);
+    await expect(response.json()).resolves.toEqual({ error: "密码重置验证码已过期，请重新发送" });
   });
 });
 

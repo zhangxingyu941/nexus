@@ -1,4 +1,4 @@
-name: notion-block-editor
+name: Nexus
 
 x-app-environment: &app-environment
   DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-notion_block_editor}
@@ -64,6 +64,7 @@ services:
     environment:
       <<: *app-environment
       AUTH_MAIL_CAPTURE_FILE: ${AUTH_MAIL_CAPTURE_FILE:-}
+      AUTH_MAIL_CAPTURE_ALLOW_PRODUCTION: ${AUTH_MAIL_CAPTURE_ALLOW_PRODUCTION:-false}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       NEXT_PUBLIC_COLLABORATION_URL: ${NEXT_PUBLIC_COLLABORATION_URL:-ws://localhost:1234}
@@ -89,7 +90,13 @@ services:
     ports:
       - "${WEB_PORT:-3000}:3000"
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
       interval: 10s
       timeout: 5s
       retries: 20
@@ -122,7 +129,13 @@ services:
     ports:
       - "${COLLAB_EXTERNAL_PORT:-1234}:1234"
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:1234').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:1234').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
       interval: 10s
       timeout: 5s
       retries: 20

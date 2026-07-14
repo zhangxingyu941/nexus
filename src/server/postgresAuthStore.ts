@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
+import { createAuthDomainError } from "./authErrors";
 import { createAuthCode, hashAuthCode, type AuthTokenPurpose } from "./authTokens";
 import { Argon2PasswordHasher, type PasswordHasher } from "./passwordHasher";
 import type { PostgresWorkspaceStore } from "./postgresWorkspaceStore";
@@ -142,28 +143,23 @@ export class PostgresAuthStore {
   }
 
   async register(input: RegisterInput): Promise<PendingAuthCode> {
-    const displayName = input.displayName.trim();
-    const email = normalizeEmail(input.email);
-    validateRegistration(displayName, email, input.password);
+    const displayName = validateDisplayName(input.displayName);
+    const email = validateEmail(input.email);
+    validatePassword(input.password);
 
+    return this.runSerializedAuthCodeOperation(`registration:${email}`, "verify-email", () =>
+      this.registerValidated({ displayName, email, password: input.password }));
+  }
+
+  private async registerValidated(input: RegisterInput): Promise<PendingAuthCode> {
+    const { displayName, email } = input;
     const existing = await this.pool.query(
       "SELECT id, email, display_name, password_hash, email_verified_at FROM app_users WHERE email = $1",
       [email],
     );
     const existingRow = existing.rows[0];
     if (existingRow) {
-      const passwordMatches = existingRow.password_hash
-        ? await this.passwordHasher.verify(String(existingRow.password_hash), input.password)
-        : false;
-      if (existingRow.email_verified_at !== null || !passwordMatches) {
-        throw new Error("无法创建账号");
-      }
-
-      const user = toAppUser(existingRow);
-      const now = this.now();
-      const code = await this.runSerializedAuthCodeOperation(user.id, "verify-email", () =>
-        this.withTransaction((client) => this.replaceAuthCode(client, user.id, "verify-email", now)));
-      return { code, user };
+      return this.continueRegistration(existingRow, input);
     }
 
     const now = this.now();
@@ -184,6 +180,13 @@ export class PostgresAuthStore {
       });
     } catch (error) {
       if (isUniqueViolation(error)) {
+        const raced = await this.pool.query(
+          "SELECT id, email, display_name, password_hash, email_verified_at FROM app_users WHERE email = $1",
+          [email],
+        );
+        if (raced.rows[0]) {
+          return this.continueRegistration(raced.rows[0], input);
+        }
         throw new Error("无法创建账号");
       }
       throw error;
@@ -193,7 +196,8 @@ export class PostgresAuthStore {
   }
 
   async loginWithPassword(input: PasswordLoginInput): Promise<CreatedSession> {
-    const email = normalizeEmail(input.email);
+    const email = validateEmail(input.email);
+    validatePassword(input.password);
     const result = await this.pool.query(
       `SELECT id, email, display_name, password_hash, email_verified_at
        FROM app_users
@@ -206,8 +210,17 @@ export class PostgresAuthStore {
       input.password,
     );
 
-    if (!row || !row.password_hash || row.email_verified_at === null || !passwordMatches) {
-      throw new Error("邮箱或密码错误");
+    if (!row) {
+      throw createAuthDomainError("email_not_registered");
+    }
+    if (!row.password_hash) {
+      throw createAuthDomainError("password_not_set");
+    }
+    if (row.email_verified_at === null) {
+      throw createAuthDomainError("email_not_verified");
+    }
+    if (!passwordMatches) {
+      throw createAuthDomainError("password_incorrect");
     }
 
     return this.issueSession(toAppUser(row), this.now());
@@ -215,13 +228,11 @@ export class PostgresAuthStore {
 
   async verifyEmail(input: { code: string; email: string }): Promise<CreatedSession> {
     const now = this.now();
-    const email = normalizeEmail(input.email);
+    const email = validateEmail(input.email);
+    validateAuthCode(input.code);
 
     const user = await this.withTransaction(async (client) => {
       const row = await this.getValidAuthCode(client, email, input.code, "verify-email", now);
-      if (!row) {
-        throw new Error("验证码无效或已过期");
-      }
 
       await client.query(
         "UPDATE auth_tokens SET consumed_at = $1 WHERE token_hash = $2",
@@ -239,7 +250,7 @@ export class PostgresAuthStore {
   }
 
   async createPasswordReset(emailInput: string): Promise<PendingAuthCode | null> {
-    const email = normalizeEmail(emailInput);
+    const email = validateEmail(emailInput);
     const result = await this.pool.query(
       "SELECT id, email, display_name FROM app_users WHERE email = $1",
       [email],
@@ -260,15 +271,13 @@ export class PostgresAuthStore {
   async resetPassword(input: ResetPasswordInput): Promise<CreatedSession> {
     validatePassword(input.password);
     const now = this.now();
-    const email = normalizeEmail(input.email);
+    const email = validateEmail(input.email);
+    validateAuthCode(input.code);
     const passwordHash = await this.passwordHasher.hash(input.password);
     const revokedTokenHashes: string[] = [];
 
     const user = await this.withTransaction(async (client) => {
       const row = await this.getValidAuthCode(client, email, input.code, "reset-password", now);
-      if (!row) {
-        throw new Error("验证码无效或已过期");
-      }
 
       const sessions = await client.query(
         "SELECT token_hash FROM auth_sessions WHERE user_id = $1",
@@ -471,6 +480,51 @@ export class PostgresAuthStore {
     return code;
   }
 
+  private async continueRegistration(existingRow: Record<string, unknown>, input: RegisterInput) {
+    const passwordHash = existingRow.password_hash
+      ? null
+      : await this.passwordHasher.hash(input.password);
+    const now = this.now();
+
+    return this.withTransaction(async (client) => {
+      const locked = await client.query(
+        `SELECT id, email, display_name, password_hash, email_verified_at
+         FROM app_users
+         WHERE id = $1
+         FOR UPDATE`,
+        [existingRow.id],
+      );
+      const row = locked.rows[0];
+      if (!row) {
+        throw createAuthDomainError("email_not_registered");
+      }
+      if (row.email_verified_at !== null) {
+        throw createAuthDomainError(row.password_hash
+          ? "email_already_registered"
+          : "external_account_requires_password");
+      }
+
+      if (row.password_hash) {
+        const passwordMatches = await this.passwordHasher.verify(String(row.password_hash), input.password);
+        if (!passwordMatches) {
+          throw createAuthDomainError("registration_password_mismatch");
+        }
+      } else {
+        await client.query(
+          `UPDATE app_users
+           SET display_name = $1, password_hash = $2, updated_at = $3
+           WHERE id = $4`,
+          [input.displayName, passwordHash, now, row.id],
+        );
+        row.display_name = input.displayName;
+      }
+
+      const user = toAppUser(row);
+      const code = await this.replaceAuthCode(client, user.id, "verify-email", now);
+      return { code, user };
+    });
+  }
+
   private hashCode(userId: string, purpose: AuthTokenPurpose, code: string) {
     return hashAuthCode({
       code,
@@ -553,29 +607,39 @@ export class PostgresAuthStore {
     purpose: AuthTokenPurpose,
     now: number,
   ) {
-    if (!/^\d{6}$/.test(code)) {
-      return null;
-    }
-
     const userResult = await client.query(
-      "SELECT id FROM app_users WHERE email = $1",
+      "SELECT id, email, display_name FROM app_users WHERE email = $1 FOR UPDATE",
       [email],
     );
-    const userId = userResult.rows[0]?.id ? String(userResult.rows[0].id) : "missing-user";
+    const user = userResult.rows[0];
+    if (!user) {
+      throw createAuthDomainError("email_not_registered");
+    }
 
-    const result = await client.query(
-      `SELECT users.id, users.email, users.display_name
-       FROM auth_tokens tokens
-       INNER JOIN app_users users ON users.id = tokens.user_id
-       WHERE tokens.token_hash = $1
-         AND tokens.purpose = $2
-         AND tokens.consumed_at IS NULL
-         AND tokens.expires_at > $3
+    const tokenResult = await client.query(
+      `SELECT token_hash, expires_at
+       FROM auth_tokens
+       WHERE user_id = $1
+         AND purpose = $2
+         AND consumed_at IS NULL
+       ORDER BY created_at DESC
+       LIMIT 1
        FOR UPDATE`,
-      [this.hashCode(userId, purpose, code), purpose, now],
+      [user.id, purpose],
     );
+    const token = tokenResult.rows[0];
+    const prefix = purpose === "verify-email" ? "verify_code" : "reset_code";
+    if (!token) {
+      throw createAuthDomainError(`${prefix}_not_requested`);
+    }
+    if (Number(token.expires_at) <= now) {
+      throw createAuthDomainError(`${prefix}_expired`);
+    }
+    if (String(token.token_hash) !== this.hashCode(String(user.id), purpose, code)) {
+      throw createAuthDomainError(`${prefix}_incorrect`);
+    }
 
-    return result.rows[0] ?? null;
+    return user;
   }
 
   private async deleteCachedSessions(tokenHashes: string[]) {
@@ -624,16 +688,40 @@ function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
-function validateRegistration(displayName: string, email: string, password: string) {
-  if (!displayName || displayName.length > 80 || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    throw new Error("注册信息无效");
+function validateDisplayName(displayNameInput: string) {
+  const displayName = displayNameInput.trim();
+  if (!displayName) {
+    throw createAuthDomainError("display_name_required");
   }
-  validatePassword(password);
+  if (displayName.length > 80) {
+    throw createAuthDomainError("display_name_too_long");
+  }
+  return displayName;
+}
+
+function validateEmail(emailInput: string) {
+  const email = normalizeEmail(emailInput);
+  if (!email) {
+    throw createAuthDomainError("email_required");
+  }
+  if (email.length > 254) {
+    throw createAuthDomainError("email_too_long");
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw createAuthDomainError("email_invalid");
+  }
+  return email;
 }
 
 function validatePassword(password: string) {
   if (password.length < 12 || password.length > 128) {
-    throw new Error("密码长度必须为 12 到 128 个字符");
+    throw createAuthDomainError("password_length_invalid");
+  }
+}
+
+function validateAuthCode(code: string) {
+  if (!/^\d{6}$/.test(code)) {
+    throw createAuthDomainError("auth_code_format_invalid");
   }
 }
 

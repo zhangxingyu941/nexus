@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { AuthDomainError } from "../../../../server/authErrors";
 import { createVerifyEmailRouteHandler } from "./handlers";
 
 describe("verify email route", () => {
@@ -23,16 +24,16 @@ describe("verify email route", () => {
     expect(security.check).toHaveBeenCalledWith(expect.any(Request), "verify-email", "linxia@example.com");
   });
 
-  it("rejects expired or reused verification codes", async () => {
+  it("explains expired verification codes", async () => {
     const authStore = {
-      verifyEmail: vi.fn().mockRejectedValue(new Error("验证码无效或已过期")),
+      verifyEmail: vi.fn().mockRejectedValue(new AuthDomainError("verify_code_expired")),
     };
     const response = await createVerifyEmailRouteHandler(authStore, createSecurity())(
       jsonRequest({ code: "123456", email: "linxia@example.com" }),
     );
 
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toEqual({ error: "验证码无效或已过期" });
+    expect(response.status).toBe(410);
+    await expect(response.json()).resolves.toEqual({ error: "邮箱验证码已过期，请重新发送" });
   });
 });
 

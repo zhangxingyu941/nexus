@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import type { CreatedSession } from "../../../../../server/postgresAuthStore";
 import { getSessionCookieOptions, SESSION_COOKIE_NAME } from "../../../../../server/sessionCookie";
 import { parseAuthJson } from "../../authRequest";
-import { enforceAuthRateLimit, type RouteAuthSecurity } from "../../authSecurity";
+import { authErrorResponse } from "../../authErrorResponse";
+import { enforceAuthRateLimit, recordAuthAudit, type RouteAuthSecurity } from "../../authSecurity";
 
 interface ResetPasswordStore {
   resetPassword(input: { code: string; email: string; password: string }): Promise<CreatedSession>;
@@ -29,16 +30,14 @@ export function createResetPasswordRouteHandler(authStore: ResetPasswordStore, s
         password: typeof payload.password === "string" ? payload.password : "",
       });
       await security.reset(request, "reset-password", email);
-      await security.audit(request, "password-reset", true, session.user.id);
+      await recordAuthAudit(security, request, "password-reset", true, session.user.id);
       const response = NextResponse.json({ reset: true, user: session.user });
       response.cookies.set(SESSION_COOKIE_NAME, session.token, getSessionCookieOptions(session.expiresAt));
       return response;
     } catch (error) {
-      await security.audit(request, "password-reset", false, null);
-      return NextResponse.json(
-        { error: error instanceof Error ? error.message : "无法重置密码" },
-        { status: 400 },
-      );
+      await recordAuthAudit(security, request, "password-reset", false, null);
+      return authErrorResponse(error)
+        ?? NextResponse.json({ error: "密码重置服务暂时不可用，请稍后重试" }, { status: 503 });
     }
   };
 }

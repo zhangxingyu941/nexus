@@ -11,6 +11,20 @@ export interface RouteAuthSecurity {
   reset(request: Request, action: AuthRateLimitAction, identifier: string): Promise<void>;
 }
 
+export async function recordAuthAudit(
+  security: RouteAuthSecurity,
+  request: Request,
+  eventType: string,
+  succeeded: boolean,
+  userId: string | null,
+) {
+  try {
+    await security.audit(request, eventType, succeeded, userId);
+  } catch {
+    // Audit persistence is best-effort and must not replace the user-facing auth result.
+  }
+}
+
 export async function enforceAuthRateLimit(
   security: RouteAuthSecurity,
   request: Request,
@@ -26,7 +40,10 @@ export async function enforceAuthRateLimit(
   }
 
   return NextResponse.json(
-    { error: "请求过于频繁，请稍后重试" },
+    {
+      error: `请求过于频繁，请在 ${decision.retryAfterSeconds} 秒后重试`,
+      retryAfterSeconds: decision.retryAfterSeconds,
+    },
     {
       headers: { "Retry-After": String(decision.retryAfterSeconds) },
       status: 429,

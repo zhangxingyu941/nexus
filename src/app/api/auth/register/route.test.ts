@@ -72,6 +72,7 @@ describe("registration route", () => {
     expect(resend.status).toBe(429);
     expect(resend.headers.get("Retry-After")).toBe("60");
     await expect(resend.json()).resolves.toEqual({
+      codeAvailable: true,
       error: "请在 60 秒后重新发送验证码",
       retryAfterSeconds: 60,
     });
@@ -91,14 +92,37 @@ describe("registration route", () => {
       ...valid,
       password: "different secure password",
     }));
-    expect(duplicate.status).toBe(400);
-    await expect(duplicate.json()).resolves.toEqual({ error: "无法创建账号" });
+    expect(duplicate.status).toBe(409);
+    await expect(duplicate.json()).resolves.toEqual({
+      error: "该邮箱存在未完成的注册，当前密码与首次注册密码不一致；请使用首次密码或找回密码",
+    });
 
     const invalid = await handler(jsonRequest("http://localhost/api/auth/register", {
       ...valid,
       password: "short",
     }));
     expect(invalid.status).toBe(400);
+    await expect(invalid.json()).resolves.toEqual({ error: "密码长度必须为 12 到 128 个字符" });
+  });
+
+  it("does not expose mail transport errors", async () => {
+    const transportError = "connect ECONNREFUSED smtp.qq.com:465";
+    const response = await createRegisterRouteHandler({
+      authStore,
+      mailer: {
+        sendEmailVerificationCode: vi.fn().mockRejectedValue(new Error(transportError)),
+      },
+      security,
+    })(jsonRequest("http://localhost/api/auth/register", {
+      displayName: "林夏",
+      email: "linxia@example.com",
+      password: "correct horse battery staple",
+    }));
+
+    expect(response.status).toBe(503);
+    const payload = await response.json();
+    expect(payload).toEqual({ error: "验证邮件发送失败，请检查邮箱地址或稍后重试" });
+    expect(JSON.stringify(payload)).not.toContain(transportError);
   });
 });
 

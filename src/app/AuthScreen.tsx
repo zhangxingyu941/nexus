@@ -22,6 +22,24 @@ import type { EditorSessionUser } from "../features/editor/session/sessionTypes"
 
 type AuthMode = "forgot" | "login" | "register" | "register-code" | "reset-code";
 
+interface AuthResponse {
+  codeAvailable?: boolean;
+  error?: string;
+  retryAfterSeconds?: number;
+  user?: EditorSessionUser;
+}
+
+class AuthRequestError extends Error {
+  constructor(
+    message: string,
+    readonly retryAfterSeconds?: number,
+    readonly codeAvailable = false,
+  ) {
+    super(message);
+    this.name = "AuthRequestError";
+  }
+}
+
 export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: EditorSessionUser) => void }) {
   const [mode, setMode] = useState<AuthMode>("login");
   const [displayName, setDisplayName] = useState("");
@@ -33,6 +51,8 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: Editor
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [resendAvailableAt, setResendAvailableAt] = useState(0);
+  const [resendSeconds, setResendSeconds] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -49,28 +69,74 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: Editor
     };
   }, []);
 
+  useEffect(() => {
+    if (resendAvailableAt <= 0) {
+      return;
+    }
+
+    const updateRemainingSeconds = () => {
+      const remaining = Math.max(0, Math.ceil((resendAvailableAt - Date.now()) / 1000));
+      setResendSeconds(remaining);
+      if (remaining === 0) {
+        setResendAvailableAt(0);
+      }
+    };
+    updateRemainingSeconds();
+    const timer = window.setInterval(updateRemainingSeconds, 250);
+    return () => window.clearInterval(timer);
+  }, [resendAvailableAt]);
+
+  const startResendCooldown = (seconds = 60) => {
+    const normalizedSeconds = Number.isFinite(seconds)
+      ? Math.max(0, Math.ceil(seconds))
+      : 60;
+    setResendSeconds(normalizedSeconds);
+    setResendAvailableAt(normalizedSeconds > 0 ? Date.now() + normalizedSeconds * 1000 : 0);
+  };
+
   const changeMode = (nextMode: AuthMode) => {
     setMode(nextMode);
     setError("");
     setNotice("");
     setCode("");
+    setResendAvailableAt(0);
+    setResendSeconds(0);
     if (nextMode === "forgot" || nextMode === "login") {
       setPassword("");
     }
   };
 
   const requestAuth = async (endpoint: string, body: Record<string, string>) => {
-    const response = await fetch(endpoint, {
-      body: JSON.stringify(body),
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      method: "POST",
-    });
-    const payload = await response.json() as { error?: string; user?: EditorSessionUser };
+    let response: Response;
+    try {
+      response = await fetch(endpoint, {
+        body: JSON.stringify(body),
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      });
+    } catch {
+      throw new AuthRequestError("无法连接认证服务，请检查网络后重试");
+    }
+
+    let parsedPayload: unknown;
+    try {
+      parsedPayload = await response.json();
+    } catch {
+      throw new AuthRequestError("认证服务响应异常，请稍后重试");
+    }
+    if (!parsedPayload || typeof parsedPayload !== "object") {
+      throw new AuthRequestError("认证服务响应异常，请稍后重试");
+    }
+    const payload = parsedPayload as AuthResponse;
     if (!response.ok) {
-      throw new Error(payload.error || "认证请求失败");
+      throw new AuthRequestError(
+        payload.error || "认证请求失败",
+        payload.retryAfterSeconds,
+        payload.codeAvailable === true,
+      );
     }
     return payload;
   };
@@ -89,8 +155,9 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: Editor
         }
         onAuthenticated(payload.user);
       } else if (mode === "register") {
-        await requestAuth("/api/auth/register", { displayName, email, password });
+        const payload = await requestAuth("/api/auth/register", { displayName, email, password });
         setMode("register-code");
+        startResendCooldown(payload.retryAfterSeconds);
         setNotice(`验证码已发送至 ${email.trim().toLowerCase()}`);
       } else if (mode === "register-code") {
         const payload = await requestAuth("/api/auth/verify-email", { code, email });
@@ -99,9 +166,10 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: Editor
         }
         onAuthenticated(payload.user);
       } else if (mode === "forgot") {
-        await requestAuth("/api/auth/password/forgot", { email });
+        const payload = await requestAuth("/api/auth/password/forgot", { email });
         setMode("reset-code");
-        setNotice("如果账号存在，验证码已发送");
+        startResendCooldown(payload.retryAfterSeconds);
+        setNotice(`验证码已发送至 ${email.trim().toLowerCase()}`);
       } else {
         const payload = await requestAuth("/api/auth/password/reset", { code, email, password });
         if (!payload.user) {
@@ -110,6 +178,14 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: Editor
         onAuthenticated(payload.user);
       }
     } catch (submitError) {
+      if (submitError instanceof AuthRequestError && submitError.retryAfterSeconds) {
+        if (submitError.codeAvailable && mode === "register") {
+          setMode("register-code");
+        } else if (submitError.codeAvailable && mode === "forgot") {
+          setMode("reset-code");
+        }
+        startResendCooldown(submitError.retryAfterSeconds);
+      }
       setError(submitError instanceof Error ? submitError.message : "认证请求失败");
     } finally {
       setIsSubmitting(false);
@@ -121,13 +197,18 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: Editor
     setIsSubmitting(true);
     try {
       if (mode === "register-code") {
-        await requestAuth("/api/auth/register", { displayName, email, password });
+        const payload = await requestAuth("/api/auth/register", { displayName, email, password });
+        startResendCooldown(payload.retryAfterSeconds);
         setNotice(`新验证码已发送至 ${email.trim().toLowerCase()}`);
       } else if (mode === "reset-code") {
-        await requestAuth("/api/auth/password/forgot", { email });
-        setNotice("如果账号存在，新验证码已发送");
+        const payload = await requestAuth("/api/auth/password/forgot", { email });
+        startResendCooldown(payload.retryAfterSeconds);
+        setNotice(`新验证码已发送至 ${email.trim().toLowerCase()}`);
       }
     } catch (resendError) {
+      if (resendError instanceof AuthRequestError && resendError.retryAfterSeconds) {
+        startResendCooldown(resendError.retryAfterSeconds);
+      }
       setError(resendError instanceof Error ? resendError.message : "无法重新发送验证码");
     } finally {
       setIsSubmitting(false);
@@ -272,8 +353,8 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: Editor
           </Button>
 
           {isCodeMode ? (
-            <Button className="h-9" disabled={isSubmitting} onClick={handleResend} type="button" variant="ghost">
-              重新发送验证码
+            <Button className="h-9" disabled={isSubmitting || resendSeconds > 0} onClick={handleResend} type="button" variant="ghost">
+              {resendSeconds > 0 ? `重新发送（${resendSeconds}s）` : "重新发送验证码"}
             </Button>
           ) : null}
 

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import type { PostgresAuthStore } from "../../../../server/postgresAuthStore";
 import { parseAuthJson } from "../authRequest";
-import { enforceAuthRateLimit, type RouteAuthSecurity } from "../authSecurity";
+import { authErrorResponse } from "../authErrorResponse";
+import { enforceAuthRateLimit, recordAuthAudit, type RouteAuthSecurity } from "../authSecurity";
 import {
   getSessionCookieOptions,
   getSessionToken,
@@ -37,16 +38,14 @@ export function createSessionRouteHandlers(authStore: PostgresAuthStore, securit
           password: typeof payload.password === "string" ? payload.password : "",
         });
         await security.reset(request, "login", email);
-        await security.audit(request, "password-login", true, session.user.id);
+        await recordAuthAudit(security, request, "password-login", true, session.user.id);
         const response = NextResponse.json({ mode: "database", user: session.user });
         response.cookies.set(SESSION_COOKIE_NAME, session.token, getSessionCookieOptions(session.expiresAt));
         return response;
       } catch (error) {
-        if (error instanceof Error && error.message === "邮箱或密码错误") {
-          await security.audit(request, "password-login", false, null);
-          return NextResponse.json({ error: "邮箱或密码错误" }, { status: 401 });
-        }
-        throw error;
+        await recordAuthAudit(security, request, "password-login", false, null);
+        return authErrorResponse(error)
+          ?? NextResponse.json({ error: "登录服务暂时不可用，请稍后重试" }, { status: 503 });
       }
     },
 

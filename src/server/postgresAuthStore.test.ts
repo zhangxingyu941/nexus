@@ -1,6 +1,6 @@
 import { newDb } from "pg-mem";
 import { createHash } from "node:crypto";
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { migrateDatabase } from "./database/migrations";
 import { hashAuthCode } from "./authTokens";
@@ -160,6 +160,54 @@ describe("PostgresAuthStore", () => {
     expect(JSON.stringify(code.rows)).not.toContain("123456");
   });
 
+  it("upgrades a credentialless legacy account without replacing its workspace", async () => {
+    const legacySession = await authStore.createSession({
+      displayName: "旧账号",
+      email: "legacy@example.com",
+    });
+    const membershipBefore = await pool.query(
+      "SELECT workspace_id, role FROM workspace_members WHERE user_id = $1",
+      [legacySession.user.id],
+    );
+
+    const registration = await authStore.register({
+      displayName: "新姓名",
+      email: "LEGACY@example.com ",
+      password: "replacement secure password",
+    });
+
+    expect(registration).toEqual({
+      code: "123456",
+      user: {
+        displayName: "新姓名",
+        email: "legacy@example.com",
+        id: legacySession.user.id,
+      },
+    });
+    const storedUser = await pool.query(
+      "SELECT display_name, password_hash, email_verified_at FROM app_users WHERE id = $1",
+      [legacySession.user.id],
+    );
+    expect(storedUser.rows).toEqual([{
+      display_name: "新姓名",
+      email_verified_at: null,
+      password_hash: "hashed:replacement secure password",
+    }]);
+    const membershipAfter = await pool.query(
+      "SELECT workspace_id, role FROM workspace_members WHERE user_id = $1",
+      [legacySession.user.id],
+    );
+    expect(membershipAfter.rows).toEqual(membershipBefore.rows);
+    await expect(authStore.loginWithPassword({
+      email: legacySession.user.email,
+      password: "replacement secure password",
+    })).rejects.toThrow("邮箱尚未验证，请先输入邮件中的验证码");
+    await expect(authStore.verifyEmail({
+      code: registration.code,
+      email: legacySession.user.email,
+    })).resolves.toMatchObject({ user: { id: legacySession.user.id } });
+  });
+
   it("resends only the latest verification code for the same unverified credentials", async () => {
     await authStore.register({
       displayName: "林夏",
@@ -179,7 +227,7 @@ describe("PostgresAuthStore", () => {
     await expect(authStore.verifyEmail({
       code: "123456",
       email: "linxia@example.com",
-    })).rejects.toThrow("验证码无效或已过期");
+    })).rejects.toThrow("邮箱验证码错误，请重新输入");
     await expect(authStore.verifyEmail({
       code: "654321",
       email: "linxia@example.com",
@@ -224,6 +272,34 @@ describe("PostgresAuthStore", () => {
     })).resolves.toMatchObject({ code: "654321" });
   });
 
+  it("maps a concurrent initial registration to the resend cooldown", async () => {
+    const registration = {
+      displayName: "林夏",
+      email: "linxia@example.com",
+      password: "correct horse battery staple",
+    };
+    const results = await Promise.allSettled([
+      authStore.register(registration),
+      authStore.register(registration),
+    ]);
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    expect(results.find((result) => result.status === "rejected")).toMatchObject({
+      reason: {
+        message: "请在 60 秒后重新发送验证码",
+        retryAfterSeconds: 60,
+      },
+    });
+    const users = await pool.query("SELECT id FROM app_users WHERE email = $1", [registration.email]);
+    const codes = await pool.query(
+      "SELECT token_hash FROM auth_tokens WHERE user_id = $1 AND purpose = 'verify-email'",
+      ["user-auth-test"],
+    );
+    expect(users.rows).toHaveLength(1);
+    expect(codes.rows).toHaveLength(1);
+  });
+
   it("rejects duplicate registration with different credentials", async () => {
     await authStore.register({
       displayName: "林夏",
@@ -235,10 +311,93 @@ describe("PostgresAuthStore", () => {
       displayName: "冒用者",
       email: "LINXIA@example.com",
       password: "another secure password",
-    })).rejects.toThrow("无法创建账号");
+    })).rejects.toThrow("该邮箱存在未完成的注册，当前密码与首次注册密码不一致；请使用首次密码或找回密码");
 
     const result = await pool.query("SELECT display_name FROM app_users WHERE email = $1", ["linxia@example.com"]);
     expect(result.rows).toEqual([{ display_name: "林夏" }]);
+  });
+
+  it("explains why an existing verified account cannot register again", async () => {
+    await authStore.register({
+      displayName: "林夏",
+      email: "linxia@example.com",
+      password: "correct horse battery staple",
+    });
+    await authStore.verifyEmail({ code: "123456", email: "linxia@example.com" });
+
+    await expect(authStore.register({
+      displayName: "林夏",
+      email: "linxia@example.com",
+      password: "correct horse battery staple",
+    })).rejects.toThrow("该邮箱已注册，请直接登录或使用找回密码");
+  });
+
+  it("explains invalid login fields and account states", async () => {
+    await expect(authStore.loginWithPassword({
+      email: "invalid-email",
+      password: "correct horse battery staple",
+    })).rejects.toThrow("请输入有效的邮箱地址");
+    await expect(authStore.loginWithPassword({
+      email: "missing@example.com",
+      password: "correct horse battery staple",
+    })).rejects.toThrow("该邮箱尚未注册，请先创建账号");
+
+    await authStore.createSession({
+      displayName: "旧账号",
+      email: "legacy@example.com",
+    });
+    await expect(authStore.loginWithPassword({
+      email: "legacy@example.com",
+      password: "correct horse battery staple",
+    })).rejects.toThrow("该账号尚未设置密码，请使用找回密码设置密码");
+  });
+
+  it("explains verification-code format, request, content, and expiry errors", async () => {
+    await expect(authStore.verifyEmail({
+      code: "12ab",
+      email: "missing@example.com",
+    })).rejects.toThrow("验证码必须是 6 位数字");
+    await expect(authStore.verifyEmail({
+      code: "123456",
+      email: "missing@example.com",
+    })).rejects.toThrow("该邮箱尚未注册，请先创建账号");
+
+    await authStore.register({
+      displayName: "林夏",
+      email: "linxia@example.com",
+      password: "correct horse battery staple",
+    });
+    await expect(authStore.verifyEmail({
+      code: "999999",
+      email: "linxia@example.com",
+    })).rejects.toThrow("邮箱验证码错误，请重新输入");
+
+    now += 10 * 60 * 1000;
+    await expect(authStore.verifyEmail({
+      code: "123456",
+      email: "linxia@example.com",
+    })).rejects.toThrow("邮箱验证码已过期，请重新发送");
+  });
+
+  it("locks the user row before the verification token when consuming a code", async () => {
+    await authStore.register({
+      displayName: "林夏",
+      email: "linxia@example.com",
+      password: "correct horse battery staple",
+    });
+    const client = await pool.connect();
+    const querySpy = vi.spyOn(client, "query");
+    const promisePool = pool as unknown as { connect(): Promise<PoolClient> };
+    vi.spyOn(promisePool, "connect").mockResolvedValueOnce(client);
+
+    await authStore.verifyEmail({ code: "123456", email: "linxia@example.com" });
+
+    const statements = querySpy.mock.calls.map(([statement]) => String(statement));
+    const userLockIndex = statements.findIndex((statement) =>
+      statement.includes("FROM app_users WHERE email") && statement.includes("FOR UPDATE"));
+    const tokenLockIndex = statements.findIndex((statement) => statement.includes("FROM auth_tokens"));
+    expect(userLockIndex).toBeGreaterThanOrEqual(0);
+    expect(tokenLockIndex).toBeGreaterThan(userLockIndex);
   });
 
   it("verifies email once and then permits password login", async () => {
@@ -251,7 +410,7 @@ describe("PostgresAuthStore", () => {
     await expect(authStore.loginWithPassword({
       email: "linxia@example.com",
       password: "correct horse battery staple",
-    })).rejects.toThrow("邮箱或密码错误");
+    })).rejects.toThrow("邮箱尚未验证，请先输入邮件中的验证码");
 
     await expect(authStore.verifyEmail({
       code: "123456",
@@ -263,7 +422,7 @@ describe("PostgresAuthStore", () => {
     await expect(authStore.verifyEmail({
       code: "123456",
       email: "linxia@example.com",
-    })).rejects.toThrow("验证码无效或已过期");
+    })).rejects.toThrow("尚未发送邮箱验证码，请先重新发送");
     await expect(authStore.loginWithPassword({
       email: "LINXIA@example.com ",
       password: "correct horse battery staple",
@@ -274,7 +433,7 @@ describe("PostgresAuthStore", () => {
     await expect(authStore.loginWithPassword({
       email: "linxia@example.com",
       password: "wrong password",
-    })).rejects.toThrow("邮箱或密码错误");
+    })).rejects.toThrow("密码错误，请重新输入");
   });
 
   it("lets a legacy user reset a password once and revokes previous sessions", async () => {
@@ -297,7 +456,7 @@ describe("PostgresAuthStore", () => {
       code: "123456",
       email: "legacy@example.com",
       password: "another replacement password",
-    })).rejects.toThrow("验证码无效或已过期");
+    })).rejects.toThrow("尚未发送密码重置验证码，请先重新发送");
 
     const user = await pool.query(
       "SELECT password_hash, email_verified_at FROM app_users WHERE id = $1",

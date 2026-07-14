@@ -8,7 +8,7 @@ import {
   GITHUB_OAUTH_STATE_COOKIE,
   GITHUB_OAUTH_VERIFIER_COOKIE,
 } from "../oauthCookies";
-import { enforceAuthRateLimit, type RouteAuthSecurity } from "../../../authSecurity";
+import { enforceAuthRateLimit, recordAuthAudit, type RouteAuthSecurity } from "../../../authSecurity";
 
 interface GitHubOAuthCallbackService {
   exchange(code: string, codeVerifier: string): Promise<GitHubOAuthProfile>;
@@ -39,7 +39,7 @@ export function createGitHubCallbackRouteHandler({
     }
 
     if (!code || !codeVerifier || !safeEquals(state, expectedState)) {
-      await security.audit(request, "github-oauth", false, null);
+      await recordAuthAudit(security, request, "github-oauth", false, null);
       return clearOAuthCookies(NextResponse.redirect(new URL("/?oauth=failed", url.origin)));
     }
 
@@ -47,12 +47,12 @@ export function createGitHubCallbackRouteHandler({
       const profile = await oauth.exchange(code, codeVerifier);
       const session = await authStore.loginWithOAuth(profile);
       await security.reset(request, "github-callback", state);
-      await security.audit(request, "github-oauth", true, session.user.id);
+      await recordAuthAudit(security, request, "github-oauth", true, session.user.id);
       const response = NextResponse.redirect(new URL("/", url.origin));
       response.cookies.set(SESSION_COOKIE_NAME, session.token, getSessionCookieOptions(session.expiresAt));
       return clearOAuthCookies(response);
     } catch {
-      await security.audit(request, "github-oauth", false, null);
+      await recordAuthAudit(security, request, "github-oauth", false, null);
       return clearOAuthCookies(NextResponse.redirect(new URL("/?oauth=failed", url.origin)));
     }
   };
