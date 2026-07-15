@@ -12,3 +12,4 @@ vitest.config.d.ts
 server/data/*.json
 server/data/uploads/
 .secrets/
+.superpowers/
