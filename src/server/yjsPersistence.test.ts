@@ -1,8 +1,8 @@
 // @vitest-environment node
 import { createRequire } from "node:module";
-import { newDb } from "pg-mem";
 import type { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createPgMemPool } from "../test/pgMemDatabase";
 import { migrateDatabase } from "./database/migrations";
 import { PostgresYjsPersistence } from "./yjsPersistence";
 
@@ -13,9 +13,7 @@ describe("PostgresYjsPersistence", () => {
   let pool: Pool;
 
   beforeEach(async () => {
-    const memoryDatabase = newDb({ autoCreateForeignKeyIndices: true });
-    const adapter = memoryDatabase.adapters.createPg();
-    pool = new adapter.Pool() as Pool;
+    pool = createPgMemPool();
     await migrateDatabase(pool);
     await seedWorkspace(pool, "workspace-a", "owner-a", "owner-a@example.com");
     await seedWorkspace(pool, "workspace-b", "owner-b", "owner-b@example.com");

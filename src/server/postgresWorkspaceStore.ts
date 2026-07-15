@@ -297,6 +297,14 @@ export class PostgresWorkspaceStore {
         throw new WorkspacePermissionError();
       }
 
+      const documentPreferencesResult = await client.query(
+        `SELECT user_id, active_document_id, updated_at
+         FROM workspace_document_preferences
+         WHERE workspace_id = $1
+         FOR UPDATE`,
+        [access.workspaceId],
+      );
+
       await client.query(
         "UPDATE editor_workspaces SET updated_at = $1 WHERE id = $2",
         [workspace.updatedAt, access.workspaceId],
@@ -339,15 +347,43 @@ export class PostgresWorkspaceStore {
         );
       }
 
-      await client.query(
-        `INSERT INTO workspace_document_preferences
-           (user_id, workspace_id, active_document_id, updated_at)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (user_id, workspace_id) DO UPDATE
-         SET active_document_id = EXCLUDED.active_document_id,
-             updated_at = EXCLUDED.updated_at`,
-        [userId, access.workspaceId, workspace.activeDocumentId, workspace.updatedAt],
+      const documentIds = new Set(workspace.documents.map((document) => document.id));
+      const savedPreferences = new Map(
+        documentPreferencesResult.rows.map((row) => [String(row.user_id), row]),
       );
+      savedPreferences.set(userId, {
+        active_document_id: workspace.activeDocumentId,
+        updated_at: workspace.updatedAt,
+        user_id: userId,
+      });
+
+      for (const [preferenceUserId, preference] of savedPreferences) {
+        const previousActiveDocumentId = preference.active_document_id === null
+          ? null
+          : String(preference.active_document_id);
+        const activeDocumentId = preferenceUserId === userId
+          ? workspace.activeDocumentId
+          : previousActiveDocumentId && documentIds.has(previousActiveDocumentId)
+            ? previousActiveDocumentId
+            : null;
+
+        await client.query(
+          `INSERT INTO workspace_document_preferences
+             (user_id, workspace_id, active_document_id, updated_at)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (user_id, workspace_id) DO UPDATE
+           SET active_document_id = EXCLUDED.active_document_id,
+               updated_at = EXCLUDED.updated_at`,
+          [
+            preferenceUserId,
+            access.workspaceId,
+            activeDocumentId,
+            preferenceUserId === userId
+              ? workspace.updatedAt
+              : Number(preference.updated_at),
+          ],
+        );
+      }
 
       await client.query("COMMIT");
       return workspace;

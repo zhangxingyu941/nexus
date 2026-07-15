@@ -1,8 +1,8 @@
 // @vitest-environment node
 import { createRequire } from "node:module";
-import { newDb } from "pg-mem";
 import type { Pool } from "pg";
 import { afterEach, describe, expect, it } from "vitest";
+import { createPgMemPool } from "../test/pgMemDatabase";
 import {
   COLLABORATION_REMOTE_ORIGIN,
   RedisCollaborationPubSub,
@@ -66,9 +66,7 @@ describe("RedisCollaborationPubSub", () => {
   });
 
   it("persists one logical update when another instance receives it from Redis", async () => {
-    const memoryDatabase = newDb({ autoCreateForeignKeyIndices: true });
-    const adapter = memoryDatabase.adapters.createPg();
-    const pool = new adapter.Pool() as Pool;
+    const pool = createPgMemPool();
     resources.push({ close: () => pool.end() });
     await migrateDatabase(pool);
     await pool.query(

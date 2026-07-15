@@ -1,7 +1,7 @@
-import { newDb } from "pg-mem";
 import type { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createDefaultWorkspace, createWorkspaceDocument } from "../features/editor/model/workspaceOperations";
+import { createPgMemPool } from "../test/pgMemDatabase";
 import { migrateDatabase } from "./database/migrations";
 import {
   PostgresWorkspaceStore,
@@ -13,9 +13,7 @@ describe("PostgresWorkspaceStore", () => {
   let store: PostgresWorkspaceStore;
 
   beforeEach(async () => {
-    const memoryDatabase = newDb({ autoCreateForeignKeyIndices: true });
-    const adapter = memoryDatabase.adapters.createPg();
-    pool = new adapter.Pool() as Pool;
+    pool = createPgMemPool();
     await migrateDatabase(pool);
     store = new PostgresWorkspaceStore(pool, {
       idFactory: () => "workspace-test",
@@ -164,6 +162,57 @@ describe("PostgresWorkspaceStore", () => {
       ["editor-1"],
     );
     expect(selectedAfter.rows).toEqual(selectedBefore.rows);
+  });
+
+  it("preserves another member's active document until the document is removed", async () => {
+    await seedUser(pool, "owner-1", "owner@example.com", "Owner");
+    await seedUser(pool, "editor-1", "editor@example.com", "Editor");
+    await store.ensurePersonalWorkspace("owner-1", "Shared workspace");
+    const workspace = createWorkspaceDocument(
+      createDefaultWorkspace(1000),
+      2000,
+      "Second document",
+    );
+    await store.saveWorkspace("owner-1", workspace);
+    await store.addMember("owner-1", "editor@example.com", "editor");
+    const memberActiveDocumentId = workspace.documents[1].id;
+    await pool.query(
+      `UPDATE workspace_document_preferences
+       SET active_document_id = $1
+       WHERE user_id = $2 AND workspace_id = $3`,
+      [memberActiveDocumentId, "editor-1", "workspace-test"],
+    );
+
+    await store.saveWorkspace("owner-1", {
+      ...workspace,
+      updatedAt: 3000,
+    });
+
+    const memberPreference = await pool.query(
+      `SELECT active_document_id
+       FROM workspace_document_preferences
+       WHERE user_id = $1 AND workspace_id = $2`,
+      ["editor-1", "workspace-test"],
+    );
+    expect(memberPreference.rows).toEqual([{
+      active_document_id: memberActiveDocumentId,
+    }]);
+
+    await store.saveWorkspace("owner-1", {
+      activeDocumentId: workspace.documents[0].id,
+      documents: [workspace.documents[0]],
+      updatedAt: 4000,
+    });
+
+    const preferenceAfterRemoval = await pool.query(
+      `SELECT active_document_id
+       FROM workspace_document_preferences
+       WHERE user_id = $1 AND workspace_id = $2`,
+      ["editor-1", "workspace-test"],
+    );
+    expect(preferenceAfterRemoval.rows).toEqual([{
+      active_document_id: null,
+    }]);
   });
 
   it("resolves document-specific workspace access for collaboration", async () => {

@@ -1,7 +1,7 @@
-import { newDb } from "pg-mem";
 import { createHash } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createPgMemPool } from "../test/pgMemDatabase";
 import { migrateDatabase } from "./database/migrations";
 import { hashAuthCode } from "./authTokens";
 import type { PasswordHasher } from "./passwordHasher";
@@ -19,9 +19,7 @@ describe("PostgresAuthStore", () => {
     let authCodeSequence = 0;
     const authCodes = ["123456", "654321", "222222", "333333"];
     let sessionTokenSequence = 0;
-    const memoryDatabase = newDb({ autoCreateForeignKeyIndices: true });
-    const adapter = memoryDatabase.adapters.createPg();
-    pool = new adapter.Pool() as Pool;
+    pool = createPgMemPool();
     await migrateDatabase(pool);
     const workspaceStore = new PostgresWorkspaceStore(pool, {
       idFactory: () => "workspace-auth-test",

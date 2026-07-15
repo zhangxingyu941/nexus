@@ -1,6 +1,6 @@
-import { newDb } from "pg-mem";
 import type { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createPgMemPool } from "@/test/pgMemDatabase";
 import { AuthCredentialServiceUnavailableError } from "../../../../server/authCredentialReplayStore";
 import { AuthCredentialError } from "../../../../server/authCredentialService";
 import { migrateDatabase } from "../../../../server/database/migrations";
@@ -43,9 +43,7 @@ describe("database session route", () => {
   };
 
   beforeEach(async () => {
-    const memoryDatabase = newDb({ autoCreateForeignKeyIndices: true });
-    const adapter = memoryDatabase.adapters.createPg();
-    pool = new adapter.Pool() as Pool;
+    pool = createPgMemPool();
     await migrateDatabase(pool);
     const workspaceStore = new PostgresWorkspaceStore(pool, { idFactory: () => "workspace-session-route" });
     const passwordHasher: PasswordHasher = {

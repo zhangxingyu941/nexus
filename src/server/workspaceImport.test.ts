@@ -1,10 +1,10 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { newDb } from "pg-mem";
 import type { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createDefaultWorkspace } from "../features/editor/model/workspaceOperations";
+import { createPgMemPool } from "../test/pgMemDatabase";
 import { migrateDatabase } from "./database/migrations";
 import { PostgresWorkspaceStore } from "./postgresWorkspaceStore";
 import { importWorkspaceFromFile } from "./workspaceImport";
@@ -14,9 +14,7 @@ describe("importWorkspaceFromFile", () => {
   let tempDir: string;
 
   beforeEach(async () => {
-    const memoryDatabase = newDb({ autoCreateForeignKeyIndices: true });
-    const adapter = memoryDatabase.adapters.createPg();
-    pool = new adapter.Pool() as Pool;
+    pool = createPgMemPool();
     await migrateDatabase(pool);
     tempDir = await mkdtemp(join(tmpdir(), "workspace-import-"));
   });

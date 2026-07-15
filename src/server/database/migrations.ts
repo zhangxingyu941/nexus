@@ -247,19 +247,6 @@ const MULTI_WORKSPACE_FOUNDATION_SCHEMA = [
    ON workspace_document_preferences(workspace_id, user_id)`,
 ];
 
-const PG_MEM_MULTI_WORKSPACE_FOUNDATION_SCHEMA = [
-  `CREATE TABLE workspace_document_preferences (
-    user_id TEXT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
-    workspace_id TEXT NOT NULL REFERENCES editor_workspaces(id) ON DELETE CASCADE,
-    active_document_id TEXT,
-    updated_at BIGINT NOT NULL,
-    PRIMARY KEY (user_id, workspace_id),
-    FOREIGN KEY (workspace_id, user_id)
-      REFERENCES workspace_members(workspace_id, user_id) ON DELETE CASCADE
-  )`,
-  ...MULTI_WORKSPACE_FOUNDATION_SCHEMA.slice(1),
-];
-
 export async function migrateDatabase(pool: Pool) {
   const client = await pool.connect();
 
@@ -351,12 +338,7 @@ export async function migrateDatabase(pool: Pool) {
     );
 
     if (multiWorkspaceFoundationResult.rows.length === 0) {
-      // pg-mem cannot parse PostgreSQL's column-specific SET NULL syntax.
-      const schema = client.constructor.name === "MemPg"
-        ? PG_MEM_MULTI_WORKSPACE_FOUNDATION_SCHEMA
-        : MULTI_WORKSPACE_FOUNDATION_SCHEMA;
-
-      for (const statement of schema) {
+      for (const statement of MULTI_WORKSPACE_FOUNDATION_SCHEMA) {
         await client.query(statement);
       }
 

@@ -109,7 +109,7 @@ export function cleanupAcceptanceData() {
     "-d",
     "notion_block_editor",
     "-c",
-    "DELETE FROM auth_audit_events WHERE user_id IN (SELECT id FROM app_users WHERE email LIKE 'e2e-%@example.com' OR email LIKE 'collab-%@example.com'); DELETE FROM editor_workspaces WHERE owner_id IN (SELECT id FROM app_users WHERE email LIKE 'e2e-%@example.com' OR email LIKE 'collab-%@example.com'); DELETE FROM app_users WHERE email LIKE 'e2e-%@example.com' OR email LIKE 'collab-%@example.com';",
+    "DELETE FROM auth_audit_events WHERE user_id IN (SELECT id FROM app_users WHERE email LIKE 'e2e-%@example.com' OR email LIKE 'collab-%@example.com'); DELETE FROM editor_workspaces WHERE id IN (SELECT members.workspace_id FROM workspace_members members INNER JOIN app_users users ON users.id = members.user_id WHERE members.role = 'owner' AND (users.email LIKE 'e2e-%@example.com' OR users.email LIKE 'collab-%@example.com')); DELETE FROM app_users WHERE email LIKE 'e2e-%@example.com' OR email LIKE 'collab-%@example.com';",
   ]);
   dockerCompose([
     "exec",

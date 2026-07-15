@@ -1,6 +1,6 @@
-import { newDb } from "pg-mem";
 import type { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createPgMemPool } from "@/test/pgMemDatabase";
 import { migrateDatabase } from "../../../../server/database/migrations";
 import { PostgresAuthStore } from "../../../../server/postgresAuthStore";
 import { PostgresWorkspaceStore } from "../../../../server/postgresWorkspaceStore";
@@ -13,9 +13,7 @@ describe("workspace member route", () => {
   let handlers: ReturnType<typeof createWorkspaceMemberRouteHandlers>;
 
   beforeEach(async () => {
-    const memoryDatabase = newDb({ autoCreateForeignKeyIndices: true });
-    const adapter = memoryDatabase.adapters.createPg();
-    pool = new adapter.Pool() as Pool;
+    pool = createPgMemPool();
     await migrateDatabase(pool);
     workspaceStore = new PostgresWorkspaceStore(pool);
     authStore = new PostgresAuthStore(pool, workspaceStore);

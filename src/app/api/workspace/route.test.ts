@@ -1,9 +1,9 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { newDb } from "pg-mem";
 import type { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createPgMemPool } from "@/test/pgMemDatabase";
 import { createDefaultWorkspace, createWorkspaceDocument } from "../../../features/editor/model/workspaceOperations";
 import { migrateDatabase } from "../../../server/database/migrations";
 import { PostgresAuthStore } from "../../../server/postgresAuthStore";
@@ -72,9 +72,7 @@ describe("database workspace route", () => {
   let handlers: ReturnType<typeof createWorkspaceRouteHandlers>;
 
   beforeEach(async () => {
-    const memoryDatabase = newDb({ autoCreateForeignKeyIndices: true });
-    const adapter = memoryDatabase.adapters.createPg();
-    pool = new adapter.Pool() as Pool;
+    pool = createPgMemPool();
     await migrateDatabase(pool);
     workspaceStore = new PostgresWorkspaceStore(pool);
     authStore = new PostgresAuthStore(pool, workspaceStore);

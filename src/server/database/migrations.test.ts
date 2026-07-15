@@ -1,19 +1,18 @@
-import { newDb } from "pg-mem";
 import type { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createPgMemTestDatabase } from "../../test/pgMemDatabase";
 import { migrateDatabase } from "./migrations";
 
 describe("authentication database migration", () => {
   let pool: Pool;
+  let translatedStatements: string[];
 
   beforeEach(() => {
-    const memoryDatabase = newDb({
-      autoCreateForeignKeyIndices: true,
+    const database = createPgMemTestDatabase({
       noAstCoverageCheck: true,
     });
-    const adapter = memoryDatabase.adapters.createPg();
-    pool = new adapter.Pool() as Pool;
-    installPgMemColumnSpecificSetNullEmulation(pool);
+    pool = database.pool;
+    translatedStatements = database.translatedStatements;
   });
 
   afterEach(async () => {
@@ -129,6 +128,10 @@ describe("authentication database migration", () => {
     expect(workspaceColumns).not.toContain("owner_id");
     expect(workspaceColumns).not.toContain("active_document_id");
     expect(workspacePreferenceColumns).toContain("selected_workspace_id");
+    expect(translatedStatements).toHaveLength(1);
+    expect(translatedStatements[0]).toContain(
+      "ON DELETE SET NULL (active_document_id)",
+    );
     expect(documentPreferences.rows).toEqual([
       {
         active_document_id: "document-1",
@@ -265,24 +268,4 @@ async function columnNames(pool: Pool, tableName: string) {
     [tableName],
   );
   return result.rows.map((row) => String(row.column_name));
-}
-
-function installPgMemColumnSpecificSetNullEmulation(pool: Pool) {
-  const query = pool.query.bind(pool) as (
-    text: string,
-    values?: unknown[],
-  ) => Promise<unknown>;
-
-  pool.query = (async (text: string, values?: unknown[]) => {
-    if (text.trimStart().startsWith("DELETE FROM editor_documents")) {
-      await query(
-        `UPDATE workspace_document_preferences
-         SET active_document_id = NULL
-         WHERE workspace_id = $1 AND active_document_id = $2`,
-        values,
-      );
-    }
-
-    return query(text, values);
-  }) as Pool["query"];
 }

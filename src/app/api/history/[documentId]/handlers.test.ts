@@ -1,6 +1,6 @@
-import { newDb } from "pg-mem";
 import type { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createPgMemPool } from "@/test/pgMemDatabase";
 import { createDefaultWorkspace } from "../../../../features/editor/model/workspaceOperations";
 import { migrateDatabase } from "../../../../server/database/migrations";
 import { PostgresAuthStore } from "../../../../server/postgresAuthStore";
@@ -14,9 +14,7 @@ describe("document history route", () => {
   let handlers: ReturnType<typeof createDocumentHistoryRouteHandlers>;
 
   beforeEach(async () => {
-    const memoryDatabase = newDb({ autoCreateForeignKeyIndices: true });
-    const adapter = memoryDatabase.adapters.createPg();
-    pool = new adapter.Pool() as Pool;
+    pool = createPgMemPool();
     await migrateDatabase(pool);
     workspaceStore = new PostgresWorkspaceStore(pool, { now: () => 3000 });
     authStore = new PostgresAuthStore(pool, workspaceStore, {
