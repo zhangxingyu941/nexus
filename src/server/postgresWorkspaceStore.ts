@@ -7,8 +7,16 @@ import type {
   EditorWorkspace,
 } from "../features/editor/model/block";
 import { createDefaultWorkspace } from "../features/editor/model/workspaceOperations";
+import {
+  normalizeWorkspaceName,
+  sortWorkspaceSummaries,
+  type WorkspaceCatalog,
+  type WorkspaceRole as SharedWorkspaceRole,
+  type WorkspaceSnapshot,
+  type WorkspaceSummary,
+} from "../shared/workspace";
 
-export type WorkspaceRole = "owner" | "editor" | "viewer";
+export type WorkspaceRole = SharedWorkspaceRole;
 export type AssignableWorkspaceRole = Exclude<WorkspaceRole, "owner">;
 
 export interface WorkspaceMember {
@@ -46,6 +54,13 @@ export class WorkspacePermissionError extends Error {
   constructor(message = "没有修改此工作区的权限") {
     super(message);
     this.name = "WorkspacePermissionError";
+  }
+}
+
+export class WorkspaceNotFoundError extends Error {
+  constructor() {
+    super("工作区不存在");
+    this.name = "WorkspaceNotFoundError";
   }
 }
 
@@ -125,12 +140,163 @@ export class PostgresWorkspaceStore {
     }
   }
 
-  async loadWorkspace(userId: string): Promise<LoadedWorkspace | null> {
-    const access = await this.findAccess(this.pool, userId);
+  async listWorkspaces(userId: string): Promise<WorkspaceCatalog> {
+    const result = await this.pool.query(
+      `SELECT workspaces.id, workspaces.name, workspaces.created_at, workspaces.updated_at,
+              members.role, preferences.selected_workspace_id
+       FROM workspace_members members
+       INNER JOIN editor_workspaces workspaces ON workspaces.id = members.workspace_id
+       LEFT JOIN workspace_preferences preferences ON preferences.user_id = members.user_id
+       WHERE members.user_id = $1
+       ORDER BY workspaces.created_at ASC, workspaces.id ASC`,
+      [userId],
+    );
+
+    if (result.rows.length === 0) {
+      throw new WorkspaceNotFoundError();
+    }
+
+    const selectedWorkspaceId = result.rows.find((row) =>
+      row.selected_workspace_id === row.id)?.id;
+    const currentWorkspaceId = selectedWorkspaceId
+      ? String(selectedWorkspaceId)
+      : String(result.rows[0].id);
+
+    if (!selectedWorkspaceId) {
+      await this.pool.query(
+        `INSERT INTO workspace_preferences (user_id, selected_workspace_id)
+         VALUES ($1, $2)
+         ON CONFLICT (user_id) DO UPDATE
+         SET selected_workspace_id = EXCLUDED.selected_workspace_id`,
+        [userId, currentWorkspaceId],
+      );
+    }
+
+    return {
+      currentWorkspaceId,
+      workspaces: sortWorkspaceSummaries(
+        result.rows.map((row) => toWorkspaceSummary(row)),
+        currentWorkspaceId,
+      ),
+    };
+  }
+
+  async createWorkspace(userId: string, nameInput: string): Promise<WorkspaceSnapshot> {
+    const name = normalizeWorkspaceName(nameInput);
+    const client = await this.pool.connect();
+    const workspaceId = this.idFactory();
+    const now = this.now();
+
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        `INSERT INTO editor_workspaces (id, name, updated_at, created_at)
+         VALUES ($1, $2, $3, $3)`,
+        [workspaceId, name, now],
+      );
+      await client.query(
+        `INSERT INTO workspace_members (workspace_id, user_id, role, created_at)
+         VALUES ($1, $2, 'owner', $3)`,
+        [workspaceId, userId, now],
+      );
+      await this.ensureDefaultDocument(client, userId, workspaceId);
+      await client.query(
+        `INSERT INTO workspace_preferences (user_id, selected_workspace_id)
+         VALUES ($1, $2)
+         ON CONFLICT (user_id) DO UPDATE
+         SET selected_workspace_id = EXCLUDED.selected_workspace_id`,
+        [userId, workspaceId],
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    return this.loadWorkspace(userId, workspaceId);
+  }
+
+  async selectWorkspace(userId: string, workspaceId: string): Promise<WorkspaceSnapshot> {
+    const client = await this.pool.connect();
+
+    try {
+      await client.query("BEGIN");
+      const access = await this.findAccess(client, userId, workspaceId);
+      if (!access) {
+        throw new WorkspaceNotFoundError();
+      }
+      await this.ensureDefaultDocument(client, userId, workspaceId);
+      await client.query(
+        `INSERT INTO workspace_preferences (user_id, selected_workspace_id)
+         VALUES ($1, $2)
+         ON CONFLICT (user_id) DO UPDATE
+         SET selected_workspace_id = EXCLUDED.selected_workspace_id`,
+        [userId, workspaceId],
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    return this.loadWorkspace(userId, workspaceId);
+  }
+
+  async renameWorkspace(
+    userId: string,
+    workspaceId: string,
+    nameInput: string,
+  ): Promise<WorkspaceSummary> {
+    const name = normalizeWorkspaceName(nameInput);
+    const client = await this.pool.connect();
+
+    try {
+      await client.query("BEGIN");
+      const access = await this.findAccess(client, userId, workspaceId);
+      if (!access) {
+        throw new WorkspaceNotFoundError();
+      }
+      if (access.role !== "owner") {
+        throw new WorkspacePermissionError("只有工作区所有者可以重命名");
+      }
+
+      const result = await client.query(
+        `UPDATE editor_workspaces
+         SET name = $1, updated_at = $2
+         WHERE id = $3
+         RETURNING id, name, created_at, updated_at`,
+        [name, this.now(), workspaceId],
+      );
+      await client.query("COMMIT");
+      return toWorkspaceSummary({ ...result.rows[0], role: access.role });
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async loadWorkspace(userId: string): Promise<LoadedWorkspace | null>;
+  async loadWorkspace(userId: string, workspaceId: string): Promise<WorkspaceSnapshot>;
+  async loadWorkspace(
+    userId: string,
+    workspaceId?: string,
+  ): Promise<LoadedWorkspace | WorkspaceSnapshot | null> {
+    const access = await this.findAccess(this.pool, userId, workspaceId);
 
     if (!access) {
+      if (workspaceId) {
+        throw new WorkspaceNotFoundError();
+      }
       return null;
     }
+
+    await this.ensureDefaultDocument(this.pool, userId, access.workspaceId);
 
     const workspaceResult = await this.pool.query(
       `SELECT document_preferences.active_document_id, workspaces.updated_at
@@ -275,24 +441,60 @@ export class PostgresWorkspaceStore {
       return document;
     });
 
+    const content: EditorWorkspace = {
+      activeDocumentId: String(workspaceRow.active_document_id),
+      documents,
+      updatedAt: Number(workspaceRow.updated_at),
+    };
+
+    if (workspaceId) {
+      const summaryResult = await this.pool.query(
+        `SELECT id, name, created_at, updated_at
+         FROM editor_workspaces
+         WHERE id = $1`,
+        [access.workspaceId],
+      );
+      return {
+        content,
+        summary: toWorkspaceSummary({
+          ...summaryResult.rows[0],
+          role: access.role,
+        }),
+      };
+    }
+
     return {
       role: access.role,
-      workspace: {
-        activeDocumentId: String(workspaceRow.active_document_id),
-        documents,
-        updatedAt: Number(workspaceRow.updated_at),
-      },
+      workspace: content,
       workspaceId: access.workspaceId,
     };
   }
 
-  async saveWorkspace(userId: string, workspace: EditorWorkspace) {
+  async saveWorkspace(userId: string, workspace: EditorWorkspace): Promise<EditorWorkspace>;
+  async saveWorkspace(
+    userId: string,
+    workspaceId: string,
+    workspace: EditorWorkspace,
+  ): Promise<EditorWorkspace>;
+  async saveWorkspace(
+    userId: string,
+    workspaceOrId: EditorWorkspace | string,
+    scopedWorkspace?: EditorWorkspace,
+  ): Promise<EditorWorkspace> {
+    const explicitWorkspaceId = typeof workspaceOrId === "string" ? workspaceOrId : undefined;
+    const workspace = typeof workspaceOrId === "string" ? scopedWorkspace : workspaceOrId;
+    if (!workspace) {
+      throw new Error("工作区数据不存在");
+    }
     const client = await this.pool.connect();
 
     try {
       await client.query("BEGIN");
-      const access = await this.findAccess(client, userId);
+      const access = await this.findAccess(client, userId, explicitWorkspaceId);
 
+      if (!access && explicitWorkspaceId) {
+        throw new WorkspaceNotFoundError();
+      }
       if (!access || access.role === "viewer") {
         throw new WorkspacePermissionError();
       }
@@ -471,14 +673,49 @@ export class PostgresWorkspaceStore {
     }));
   }
 
-  async getWorkspaceAccess(userId: string) {
-    return this.findAccess(this.pool, userId);
+  async getWorkspaceAccess(userId: string): Promise<WorkspaceAccess | null>;
+  async getWorkspaceAccess(userId: string, workspaceId: string): Promise<WorkspaceAccess | null>;
+  async getWorkspaceAccess(userId: string, workspaceId?: string) {
+    return this.findAccess(this.pool, userId, workspaceId);
   }
 
   async getDocumentAccess(
     userId: string,
     documentId: string,
+  ): Promise<WorkspaceAccess | null>;
+  async getDocumentAccess(
+    userId: string,
+    workspaceId: string,
+    documentId: string,
+  ): Promise<WorkspaceAccess | null>;
+  async getDocumentAccess(
+    userId: string,
+    workspaceOrDocumentId: string,
+    scopedDocumentId?: string,
   ): Promise<WorkspaceAccess | null> {
+    const workspaceId = scopedDocumentId ? workspaceOrDocumentId : undefined;
+    const documentId = scopedDocumentId ?? workspaceOrDocumentId;
+    if (workspaceId) {
+      const result = await this.pool.query(
+        `SELECT members.workspace_id, members.role
+         FROM workspace_members members
+         INNER JOIN editor_documents documents
+           ON documents.workspace_id = members.workspace_id
+         WHERE members.user_id = $1
+           AND members.workspace_id = $2
+           AND documents.id = $3
+         LIMIT 1`,
+        [userId, workspaceId, documentId],
+      );
+      const row = result.rows[0];
+      return row
+        ? {
+            role: row.role as WorkspaceRole,
+            workspaceId: String(row.workspace_id),
+          }
+        : null;
+    }
+
     const result = await this.pool.query(
       `SELECT members.workspace_id, members.role
        FROM workspace_preferences preferences
@@ -730,7 +967,25 @@ export class PostgresWorkspaceStore {
   private async findAccess(
     executor: Pick<Pool, "query"> | Pick<PoolClient, "query">,
     userId: string,
+    workspaceId?: string,
   ) {
+    if (workspaceId) {
+      const exactResult = await executor.query(
+        `SELECT workspace_id, role
+         FROM workspace_members
+         WHERE user_id = $1 AND workspace_id = $2
+         LIMIT 1`,
+        [userId, workspaceId],
+      );
+      const exactRow = exactResult.rows[0];
+      return exactRow
+        ? ({
+            role: exactRow.role as WorkspaceRole,
+            workspaceId: String(exactRow.workspace_id),
+          } satisfies WorkspaceAccess)
+        : null;
+    }
+
     const result = await executor.query(
       `SELECT members.workspace_id, members.role
        FROM workspace_members members
@@ -754,4 +1009,14 @@ export class PostgresWorkspaceStore {
         } satisfies WorkspaceAccess)
       : null;
   }
+}
+
+function toWorkspaceSummary(row: Record<string, unknown>): WorkspaceSummary {
+  return {
+    createdAt: Number(row.created_at),
+    id: String(row.id),
+    name: String(row.name),
+    role: row.role as WorkspaceRole,
+    updatedAt: Number(row.updated_at),
+  };
 }

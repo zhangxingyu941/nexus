@@ -5,6 +5,7 @@ import { createPgMemPool } from "../test/pgMemDatabase";
 import { migrateDatabase } from "./database/migrations";
 import {
   PostgresWorkspaceStore,
+  WorkspaceNotFoundError,
   WorkspacePermissionError,
 } from "./postgresWorkspaceStore";
 
@@ -44,6 +45,156 @@ describe("PostgresWorkspaceStore", () => {
     });
     expect(await countRows(pool, "editor_documents")).toBe(1);
     expect(await countRows(pool, "editor_blocks")).toBe(1);
+  });
+
+  it("lists every accessible workspace with the selected workspace first", async () => {
+    await seedUser(pool, "owner-1", "owner@example.com", "Owner");
+    await seedUser(pool, "owner-2", "second@example.com", "Second owner");
+    let workspaceSequence = 0;
+    const multiWorkspaceStore = new PostgresWorkspaceStore(pool, {
+      idFactory: () => `workspace-${++workspaceSequence}`,
+      now: () => 3000 + workspaceSequence,
+    });
+    await multiWorkspaceStore.ensurePersonalWorkspace("owner-1", "Owner workspace");
+    await multiWorkspaceStore.ensurePersonalWorkspace("owner-2", "Second workspace");
+    await multiWorkspaceStore.addMember("owner-2", "owner@example.com", "editor");
+
+    await expect(multiWorkspaceStore.listWorkspaces("owner-1")).resolves.toEqual({
+      currentWorkspaceId: "workspace-1",
+      workspaces: [
+        expect.objectContaining({ id: "workspace-1", name: "Owner workspace", role: "owner" }),
+        expect.objectContaining({ id: "workspace-2", name: "Second workspace", role: "editor" }),
+      ],
+    });
+  });
+
+  it("creates, selects, and renames explicitly scoped workspaces", async () => {
+    await seedUser(pool, "owner-1", "owner@example.com", "Owner");
+    await seedUser(pool, "editor-1", "editor@example.com", "Editor");
+    let workspaceSequence = 0;
+    const multiWorkspaceStore = new PostgresWorkspaceStore(pool, {
+      idFactory: () => `workspace-${++workspaceSequence}`,
+      now: () => 3000 + workspaceSequence,
+    });
+    await multiWorkspaceStore.ensurePersonalWorkspace("owner-1", "Owner workspace");
+    await multiWorkspaceStore.ensurePersonalWorkspace("editor-1", "Editor workspace");
+
+    const created = await multiWorkspaceStore.createWorkspace("owner-1", "  产品团队  ");
+    expect(created.summary).toMatchObject({
+      id: "workspace-3",
+      name: "产品团队",
+      role: "owner",
+    });
+    expect(created.content.documents).toHaveLength(1);
+    expect((await multiWorkspaceStore.listWorkspaces("owner-1")).currentWorkspaceId).toBe("workspace-3");
+
+    await multiWorkspaceStore.addMember("owner-1", "editor@example.com", "editor");
+    await expect(
+      multiWorkspaceStore.renameWorkspace("editor-1", "workspace-3", "越权名称"),
+    ).rejects.toBeInstanceOf(WorkspacePermissionError);
+
+    await expect(
+      multiWorkspaceStore.renameWorkspace("owner-1", "workspace-3", "研发中心"),
+    ).resolves.toMatchObject({ id: "workspace-3", name: "研发中心", role: "owner" });
+    await expect(
+      multiWorkspaceStore.selectWorkspace("owner-1", "workspace-1"),
+    ).resolves.toMatchObject({ summary: { id: "workspace-1" } });
+    expect((await multiWorkspaceStore.listWorkspaces("owner-1")).currentWorkspaceId).toBe("workspace-1");
+    await expect(
+      multiWorkspaceStore.loadWorkspace("owner-1", "missing-workspace"),
+    ).rejects.toBeInstanceOf(WorkspaceNotFoundError);
+  });
+
+  it("loads a separate active document preference for each workspace member", async () => {
+    await seedUser(pool, "owner-1", "owner@example.com", "Owner");
+    await seedUser(pool, "editor-1", "editor@example.com", "Editor");
+    await store.ensurePersonalWorkspace("owner-1", "Shared workspace");
+    const workspace = createWorkspaceDocument(
+      createDefaultWorkspace(1000),
+      2000,
+      "Second document",
+    );
+    workspace.activeDocumentId = workspace.documents[0].id;
+    await store.saveWorkspace("owner-1", workspace);
+    await store.addMember("owner-1", "editor@example.com", "editor");
+    await pool.query(
+      `UPDATE workspace_document_preferences
+       SET active_document_id = $1
+       WHERE user_id = $2 AND workspace_id = $3`,
+      [workspace.documents[1].id, "editor-1", "workspace-test"],
+    );
+
+    await expect(store.loadWorkspace("owner-1", "workspace-test")).resolves.toMatchObject({
+      content: { activeDocumentId: workspace.documents[0].id },
+      summary: { id: "workspace-test", role: "owner" },
+    });
+    await expect(store.loadWorkspace("editor-1", "workspace-test")).resolves.toMatchObject({
+      content: { activeDocumentId: workspace.documents[1].id },
+      summary: { id: "workspace-test", role: "editor" },
+    });
+  });
+
+  it("saves only the explicitly requested workspace without changing the selection", async () => {
+    await seedUser(pool, "owner-1", "owner@example.com", "Owner");
+    await seedUser(pool, "owner-2", "second@example.com", "Second owner");
+    let workspaceSequence = 0;
+    const multiWorkspaceStore = new PostgresWorkspaceStore(pool, {
+      idFactory: () => `workspace-${++workspaceSequence}`,
+      now: () => 3000 + workspaceSequence,
+    });
+    await multiWorkspaceStore.ensurePersonalWorkspace("owner-1", "Owner workspace");
+    await multiWorkspaceStore.ensurePersonalWorkspace("owner-2", "Second workspace");
+    await multiWorkspaceStore.addMember("owner-2", "owner@example.com", "editor");
+    const secondWorkspace = await multiWorkspaceStore.loadWorkspace("owner-1", "workspace-2");
+    const updatedContent = {
+      ...secondWorkspace.content,
+      documents: secondWorkspace.content.documents.map((document) => ({
+        ...document,
+        title: "Updated second workspace",
+      })),
+      updatedAt: 5000,
+    };
+
+    await multiWorkspaceStore.saveWorkspace("owner-1", "workspace-2", updatedContent);
+
+    await expect(multiWorkspaceStore.loadWorkspace("owner-1", "workspace-1")).resolves.toMatchObject({
+      content: { documents: [expect.objectContaining({ title: "未命名文档" })] },
+    });
+    await expect(multiWorkspaceStore.loadWorkspace("owner-1", "workspace-2")).resolves.toMatchObject({
+      content: { documents: [expect.objectContaining({ title: "Updated second workspace" })] },
+    });
+    expect((await multiWorkspaceStore.listWorkspaces("owner-1")).currentWorkspaceId).toBe("workspace-1");
+  });
+
+  it("resolves access only when the explicit workspace and document both match", async () => {
+    await seedUser(pool, "owner-1", "owner@example.com", "Owner");
+    await seedUser(pool, "owner-2", "second@example.com", "Second owner");
+    let workspaceSequence = 0;
+    const multiWorkspaceStore = new PostgresWorkspaceStore(pool, {
+      idFactory: () => `workspace-${++workspaceSequence}`,
+      now: () => 3000 + workspaceSequence,
+    });
+    await multiWorkspaceStore.ensurePersonalWorkspace("owner-1", "Owner workspace");
+    await multiWorkspaceStore.ensurePersonalWorkspace("owner-2", "Second workspace");
+    await multiWorkspaceStore.addMember("owner-2", "owner@example.com", "editor");
+    const secondWorkspace = await multiWorkspaceStore.loadWorkspace("owner-1", "workspace-2");
+    const secondDocumentId = secondWorkspace.content.activeDocumentId;
+
+    await expect(multiWorkspaceStore.getWorkspaceAccess("owner-1", "workspace-1")).resolves.toEqual({
+      role: "owner",
+      workspaceId: "workspace-1",
+    });
+    await expect(multiWorkspaceStore.getWorkspaceAccess("owner-1", "workspace-2")).resolves.toEqual({
+      role: "editor",
+      workspaceId: "workspace-2",
+    });
+    await expect(multiWorkspaceStore.getWorkspaceAccess("owner-1", "missing-workspace")).resolves.toBeNull();
+    await expect(
+      multiWorkspaceStore.getDocumentAccess("owner-1", "workspace-2", secondDocumentId),
+    ).resolves.toEqual({ role: "editor", workspaceId: "workspace-2" });
+    await expect(
+      multiWorkspaceStore.getDocumentAccess("owner-1", "workspace-1", secondDocumentId),
+    ).resolves.toBeNull();
   });
 
   it("persists and restores a normalized workspace without losing block data", async () => {
