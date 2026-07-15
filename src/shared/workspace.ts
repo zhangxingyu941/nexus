@@ -39,8 +39,13 @@ export function normalizeWorkspaceName(input: unknown) {
 
 export function sortWorkspaceSummaries(items: WorkspaceSummary[], currentWorkspaceId: string) {
   return [...items].sort((left, right) => {
-    if (left.id === currentWorkspaceId) return -1;
-    if (right.id === currentWorkspaceId) return 1;
-    return left.createdAt - right.createdAt || left.id.localeCompare(right.id);
+    const leftIsCurrent = left.id === currentWorkspaceId;
+    const rightIsCurrent = right.id === currentWorkspaceId;
+    if (leftIsCurrent !== rightIsCurrent) return leftIsCurrent ? -1 : 1;
+
+    const createdAtComparison = left.createdAt - right.createdAt;
+    if (createdAtComparison !== 0) return createdAtComparison;
+
+    return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
   });
 }
