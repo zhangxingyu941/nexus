@@ -42,6 +42,7 @@ export function sortWorkspaceSummaries(items: WorkspaceSummary[], currentWorkspa
     const leftIsCurrent = left.id === currentWorkspaceId;
     const rightIsCurrent = right.id === currentWorkspaceId;
     if (leftIsCurrent !== rightIsCurrent) return leftIsCurrent ? -1 : 1;
+    if (leftIsCurrent) return 0;
 
     const createdAtComparison = left.createdAt - right.createdAt;
     if (createdAtComparison !== 0) return createdAtComparison;

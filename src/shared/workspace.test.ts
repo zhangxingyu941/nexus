@@ -46,8 +46,8 @@ describe("workspace contract", () => {
     const result = sortWorkspaceSummaries(
       [
         { id: "other", name: "Other", role: "viewer", createdAt: 10, updatedAt: 10 },
-        { id: "selected", name: "First selected", role: "owner", createdAt: 20, updatedAt: 20 },
-        { id: "selected", name: "Second selected", role: "editor", createdAt: 30, updatedAt: 30 },
+        { id: "selected", name: "First selected", role: "owner", createdAt: 30, updatedAt: 30 },
+        { id: "selected", name: "Second selected", role: "editor", createdAt: 20, updatedAt: 20 },
       ],
       "selected",
     );
