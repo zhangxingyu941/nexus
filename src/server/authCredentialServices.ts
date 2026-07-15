@@ -79,7 +79,8 @@ async function createService(configuration: AuthCredentialRuntimeConfiguration) 
   const key = await loadAuthCredentialKey({
     environment: {
       AUTH_CREDENTIAL_KEY_ID: configuration.kid,
-      AUTH_CREDENTIAL_PRIVATE_KEY_FILE: configuration.absoluteKeyPath,
+      AUTH_CREDENTIAL_PRIVATE_KEY_FILE: configuration.absoluteKeyPath || undefined,
+      AUTH_CREDENTIAL_PRIVATE_KEY_PEM: process.env.AUTH_CREDENTIAL_PRIVATE_KEY_PEM?.trim() || undefined,
     },
   });
   const replayStore = createAuthCredentialReplayStore({
@@ -104,10 +105,13 @@ function loadRuntimeConfiguration(): AuthCredentialRuntimeConfiguration {
   }
 
   const configuredKeyPath = process.env.AUTH_CREDENTIAL_PRIVATE_KEY_FILE?.trim();
+  const configuredKeyPem = process.env.AUTH_CREDENTIAL_PRIVATE_KEY_PEM?.trim();
   return {
     absoluteKeyPath: configuredKeyPath
       ? resolve(process.cwd(), configuredKeyPath)
-      : "",
+      : configuredKeyPem
+        ? "(inline-pem)"
+        : "",
     hashSecret,
     kid: process.env.AUTH_CREDENTIAL_KEY_ID?.trim() ?? "",
     production: process.env.NODE_ENV === "production",

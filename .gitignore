@@ -13,3 +13,6 @@ server/data/*.json
 server/data/uploads/
 .secrets/
 .superpowers/
+
+.vercel
+.env.production

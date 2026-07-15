@@ -36,11 +36,14 @@ export async function loadAuthCredentialKey(
   }
 
   const configuredPath = environment.AUTH_CREDENTIAL_PRIVATE_KEY_FILE?.trim();
-  if (!configuredPath) {
-    throw new Error("AUTH_CREDENTIAL_PRIVATE_KEY_FILE is required");
+  const inlinePem = environment.AUTH_CREDENTIAL_PRIVATE_KEY_PEM?.trim();
+  if (!configuredPath && !inlinePem) {
+    throw new Error("AUTH_CREDENTIAL_PRIVATE_KEY_FILE or AUTH_CREDENTIAL_PRIVATE_KEY_PEM is required");
   }
 
-  const absolutePath = resolve(options.cwd ?? process.cwd(), configuredPath);
+  const absolutePath = configuredPath
+    ? resolve(options.cwd ?? process.cwd(), configuredPath)
+    : "(inline-pem)";
   const cacheKey = JSON.stringify([kid, absolutePath]);
   const canCache = options.readFile === undefined;
   if (canCache) {
@@ -53,6 +56,7 @@ export async function loadAuthCredentialKey(
   const pending = readAndImportKey(
     kid,
     absolutePath,
+    inlinePem,
     options.readFile ?? readFile,
   );
   if (!canCache) {
@@ -71,13 +75,18 @@ export async function loadAuthCredentialKey(
 async function readAndImportKey(
   kid: string,
   absolutePath: string,
+  inlinePem: string | undefined,
   readPrivateKeyFile: ReadFile,
 ): Promise<LoadedAuthCredentialKey> {
   let pem: string;
-  try {
-    pem = await readPrivateKeyFile(absolutePath, "utf8");
-  } catch {
-    throw new Error(`Unable to read AUTH_CREDENTIAL_PRIVATE_KEY_FILE: ${absolutePath}`);
+  if (inlinePem) {
+    pem = inlinePem;
+  } else {
+    try {
+      pem = await readPrivateKeyFile(absolutePath, "utf8");
+    } catch {
+      throw new Error(`Unable to read AUTH_CREDENTIAL_PRIVATE_KEY_FILE: ${absolutePath}`);
+    }
   }
 
   if (!isPkcs8Pem(pem)) {
