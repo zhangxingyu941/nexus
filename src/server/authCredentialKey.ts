@@ -36,7 +36,10 @@ export async function loadAuthCredentialKey(
   }
 
   const configuredPath = environment.AUTH_CREDENTIAL_PRIVATE_KEY_FILE?.trim();
-  const inlinePem = environment.AUTH_CREDENTIAL_PRIVATE_KEY_PEM?.trim();
+  const inlinePem = environment.AUTH_CREDENTIAL_PRIVATE_KEY_PEM?.trim()
+    ?? (environment.AUTH_CREDENTIAL_PRIVATE_KEY_PEM_B64?.trim()
+      ? Buffer.from(environment.AUTH_CREDENTIAL_PRIVATE_KEY_PEM_B64.trim(), "base64").toString("utf8")
+      : undefined);
   if (!configuredPath && !inlinePem) {
     throw new Error("AUTH_CREDENTIAL_PRIVATE_KEY_FILE or AUTH_CREDENTIAL_PRIVATE_KEY_PEM is required");
   }

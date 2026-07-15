@@ -81,6 +81,7 @@ async function createService(configuration: AuthCredentialRuntimeConfiguration) 
       AUTH_CREDENTIAL_KEY_ID: configuration.kid,
       AUTH_CREDENTIAL_PRIVATE_KEY_FILE: configuration.absoluteKeyPath || undefined,
       AUTH_CREDENTIAL_PRIVATE_KEY_PEM: process.env.AUTH_CREDENTIAL_PRIVATE_KEY_PEM?.trim() || undefined,
+      AUTH_CREDENTIAL_PRIVATE_KEY_PEM_B64: process.env.AUTH_CREDENTIAL_PRIVATE_KEY_PEM_B64?.trim() || undefined,
     },
   });
   const replayStore = createAuthCredentialReplayStore({
@@ -105,7 +106,7 @@ function loadRuntimeConfiguration(): AuthCredentialRuntimeConfiguration {
   }
 
   const configuredKeyPath = process.env.AUTH_CREDENTIAL_PRIVATE_KEY_FILE?.trim();
-  const configuredKeyPem = process.env.AUTH_CREDENTIAL_PRIVATE_KEY_PEM?.trim();
+  const configuredKeyPem = process.env.AUTH_CREDENTIAL_PRIVATE_KEY_PEM?.trim() || process.env.AUTH_CREDENTIAL_PRIVATE_KEY_PEM_B64?.trim();
   return {
     absoluteKeyPath: configuredKeyPath
       ? resolve(process.cwd(), configuredKeyPath)
