@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
 import { createPostgresServices } from "../../../../server/applicationServices";
+import { getAuthCredentialDecryptor } from "../../../../server/authCredentialServices";
 import { hasDatabaseConfiguration } from "../../../../server/database/pool";
 import { getAuthRequestSecurity } from "../../../../server/authRequestSecurity";
-import { createSessionRouteHandlers } from "./handlers";
+import {
+  createDeleteSessionRouteHandler,
+  createGetSessionRouteHandler,
+  createSessionRouteHandlers,
+} from "./handlers";
 
 export async function GET(request: Request) {
   if (!hasDatabaseConfiguration()) {
@@ -10,7 +15,7 @@ export async function GET(request: Request) {
   }
 
   const { authStore } = createPostgresServices();
-  return createSessionRouteHandlers(authStore, getAuthRequestSecurity(authStore)).GET(request);
+  return createGetSessionRouteHandler(authStore)(request);
 }
 
 export async function POST(request: Request) {
@@ -19,7 +24,11 @@ export async function POST(request: Request) {
   }
 
   const { authStore } = createPostgresServices();
-  return createSessionRouteHandlers(authStore, getAuthRequestSecurity(authStore)).POST(request);
+  return createSessionRouteHandlers(
+    authStore,
+    getAuthRequestSecurity(authStore),
+    getAuthCredentialDecryptor(),
+  ).POST(request);
 }
 
 export async function DELETE(request: Request) {
@@ -28,5 +37,5 @@ export async function DELETE(request: Request) {
   }
 
   const { authStore } = createPostgresServices();
-  return createSessionRouteHandlers(authStore, getAuthRequestSecurity(authStore)).DELETE(request);
+  return createDeleteSessionRouteHandler(authStore)(request);
 }

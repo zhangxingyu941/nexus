@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import type { AuthCredentialService } from "../../../../../server/authCredentialService";
 import type { CreatedSession } from "../../../../../server/postgresAuthStore";
 import { getSessionCookieOptions, SESSION_COOKIE_NAME } from "../../../../../server/sessionCookie";
 import { parseAuthJson } from "../../authRequest";
+import { authCredentialErrorResponse } from "../../authCredentialResponse";
 import { authErrorResponse } from "../../authErrorResponse";
 import { enforceAuthRateLimit, recordAuthAudit, type RouteAuthSecurity } from "../../authSecurity";
 
@@ -9,7 +11,13 @@ interface ResetPasswordStore {
   resetPassword(input: { code: string; email: string; password: string }): Promise<CreatedSession>;
 }
 
-export function createResetPasswordRouteHandler(authStore: ResetPasswordStore, security: RouteAuthSecurity) {
+type AuthCredentialDecryptor = Pick<AuthCredentialService, "decrypt">;
+
+export function createResetPasswordRouteHandler(
+  authStore: ResetPasswordStore,
+  security: RouteAuthSecurity,
+  credentials: AuthCredentialDecryptor,
+) {
   return async (request: Request) => {
     const payload = await parseAuthJson(request);
     if (payload instanceof NextResponse) {
@@ -17,17 +25,22 @@ export function createResetPasswordRouteHandler(authStore: ResetPasswordStore, s
     }
 
     const email = typeof payload.email === "string" ? payload.email : "";
-    const code = typeof payload.code === "string" ? payload.code : "";
     const limitedResponse = await enforceAuthRateLimit(security, request, "reset-password", email);
     if (limitedResponse) {
       return limitedResponse;
     }
 
     try {
-      const session = await authStore.resetPassword({
-        code,
+      const { code, password } = await credentials.decrypt({
+        credential: payload.credential,
         email,
-        password: typeof payload.password === "string" ? payload.password : "",
+        payload,
+        purpose: "reset-password",
+      });
+      const session = await authStore.resetPassword({
+        code: code ?? "",
+        email,
+        password: password ?? "",
       });
       await security.reset(request, "reset-password", email);
       await recordAuthAudit(security, request, "password-reset", true, session.user.id);
@@ -36,7 +49,8 @@ export function createResetPasswordRouteHandler(authStore: ResetPasswordStore, s
       return response;
     } catch (error) {
       await recordAuthAudit(security, request, "password-reset", false, null);
-      return authErrorResponse(error)
+      return authCredentialErrorResponse(error)
+        ?? authErrorResponse(error)
         ?? NextResponse.json({ error: "密码重置服务暂时不可用，请稍后重试" }, { status: 503 });
     }
   };

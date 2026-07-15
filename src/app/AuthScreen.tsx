@@ -20,26 +20,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { EditorSessionUser } from "../features/editor/session/sessionTypes";
+import { AuthRequestError, requestAuth, requestEncryptedAuth } from "./authClient";
 
 type AuthMode = "forgot" | "login" | "register" | "register-code" | "reset-code";
-
-interface AuthResponse {
-  codeAvailable?: boolean;
-  error?: string;
-  retryAfterSeconds?: number;
-  user?: EditorSessionUser;
-}
-
-class AuthRequestError extends Error {
-  constructor(
-    message: string,
-    readonly retryAfterSeconds?: number,
-    readonly codeAvailable = false,
-  ) {
-    super(message);
-    this.name = "AuthRequestError";
-  }
-}
 
 export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: EditorSessionUser) => void }) {
   const [mode, setMode] = useState<AuthMode>("login");
@@ -107,41 +90,6 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: Editor
     }
   };
 
-  const requestAuth = async (endpoint: string, body: Record<string, string>) => {
-    let response: Response;
-    try {
-      response = await fetch(endpoint, {
-        body: JSON.stringify(body),
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-        },
-        method: "POST",
-      });
-    } catch {
-      throw new AuthRequestError("无法连接认证服务，请检查网络后重试");
-    }
-
-    let parsedPayload: unknown;
-    try {
-      parsedPayload = await response.json();
-    } catch {
-      throw new AuthRequestError("认证服务响应异常，请稍后重试");
-    }
-    if (!parsedPayload || typeof parsedPayload !== "object") {
-      throw new AuthRequestError("认证服务响应异常，请稍后重试");
-    }
-    const payload = parsedPayload as AuthResponse;
-    if (!response.ok) {
-      throw new AuthRequestError(
-        payload.error || "认证请求失败",
-        payload.retryAfterSeconds,
-        payload.codeAvailable === true,
-      );
-    }
-    return payload;
-  };
-
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
@@ -150,18 +98,33 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: Editor
 
     try {
       if (mode === "login") {
-        const payload = await requestAuth("/api/auth/session", { email, password });
+        const payload = await requestEncryptedAuth({
+          body: {},
+          email,
+          purpose: "login",
+          secrets: { password },
+        });
         if (!payload.user) {
           throw new Error("认证响应无效");
         }
         onAuthenticated(payload.user);
       } else if (mode === "register") {
-        const payload = await requestAuth("/api/auth/register", { displayName, email, password });
+        const payload = await requestEncryptedAuth({
+          body: { displayName },
+          email,
+          purpose: "register",
+          secrets: { password },
+        });
         setMode("register-code");
         startResendCooldown(payload.retryAfterSeconds);
         setNotice(`验证码已发送至 ${email.trim().toLowerCase()}`);
       } else if (mode === "register-code") {
-        const payload = await requestAuth("/api/auth/verify-email", { code, email });
+        const payload = await requestEncryptedAuth({
+          body: {},
+          email,
+          purpose: "verify-email",
+          secrets: { code },
+        });
         if (!payload.user) {
           throw new Error("认证响应无效");
         }
@@ -172,7 +135,12 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: Editor
         startResendCooldown(payload.retryAfterSeconds);
         setNotice(`验证码已发送至 ${email.trim().toLowerCase()}`);
       } else {
-        const payload = await requestAuth("/api/auth/password/reset", { code, email, password });
+        const payload = await requestEncryptedAuth({
+          body: {},
+          email,
+          purpose: "reset-password",
+          secrets: { code, password },
+        });
         if (!payload.user) {
           throw new Error("认证响应无效");
         }
@@ -198,7 +166,12 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: Editor
     setIsSubmitting(true);
     try {
       if (mode === "register-code") {
-        const payload = await requestAuth("/api/auth/register", { displayName, email, password });
+        const payload = await requestEncryptedAuth({
+          body: { displayName },
+          email,
+          purpose: "register",
+          secrets: { password },
+        });
         startResendCooldown(payload.retryAfterSeconds);
         setNotice(`新验证码已发送至 ${email.trim().toLowerCase()}`);
       } else if (mode === "reset-code") {
@@ -245,13 +218,14 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: Editor
           {mode === "login" || mode === "register" ? (
             <Tabs onValueChange={(value) => changeMode(value as AuthMode)} value={mode}>
               <TabsList className="grid w-full grid-cols-2 rounded-md" aria-label="认证方式">
-                <TabsTrigger value="login">登录</TabsTrigger>
-                <TabsTrigger value="register">注册</TabsTrigger>
+                <TabsTrigger disabled={isSubmitting} value="login">登录</TabsTrigger>
+                <TabsTrigger disabled={isSubmitting} value="register">注册</TabsTrigger>
               </TabsList>
             </Tabs>
           ) : (
             <Button
               className="w-fit px-0"
+              disabled={isSubmitting}
               onClick={() => changeMode(mode === "register-code" ? "register" : mode === "reset-code" ? "forgot" : "login")}
               type="button"
               variant="ghost"
@@ -340,7 +314,7 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: Editor
           </div>
 
           {mode === "login" ? (
-            <Button className="w-fit justify-self-end px-0 text-xs" onClick={() => changeMode("forgot")} type="button" variant="ghost">
+            <Button className="w-fit justify-self-end px-0 text-xs" disabled={isSubmitting} onClick={() => changeMode("forgot")} type="button" variant="ghost">
               忘记密码
             </Button>
           ) : null}

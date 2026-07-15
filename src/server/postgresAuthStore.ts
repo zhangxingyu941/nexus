@@ -66,11 +66,19 @@ interface PostgresAuthStoreOptions {
   userIdFactory?: () => string;
 }
 
+/** 登录会话有效期：30 天 */
 const SESSION_DURATION_MS = 30 * 24 * 60 * 60 * 1000;
+/** 会话 Redis 缓存过期时间：5 分钟，过期后回落到 PostgreSQL 查询 */
 const SESSION_CACHE_TTL_MS = 5 * 60 * 1000;
+/** 邮箱验证码 / 密码重置验证码有效期：10 分钟 */
 const AUTH_CODE_DURATION_MS = 10 * 60 * 1000;
+/** 验证码重发冷却时间：60 秒（导出供路由层限流使用） */
 export const AUTH_CODE_COOLDOWN_SECONDS = 60;
 const AUTH_CODE_COOLDOWN_MS = AUTH_CODE_COOLDOWN_SECONDS * 1000;
+/**
+ * 伪装的 Argon2id 哈希，用于用户不存在时的验证比对。
+ * 始终返回验证失败，但耗时与真实哈希一致，防止通过响应时间枚举邮箱。
+ */
 const DUMMY_PASSWORD_HASH = "$argon2id$v=19$m=19456,t=2,p=1$kOtkpU07XR0sNU9dXLue0Q$YsE0y/2v6ifP7WYrMdTygQlUPyurEDX5tAI7u74q3YU";
 
 function hashSessionToken(token: string) {

@@ -1,9 +1,23 @@
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
-import { expect, type APIRequestContext } from "@playwright/test";
+import { expect, type APIRequestContext, type APIResponse } from "@playwright/test";
+import { CompactEncrypt, importJWK, type JWK } from "jose";
 
 const projectRoot = resolve(import.meta.dirname, "..");
 const captureFile = "/app/server/data/uploads/auth-mail-capture.jsonl";
+const authEndpoints = {
+  login: "/api/auth/session",
+  register: "/api/auth/register",
+  "reset-password": "/api/auth/password/reset",
+  "verify-email": "/api/auth/verify-email",
+} as const;
+
+type EncryptedAuthApiInput = { email: string } & (
+  | { purpose: "login"; secrets: { password: string } }
+  | { displayName: string; purpose: "register"; secrets: { password: string } }
+  | { purpose: "reset-password"; secrets: { code: string; password: string } }
+  | { purpose: "verify-email"; secrets: { code: string } }
+);
 
 export function createAcceptanceIdentity(prefix: string) {
   const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -19,19 +33,52 @@ export async function registerAndVerify(
   request: APIRequestContext,
   identity: ReturnType<typeof createAcceptanceIdentity>,
 ) {
-  const registration = await request.post("/api/auth/register", {
-    data: {
-      displayName: identity.displayName,
-      email: identity.email,
-      password: identity.password,
-    },
+  const registration = await requestEncryptedAuthApi(request, {
+    displayName: identity.displayName,
+    email: identity.email,
+    purpose: "register",
+    secrets: { password: identity.password },
   });
   expect(registration.status()).toBe(201);
   const code = await waitForCapturedCode(identity.email, "verify-email");
-  const verification = await request.post("/api/auth/verify-email", {
-    data: { code, email: identity.email },
+  const verification = await requestEncryptedAuthApi(request, {
+    email: identity.email,
+    purpose: "verify-email",
+    secrets: { code },
   });
   expect(verification.ok()).toBe(true);
+}
+
+export async function requestEncryptedAuthApi(
+  request: APIRequestContext,
+  input: EncryptedAuthApiInput,
+): Promise<APIResponse> {
+  const email = input.email.trim().toLowerCase();
+  const challengeResponse = await request.post("/api/auth/credential-challenge", {
+    data: { purpose: input.purpose },
+  });
+  expect(challengeResponse.ok(), "credential challenge request failed").toBe(true);
+  const challenge = parseCredentialChallenge(await challengeResponse.json());
+  const publicKey = await importJWK(challenge.key, "RSA-OAEP-256");
+  const credential = await new CompactEncrypt(new TextEncoder().encode(JSON.stringify({
+    version: 1,
+    purpose: input.purpose,
+    email,
+    challenge: challenge.challenge,
+    ...input.secrets,
+  })))
+    .setProtectedHeader({
+      alg: "RSA-OAEP-256",
+      enc: "A256GCM",
+      kid: challenge.key.kid,
+      typ: "nexus-auth+jwe",
+    })
+    .encrypt(publicKey);
+  const data = input.purpose === "register"
+    ? { displayName: input.displayName, email, credential }
+    : { email, credential };
+
+  return request.post(authEndpoints[input.purpose], { data });
 }
 
 export async function waitForCapturedCode(
@@ -70,9 +117,10 @@ export function cleanupAcceptanceData() {
     "redis",
     "redis-cli",
     "EVAL",
-    "local keys = redis.call('KEYS', ARGV[1]); if #keys == 0 then return 0 end; return redis.call('DEL', unpack(keys))",
+    "local keys = {}; for _, pattern in ipairs(ARGV) do for _, key in ipairs(redis.call('KEYS', pattern)) do table.insert(keys, key) end end; if #keys == 0 then return 0 end; return redis.call('DEL', unpack(keys))",
     "0",
     "notion-editor:auth-rate:*",
+    "notion-editor:auth-credential:*",
   ]);
   dockerCompose(["exec", "-T", "web", "sh", "-c", `rm -f ${captureFile}`]);
 }
@@ -98,6 +146,38 @@ function readMailCaptures() {
       purpose: "reset-password" | "verify-email";
       to: string;
     });
+}
+
+function parseCredentialChallenge(payload: unknown) {
+  if (
+    !isRecord(payload)
+    || payload.algorithm !== "RSA-OAEP-256"
+    || typeof payload.challenge !== "string"
+    || payload.challenge.length === 0
+    || typeof payload.expiresAt !== "number"
+    || !Number.isFinite(payload.expiresAt)
+    || !isRecord(payload.key)
+    || payload.key.kty !== "RSA"
+    || typeof payload.key.n !== "string"
+    || payload.key.n.length === 0
+    || typeof payload.key.e !== "string"
+    || payload.key.e.length === 0
+    || typeof payload.key.kid !== "string"
+    || payload.key.kid.length === 0
+    || payload.key.alg !== "RSA-OAEP-256"
+    || payload.key.use !== "enc"
+  ) {
+    throw new Error("Credential challenge response is invalid");
+  }
+
+  return {
+    challenge: payload.challenge,
+    key: payload.key as JWK & { kid: string },
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function dockerCompose(args: string[]) {

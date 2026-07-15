@@ -3,6 +3,7 @@ import {
   cleanupAcceptanceData,
   createAcceptanceIdentity,
   registerAndVerify,
+  requestEncryptedAuthApi,
   restartCollaborationService,
 } from "./support";
 
@@ -22,8 +23,10 @@ test("synchronizes two browser contexts and recovers after collaboration restart
 
   try {
     for (const context of [contextA, contextB]) {
-      const login = await context.request.post("/api/auth/session", {
-        data: { email: identity.email, password: identity.password },
+      const login = await requestEncryptedAuthApi(context.request, {
+        email: identity.email,
+        purpose: "login",
+        secrets: { password: identity.password },
       });
       expect(login.ok()).toBe(true);
     }

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import type { AuthCredentialService } from "../../../../server/authCredentialService";
 import type { PostgresAuthStore } from "../../../../server/postgresAuthStore";
 import { parseAuthJson } from "../authRequest";
+import { authCredentialErrorResponse } from "../authCredentialResponse";
 import { authErrorResponse } from "../authErrorResponse";
 import { enforceAuthRateLimit, recordAuthAudit, type RouteAuthSecurity } from "../authSecurity";
 import {
@@ -9,17 +11,39 @@ import {
   SESSION_COOKIE_NAME,
 } from "../../../../server/sessionCookie";
 
-export function createSessionRouteHandlers(authStore: PostgresAuthStore, security: RouteAuthSecurity) {
+type AuthCredentialDecryptor = Pick<AuthCredentialService, "decrypt">;
+
+export function createGetSessionRouteHandler(authStore: PostgresAuthStore) {
+  return async (request: Request) => {
+    const user = await authStore.getUserBySessionToken(getSessionToken(request));
+
+    if (!user) {
+      return NextResponse.json({ error: "请先进入工作区" }, { status: 401 });
+    }
+
+    return NextResponse.json({ mode: "database", user });
+  };
+}
+
+export function createDeleteSessionRouteHandler(authStore: PostgresAuthStore) {
+  return async (request: Request) => {
+    await authStore.deleteSession(getSessionToken(request));
+    const response = new NextResponse(null, { status: 204 });
+    response.cookies.set(SESSION_COOKIE_NAME, "", {
+      ...getSessionCookieOptions(0),
+      maxAge: 0,
+    });
+    return response;
+  };
+}
+
+export function createSessionRouteHandlers(
+  authStore: PostgresAuthStore,
+  security: RouteAuthSecurity,
+  credentials: AuthCredentialDecryptor,
+) {
   return {
-    async GET(request: Request) {
-      const user = await authStore.getUserBySessionToken(getSessionToken(request));
-
-      if (!user) {
-        return NextResponse.json({ error: "请先进入工作区" }, { status: 401 });
-      }
-
-      return NextResponse.json({ mode: "database", user });
-    },
+    GET: createGetSessionRouteHandler(authStore),
 
     async POST(request: Request) {
       const payload = await parseAuthJson(request);
@@ -27,15 +51,22 @@ export function createSessionRouteHandlers(authStore: PostgresAuthStore, securit
         return payload;
       }
 
+      const email = typeof payload.email === "string" ? payload.email : "";
+      const limitedResponse = await enforceAuthRateLimit(security, request, "login", email);
+      if (limitedResponse) {
+        return limitedResponse;
+      }
+
       try {
-        const email = typeof payload.email === "string" ? payload.email : "";
-        const limitedResponse = await enforceAuthRateLimit(security, request, "login", email);
-        if (limitedResponse) {
-          return limitedResponse;
-        }
+        const { password } = await credentials.decrypt({
+          credential: payload.credential,
+          email,
+          payload,
+          purpose: "login",
+        });
         const session = await authStore.loginWithPassword({
           email,
-          password: typeof payload.password === "string" ? payload.password : "",
+          password: password ?? "",
         });
         await security.reset(request, "login", email);
         await recordAuthAudit(security, request, "password-login", true, session.user.id);
@@ -44,19 +75,12 @@ export function createSessionRouteHandlers(authStore: PostgresAuthStore, securit
         return response;
       } catch (error) {
         await recordAuthAudit(security, request, "password-login", false, null);
-        return authErrorResponse(error)
+        return authCredentialErrorResponse(error)
+          ?? authErrorResponse(error)
           ?? NextResponse.json({ error: "登录服务暂时不可用，请稍后重试" }, { status: 503 });
       }
     },
 
-    async DELETE(request: Request) {
-      await authStore.deleteSession(getSessionToken(request));
-      const response = new NextResponse(null, { status: 204 });
-      response.cookies.set(SESSION_COOKIE_NAME, "", {
-        ...getSessionCookieOptions(0),
-        maxAge: 0,
-      });
-      return response;
-    },
+    DELETE: createDeleteSessionRouteHandler(authStore),
   };
 }

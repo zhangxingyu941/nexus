@@ -5,6 +5,13 @@ import {
   waitForCapturedCode,
 } from "./support";
 
+const sensitiveAuthEndpoints = [
+  "/api/auth/register",
+  "/api/auth/verify-email",
+  "/api/auth/password/reset",
+  "/api/auth/session",
+] as const;
+
 test.beforeEach(() => {
   cleanupAcceptanceData();
 });
@@ -15,6 +22,18 @@ test.afterAll(() => {
 
 test("registers, verifies, logs in, persists an empty workspace, and resets the password", async ({ page }, testInfo) => {
   const identity = createAcceptanceIdentity("e2e");
+  const capturedAuthBodies = new Map<string, unknown[]>();
+  page.on("request", (request) => {
+    const endpoint = new URL(request.url()).pathname;
+    if (request.method() !== "POST" || !sensitiveAuthEndpoints.includes(
+      endpoint as typeof sensitiveAuthEndpoints[number],
+    )) {
+      return;
+    }
+    const bodies = capturedAuthBodies.get(endpoint) ?? [];
+    bodies.push(request.postDataJSON());
+    capturedAuthBodies.set(endpoint, bodies);
+  });
   await page.goto("/");
 
   await expect(page.getByRole("form", { name: "Nexus 身份认证" })).toBeVisible();
@@ -70,7 +89,7 @@ test("registers, verifies, logs in, persists an empty workspace, and resets the 
   await page.getByRole("button", { name: "忘记密码" }).click();
   await page.getByLabel("邮箱").fill(identity.email);
   await page.getByRole("button", { name: "发送验证码" }).click();
-  await expect(page.getByText("如果账号存在，验证码已发送")).toBeVisible();
+  await expect(page.getByText(`验证码已发送至 ${identity.email}`)).toBeVisible();
   const resetCode = await waitForCapturedCode(identity.email, "reset-password");
   await page.getByLabel("邮箱验证码").fill(resetCode);
   await page.getByLabel("新密码").fill(identity.replacementPassword);
@@ -82,4 +101,22 @@ test("registers, verifies, logs in, persists an empty workspace, and resets the 
   await page.getByLabel("密码", { exact: true }).fill(identity.replacementPassword);
   await page.getByRole("button", { name: "登录" }).click();
   await expect(page.getByLabel("文档标题")).toHaveValue("E2E 持久化文档");
+
+  for (const endpoint of sensitiveAuthEndpoints) {
+    const bodies = capturedAuthBodies.get(endpoint) ?? [];
+    expect(bodies, `captured POST body for ${endpoint}`).toHaveLength(1);
+    for (const body of bodies) {
+      expect(isRecord(body), `${endpoint} body is a JSON object`).toBe(true);
+      if (!isRecord(body)) {
+        continue;
+      }
+      expect(typeof body.credential, `${endpoint} credential is a string`).toBe("string");
+      expect(Object.hasOwn(body, "password"), `${endpoint} omits password`).toBe(false);
+      expect(Object.hasOwn(body, "code"), `${endpoint} omits code`).toBe(false);
+    }
+  }
 });
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
