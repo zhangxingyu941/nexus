@@ -14,6 +14,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
+import { BrandMark } from "@/components/BrandMark";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -225,7 +226,7 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: Editor
       <section className="grid min-h-dvh place-items-center px-5 py-10 sm:px-10">
         <form aria-label="Nexus 身份认证" className="grid w-full max-w-[420px] gap-6" onSubmit={handleSubmit}>
           <div className="flex items-center gap-3 lg:hidden">
-            <span aria-hidden="true" className="grid size-9 place-items-center rounded-md bg-foreground text-sm font-bold text-background">N</span>
+            <BrandMark className="size-9" />
             <strong className="text-sm text-foreground">Nexus</strong>
           </div>
 
@@ -420,7 +421,7 @@ function BrandPanel() {
     <section className="relative hidden min-h-dvh overflow-hidden border-r bg-zinc-50 p-10 lg:flex lg:flex-col lg:justify-between xl:p-14">
       <div aria-hidden="true" className="absolute inset-0 bg-[linear-gradient(to_right,rgba(24,24,27,0.045)_1px,transparent_1px),linear-gradient(to_bottom,rgba(24,24,27,0.045)_1px,transparent_1px)] bg-[size:34px_34px] [mask-image:linear-gradient(to_bottom,black,transparent_88%)]" />
       <div className="relative flex items-center gap-3">
-        <span className="grid size-10 place-items-center rounded-md bg-foreground text-base font-bold text-background shadow-sm">N</span>
+        <BrandMark className="size-10 shadow-sm" />
         <div>
           <strong className="block text-sm font-semibold text-foreground">Nexus</strong>
           <span className="block text-xs text-muted-foreground">团队内容工作台</span>

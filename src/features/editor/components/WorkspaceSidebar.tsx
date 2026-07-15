@@ -8,6 +8,7 @@ import type {
   WorkspaceTask,
 } from "../model/workspaceOperations";
 import { getSortedWorkspaceDocuments, groupWorkspaceTasksByDueDate } from "../model/workspaceOperations";
+import { BrandMark } from "@/components/BrandMark";
 import { Badge } from "@/components/ui/badge";
 import { ActivityDialog } from "./sidebar/ActivityDialog";
 import { DocumentTree } from "./sidebar/DocumentTree";
@@ -162,9 +163,7 @@ export function WorkspaceSidebar({
       className="workspace-sidebar sticky top-0 z-10 flex h-dvh min-w-0 flex-col overflow-y-auto border-r bg-zinc-50 p-3"
     >
       <div className="flex min-h-11 items-center gap-2.5 border-b border-border/70 px-1 pb-3">
-        <div aria-hidden="true" className="grid size-8 shrink-0 place-items-center rounded-md bg-foreground text-xs font-bold text-background shadow-sm">
-          N
-        </div>
+        <BrandMark className="size-8 shadow-sm" />
         <div className="grid min-w-0 flex-1">
           <strong className="truncate text-sm font-semibold text-foreground">团队知识库</strong>
           <span className="truncate text-xs text-muted-foreground">内容与项目协作</span>

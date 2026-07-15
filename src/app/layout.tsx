@@ -5,6 +5,9 @@ import "../styles.css";
 export const metadata: Metadata = {
   title: "Nexus",
   description: "面向协同办公场景的 Notion 风格块编辑器",
+  icons: {
+    icon: "/nexus-logo.svg",
+  },
 };
 
 export default function RootLayout({
