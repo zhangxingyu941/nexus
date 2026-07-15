@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { AuthCredentialService } from "../../../../server/authCredentialService";
 import {
   AUTH_CODE_COOLDOWN_SECONDS,
   AuthCodeCooldownError,
@@ -6,6 +7,7 @@ import {
   type PostgresAuthStore,
 } from "../../../../server/postgresAuthStore";
 import { parseAuthJson } from "../authRequest";
+import { authCredentialErrorResponse } from "../authCredentialResponse";
 import { authErrorResponse } from "../authErrorResponse";
 import { enforceAuthRateLimit, recordAuthAudit, type RouteAuthSecurity } from "../authSecurity";
 
@@ -13,12 +15,16 @@ interface RegistrationMailer {
   sendEmailVerificationCode(user: AppUser, code: string): Promise<void>;
 }
 
+type AuthCredentialDecryptor = Pick<AuthCredentialService, "decrypt">;
+
 export function createRegisterRouteHandler({
   authStore,
+  credentials,
   mailer,
   security,
 }: {
   authStore: PostgresAuthStore;
+  credentials: AuthCredentialDecryptor;
   mailer: RegistrationMailer;
   security: RouteAuthSecurity;
 }) {
@@ -36,13 +42,23 @@ export function createRegisterRouteHandler({
 
     let registration: Awaited<ReturnType<PostgresAuthStore["register"]>>;
     try {
+      const { password } = await credentials.decrypt({
+        credential: payload.credential,
+        email,
+        payload,
+        purpose: "register",
+      });
       registration = await authStore.register({
         displayName: typeof payload.displayName === "string" ? payload.displayName : "",
         email,
-        password: typeof payload.password === "string" ? payload.password : "",
+        password: password ?? "",
       });
     } catch (error) {
       await recordAuthAudit(security, request, "registration", false, null);
+      const credentialResponse = authCredentialErrorResponse(error);
+      if (credentialResponse) {
+        return credentialResponse;
+      }
       if (error instanceof AuthCodeCooldownError) {
         return NextResponse.json(
           {

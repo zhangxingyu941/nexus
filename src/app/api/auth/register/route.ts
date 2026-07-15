@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createPostgresServices } from "../../../../server/applicationServices";
+import { getAuthCredentialDecryptor } from "../../../../server/authCredentialServices";
 import { hasDatabaseConfiguration } from "../../../../server/database/pool";
 import { getAuthRequestSecurity } from "../../../../server/authRequestSecurity";
 import { resolveAuthMailer } from "../authMailerResponse";
@@ -18,6 +19,7 @@ export async function POST(request: Request) {
   const { authStore } = createPostgresServices();
   return createRegisterRouteHandler({
     authStore,
+    credentials: getAuthCredentialDecryptor(),
     mailer: mailerResolution.mailer,
     security: getAuthRequestSecurity(authStore),
   })(request);

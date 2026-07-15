@@ -6,6 +6,8 @@ x-app-environment: &app-environment
   REDIS_URL: redis://redis:6379
   AUTH_HASH_SECRET: ${AUTH_HASH_SECRET:?Set AUTH_HASH_SECRET}
   AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-true}
+  AUTH_CREDENTIAL_KEY_ID: ${AUTH_CREDENTIAL_KEY_ID:-}
+  AUTH_CREDENTIAL_PRIVATE_KEY_FILE: ${AUTH_CREDENTIAL_PRIVATE_KEY_FILE:-/run/secrets/auth-credential-private.pem}
   OBJECT_STORAGE_DRIVER: local
   OBJECT_STORAGE_LOCAL_DIR: /app/server/data/uploads
 
@@ -103,6 +105,7 @@ services:
       start_period: 10s
     volumes:
       - uploads_data:/app/server/data/uploads
+      - ${AUTH_CREDENTIAL_PRIVATE_KEY_FILE:-.secrets/auth-credential-private.pem}:/run/secrets/auth-credential-private.pem:ro
 
   collaboration:
     build:

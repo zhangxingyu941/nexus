@@ -14,31 +14,15 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
+import { BrandMark } from "@/components/BrandMark";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { EditorSessionUser } from "../features/editor/session/sessionTypes";
+import { AuthRequestError, requestAuth, requestEncryptedAuth } from "./authClient";
 
 type AuthMode = "forgot" | "login" | "register" | "register-code" | "reset-code";
-
-interface AuthResponse {
-  codeAvailable?: boolean;
-  error?: string;
-  retryAfterSeconds?: number;
-  user?: EditorSessionUser;
-}
-
-class AuthRequestError extends Error {
-  constructor(
-    message: string,
-    readonly retryAfterSeconds?: number,
-    readonly codeAvailable = false,
-  ) {
-    super(message);
-    this.name = "AuthRequestError";
-  }
-}
 
 export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: EditorSessionUser) => void }) {
   const [mode, setMode] = useState<AuthMode>("login");
@@ -106,41 +90,6 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: Editor
     }
   };
 
-  const requestAuth = async (endpoint: string, body: Record<string, string>) => {
-    let response: Response;
-    try {
-      response = await fetch(endpoint, {
-        body: JSON.stringify(body),
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-        },
-        method: "POST",
-      });
-    } catch {
-      throw new AuthRequestError("无法连接认证服务，请检查网络后重试");
-    }
-
-    let parsedPayload: unknown;
-    try {
-      parsedPayload = await response.json();
-    } catch {
-      throw new AuthRequestError("认证服务响应异常，请稍后重试");
-    }
-    if (!parsedPayload || typeof parsedPayload !== "object") {
-      throw new AuthRequestError("认证服务响应异常，请稍后重试");
-    }
-    const payload = parsedPayload as AuthResponse;
-    if (!response.ok) {
-      throw new AuthRequestError(
-        payload.error || "认证请求失败",
-        payload.retryAfterSeconds,
-        payload.codeAvailable === true,
-      );
-    }
-    return payload;
-  };
-
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
@@ -149,18 +98,33 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: Editor
 
     try {
       if (mode === "login") {
-        const payload = await requestAuth("/api/auth/session", { email, password });
+        const payload = await requestEncryptedAuth({
+          body: {},
+          email,
+          purpose: "login",
+          secrets: { password },
+        });
         if (!payload.user) {
           throw new Error("认证响应无效");
         }
         onAuthenticated(payload.user);
       } else if (mode === "register") {
-        const payload = await requestAuth("/api/auth/register", { displayName, email, password });
+        const payload = await requestEncryptedAuth({
+          body: { displayName },
+          email,
+          purpose: "register",
+          secrets: { password },
+        });
         setMode("register-code");
         startResendCooldown(payload.retryAfterSeconds);
         setNotice(`验证码已发送至 ${email.trim().toLowerCase()}`);
       } else if (mode === "register-code") {
-        const payload = await requestAuth("/api/auth/verify-email", { code, email });
+        const payload = await requestEncryptedAuth({
+          body: {},
+          email,
+          purpose: "verify-email",
+          secrets: { code },
+        });
         if (!payload.user) {
           throw new Error("认证响应无效");
         }
@@ -171,7 +135,12 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: Editor
         startResendCooldown(payload.retryAfterSeconds);
         setNotice(`验证码已发送至 ${email.trim().toLowerCase()}`);
       } else {
-        const payload = await requestAuth("/api/auth/password/reset", { code, email, password });
+        const payload = await requestEncryptedAuth({
+          body: {},
+          email,
+          purpose: "reset-password",
+          secrets: { code, password },
+        });
         if (!payload.user) {
           throw new Error("认证响应无效");
         }
@@ -197,7 +166,12 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: Editor
     setIsSubmitting(true);
     try {
       if (mode === "register-code") {
-        const payload = await requestAuth("/api/auth/register", { displayName, email, password });
+        const payload = await requestEncryptedAuth({
+          body: { displayName },
+          email,
+          purpose: "register",
+          secrets: { password },
+        });
         startResendCooldown(payload.retryAfterSeconds);
         setNotice(`新验证码已发送至 ${email.trim().toLowerCase()}`);
       } else if (mode === "reset-code") {
@@ -225,7 +199,7 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: Editor
       <section className="grid min-h-dvh place-items-center px-5 py-10 sm:px-10">
         <form aria-label="Nexus 身份认证" className="grid w-full max-w-[420px] gap-6" onSubmit={handleSubmit}>
           <div className="flex items-center gap-3 lg:hidden">
-            <span aria-hidden="true" className="grid size-9 place-items-center rounded-md bg-foreground text-sm font-bold text-background">N</span>
+            <BrandMark className="size-9" />
             <strong className="text-sm text-foreground">Nexus</strong>
           </div>
 
@@ -244,13 +218,14 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: Editor
           {mode === "login" || mode === "register" ? (
             <Tabs onValueChange={(value) => changeMode(value as AuthMode)} value={mode}>
               <TabsList className="grid w-full grid-cols-2 rounded-md" aria-label="认证方式">
-                <TabsTrigger value="login">登录</TabsTrigger>
-                <TabsTrigger value="register">注册</TabsTrigger>
+                <TabsTrigger disabled={isSubmitting} value="login">登录</TabsTrigger>
+                <TabsTrigger disabled={isSubmitting} value="register">注册</TabsTrigger>
               </TabsList>
             </Tabs>
           ) : (
             <Button
               className="w-fit px-0"
+              disabled={isSubmitting}
               onClick={() => changeMode(mode === "register-code" ? "register" : mode === "reset-code" ? "forgot" : "login")}
               type="button"
               variant="ghost"
@@ -339,7 +314,7 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: Editor
           </div>
 
           {mode === "login" ? (
-            <Button className="w-fit justify-self-end px-0 text-xs" onClick={() => changeMode("forgot")} type="button" variant="ghost">
+            <Button className="w-fit justify-self-end px-0 text-xs" disabled={isSubmitting} onClick={() => changeMode("forgot")} type="button" variant="ghost">
               忘记密码
             </Button>
           ) : null}
@@ -420,7 +395,7 @@ function BrandPanel() {
     <section className="relative hidden min-h-dvh overflow-hidden border-r bg-zinc-50 p-10 lg:flex lg:flex-col lg:justify-between xl:p-14">
       <div aria-hidden="true" className="absolute inset-0 bg-[linear-gradient(to_right,rgba(24,24,27,0.045)_1px,transparent_1px),linear-gradient(to_bottom,rgba(24,24,27,0.045)_1px,transparent_1px)] bg-[size:34px_34px] [mask-image:linear-gradient(to_bottom,black,transparent_88%)]" />
       <div className="relative flex items-center gap-3">
-        <span className="grid size-10 place-items-center rounded-md bg-foreground text-base font-bold text-background shadow-sm">N</span>
+        <BrandMark className="size-10 shadow-sm" />
         <div>
           <strong className="block text-sm font-semibold text-foreground">Nexus</strong>
           <span className="block text-xs text-muted-foreground">团队内容工作台</span>
