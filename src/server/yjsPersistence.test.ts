@@ -109,9 +109,9 @@ async function seedWorkspace(pool: Pool, workspaceId: string, userId: string, em
     [userId, email, userId, 1000],
   );
   await pool.query(
-    `INSERT INTO editor_workspaces (id, name, owner_id, active_document_id, updated_at, created_at)
-     VALUES ($1, $2, $3, NULL, $4, $4)`,
-    [workspaceId, workspaceId, userId, 1000],
+    `INSERT INTO editor_workspaces (id, name, updated_at, created_at)
+     VALUES ($1, $2, $3, $3)`,
+    [workspaceId, workspaceId, 1000],
   );
 }
 

@@ -98,6 +98,7 @@ const WORKSPACE_SCOPED_CONTENT_MIGRATION_ID = "2026-07-10-workspace-scoped-conte
 const COMPLEX_BLOCK_DATA_MIGRATION_ID = "2026-07-10-complex-block-data";
 const PRODUCTION_AUTHENTICATION_MIGRATION_ID = "2026-07-13-production-authentication";
 const YJS_PERSISTENCE_MIGRATION_ID = "2026-07-13-yjs-persistence";
+const MULTI_WORKSPACE_FOUNDATION_MIGRATION_ID = "2026-07-15-multi-workspace-foundation";
 const MIGRATION_LOCK_ID = "__migration_lock__";
 
 const WORKSPACE_SCOPED_CONTENT_SCHEMA = [
@@ -220,6 +221,45 @@ const YJS_PERSISTENCE_SCHEMA = [
   "CREATE INDEX yjs_room_updates_room_idx ON yjs_room_updates(workspace_id, room_name, id)",
 ];
 
+const MULTI_WORKSPACE_FOUNDATION_SCHEMA = [
+  `CREATE TABLE workspace_document_preferences (
+    user_id TEXT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+    workspace_id TEXT NOT NULL REFERENCES editor_workspaces(id) ON DELETE CASCADE,
+    active_document_id TEXT,
+    updated_at BIGINT NOT NULL,
+    PRIMARY KEY (user_id, workspace_id),
+    FOREIGN KEY (workspace_id, user_id)
+      REFERENCES workspace_members(workspace_id, user_id) ON DELETE CASCADE,
+    FOREIGN KEY (workspace_id, active_document_id)
+      REFERENCES editor_documents(workspace_id, id)
+      ON DELETE SET NULL (active_document_id)
+  )`,
+  `INSERT INTO workspace_document_preferences
+    (user_id, workspace_id, active_document_id, updated_at)
+   SELECT members.user_id, members.workspace_id, workspaces.active_document_id, workspaces.updated_at
+   FROM workspace_members members
+   INNER JOIN editor_workspaces workspaces ON workspaces.id = members.workspace_id
+   ON CONFLICT (user_id, workspace_id) DO NOTHING`,
+  "ALTER TABLE workspace_preferences RENAME COLUMN workspace_id TO selected_workspace_id",
+  "ALTER TABLE editor_workspaces DROP COLUMN owner_id",
+  "ALTER TABLE editor_workspaces DROP COLUMN active_document_id",
+  `CREATE INDEX workspace_document_preferences_workspace_idx
+   ON workspace_document_preferences(workspace_id, user_id)`,
+];
+
+const PG_MEM_MULTI_WORKSPACE_FOUNDATION_SCHEMA = [
+  `CREATE TABLE workspace_document_preferences (
+    user_id TEXT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+    workspace_id TEXT NOT NULL REFERENCES editor_workspaces(id) ON DELETE CASCADE,
+    active_document_id TEXT,
+    updated_at BIGINT NOT NULL,
+    PRIMARY KEY (user_id, workspace_id),
+    FOREIGN KEY (workspace_id, user_id)
+      REFERENCES workspace_members(workspace_id, user_id) ON DELETE CASCADE
+  )`,
+  ...MULTI_WORKSPACE_FOUNDATION_SCHEMA.slice(1),
+];
+
 export async function migrateDatabase(pool: Pool) {
   const client = await pool.connect();
 
@@ -302,6 +342,27 @@ export async function migrateDatabase(pool: Pool) {
       await client.query(
         "INSERT INTO schema_migrations (id, applied_at) VALUES ($1, $2)",
         [YJS_PERSISTENCE_MIGRATION_ID, Date.now()],
+      );
+    }
+
+    const multiWorkspaceFoundationResult = await client.query(
+      "SELECT id FROM schema_migrations WHERE id = $1",
+      [MULTI_WORKSPACE_FOUNDATION_MIGRATION_ID],
+    );
+
+    if (multiWorkspaceFoundationResult.rows.length === 0) {
+      // pg-mem cannot parse PostgreSQL's column-specific SET NULL syntax.
+      const schema = client.constructor.name === "MemPg"
+        ? PG_MEM_MULTI_WORKSPACE_FOUNDATION_SCHEMA
+        : MULTI_WORKSPACE_FOUNDATION_SCHEMA;
+
+      for (const statement of schema) {
+        await client.query(statement);
+      }
+
+      await client.query(
+        "INSERT INTO schema_migrations (id, applied_at) VALUES ($1, $2)",
+        [MULTI_WORKSPACE_FOUNDATION_MIGRATION_ID, Date.now()],
       );
     }
 

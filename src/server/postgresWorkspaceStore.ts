@@ -76,7 +76,7 @@ export class PostgresWorkspaceStore {
     const existingAccess = await this.findAccess(executor, userId);
 
     if (existingAccess) {
-      await this.ensureDefaultDocument(executor, existingAccess.workspaceId);
+      await this.ensureDefaultDocument(executor, userId, existingAccess.workspaceId);
       return existingAccess.workspaceId;
     }
 
@@ -88,7 +88,7 @@ export class PostgresWorkspaceStore {
       const access = await this.findAccess(client, userId);
       if (access) {
         await client.query("COMMIT");
-        await this.ensureDefaultDocument(client, access.workspaceId);
+        await this.ensureDefaultDocument(client, userId, access.workspaceId);
         return access.workspaceId;
       }
 
@@ -96,9 +96,9 @@ export class PostgresWorkspaceStore {
       const now = this.now();
 
       await client.query(
-        `INSERT INTO editor_workspaces (id, name, owner_id, active_document_id, updated_at, created_at)
-         VALUES ($1, $2, $3, NULL, $4, $4)`,
-        [workspaceId, name.trim() || "我的工作区", userId, now],
+        `INSERT INTO editor_workspaces (id, name, updated_at, created_at)
+         VALUES ($1, $2, $3, $3)`,
+        [workspaceId, name.trim() || "我的工作区", now],
       );
       await client.query(
         `INSERT INTO workspace_members (workspace_id, user_id, role, created_at)
@@ -106,14 +106,15 @@ export class PostgresWorkspaceStore {
         [workspaceId, userId, now],
       );
       await client.query(
-        `INSERT INTO workspace_preferences (user_id, workspace_id)
+        `INSERT INTO workspace_preferences (user_id, selected_workspace_id)
          VALUES ($1, $2)
-         ON CONFLICT (user_id) DO UPDATE SET workspace_id = EXCLUDED.workspace_id`,
+         ON CONFLICT (user_id) DO UPDATE
+         SET selected_workspace_id = EXCLUDED.selected_workspace_id`,
         [userId, workspaceId],
       );
       await client.query("COMMIT");
 
-      await this.ensureDefaultDocument(client, workspaceId);
+      await this.ensureDefaultDocument(client, userId, workspaceId);
 
       return workspaceId;
     } catch (error) {
@@ -132,8 +133,13 @@ export class PostgresWorkspaceStore {
     }
 
     const workspaceResult = await this.pool.query(
-      "SELECT active_document_id, updated_at FROM editor_workspaces WHERE id = $1",
-      [access.workspaceId],
+      `SELECT document_preferences.active_document_id, workspaces.updated_at
+       FROM editor_workspaces workspaces
+       LEFT JOIN workspace_document_preferences document_preferences
+         ON document_preferences.workspace_id = workspaces.id
+        AND document_preferences.user_id = $1
+       WHERE workspaces.id = $2`,
+      [userId, access.workspaceId],
     );
     const workspaceRow = workspaceResult.rows[0];
 
@@ -292,8 +298,8 @@ export class PostgresWorkspaceStore {
       }
 
       await client.query(
-        "UPDATE editor_workspaces SET active_document_id = $1, updated_at = $2 WHERE id = $3",
-        [workspace.activeDocumentId, workspace.updatedAt, access.workspaceId],
+        "UPDATE editor_workspaces SET updated_at = $1 WHERE id = $2",
+        [workspace.updatedAt, access.workspaceId],
       );
       await client.query(
         "DELETE FROM editor_documents WHERE workspace_id = $1",
@@ -332,6 +338,16 @@ export class PostgresWorkspaceStore {
           document,
         );
       }
+
+      await client.query(
+        `INSERT INTO workspace_document_preferences
+           (user_id, workspace_id, active_document_id, updated_at)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (user_id, workspace_id) DO UPDATE
+         SET active_document_id = EXCLUDED.active_document_id,
+             updated_at = EXCLUDED.updated_at`,
+        [userId, access.workspaceId, workspace.activeDocumentId, workspace.updatedAt],
+      );
 
       await client.query("COMMIT");
       return workspace;
@@ -378,11 +394,12 @@ export class PostgresWorkspaceStore {
         [access.workspaceId, String(userId), role, this.now()],
       );
       await client.query(
-        `INSERT INTO workspace_preferences (user_id, workspace_id)
+        `INSERT INTO workspace_preferences (user_id, selected_workspace_id)
          VALUES ($1, $2)
-         ON CONFLICT (user_id) DO UPDATE SET workspace_id = EXCLUDED.workspace_id`,
+         ON CONFLICT (user_id) DO NOTHING`,
         [String(userId), access.workspaceId],
       );
+      await this.ensureDefaultDocument(client, String(userId), access.workspaceId);
 
       await client.query("COMMIT");
     } catch (error) {
@@ -430,8 +447,10 @@ export class PostgresWorkspaceStore {
       `SELECT members.workspace_id, members.role
        FROM workspace_preferences preferences
        INNER JOIN workspace_members members
-         ON members.workspace_id = preferences.workspace_id AND members.user_id = preferences.user_id
-       INNER JOIN editor_documents documents ON documents.workspace_id = preferences.workspace_id
+         ON members.workspace_id = preferences.selected_workspace_id
+        AND members.user_id = preferences.user_id
+       INNER JOIN editor_documents documents
+         ON documents.workspace_id = preferences.selected_workspace_id
        WHERE preferences.user_id = $1 AND documents.id = $2
        LIMIT 1`,
       [userId, documentId],
@@ -594,22 +613,44 @@ export class PostgresWorkspaceStore {
 
   private async ensureDefaultDocument(
     executor: Pick<Pool, "query"> | Pick<PoolClient, "query">,
+    userId: string,
     workspaceId: string,
   ) {
-    const workspace = createDefaultWorkspace(this.now());
-    const claimed = await executor.query(
-      `UPDATE editor_workspaces
-       SET active_document_id = $1, updated_at = $2
-       WHERE id = $3 AND active_document_id IS NULL
-       RETURNING id`,
-      [workspace.activeDocumentId, workspace.updatedAt, workspaceId],
+    const existingDocumentResult = await executor.query(
+      `SELECT documents.id
+       FROM editor_documents documents
+       LEFT JOIN workspace_document_preferences document_preferences
+         ON document_preferences.workspace_id = documents.workspace_id
+        AND document_preferences.user_id = $1
+       WHERE documents.workspace_id = $2
+       ORDER BY CASE
+                  WHEN documents.id = document_preferences.active_document_id THEN 0
+                  ELSE 1
+                END,
+                documents.position ASC
+       LIMIT 1`,
+      [userId, workspaceId],
     );
+    let activeDocumentId = existingDocumentResult.rows[0]?.id
+      ? String(existingDocumentResult.rows[0].id)
+      : null;
+    const updatedAt = this.now();
 
-    if (claimed.rowCount === 0) {
-      return;
+    if (!activeDocumentId) {
+      const workspace = createDefaultWorkspace(updatedAt);
+      activeDocumentId = workspace.activeDocumentId;
+      await this.insertDocument(executor, workspaceId, workspace.documents[0], 0);
     }
 
-    await this.insertDocument(executor, workspaceId, workspace.documents[0], 0);
+    await executor.query(
+      `INSERT INTO workspace_document_preferences
+         (user_id, workspace_id, active_document_id, updated_at)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (user_id, workspace_id) DO UPDATE
+       SET active_document_id = EXCLUDED.active_document_id,
+           updated_at = EXCLUDED.updated_at`,
+      [userId, workspaceId, activeDocumentId, updatedAt],
+    );
   }
 
   private async insertDocumentVersion(
@@ -660,7 +701,10 @@ export class PostgresWorkspaceStore {
        INNER JOIN editor_workspaces workspaces ON workspaces.id = members.workspace_id
        LEFT JOIN workspace_preferences preferences ON preferences.user_id = members.user_id
        WHERE members.user_id = $1
-       ORDER BY CASE WHEN preferences.workspace_id = members.workspace_id THEN 0 ELSE 1 END,
+       ORDER BY CASE
+                  WHEN preferences.selected_workspace_id = members.workspace_id THEN 0
+                  ELSE 1
+                END,
                 workspaces.created_at ASC
        LIMIT 1`,
       [userId],

@@ -76,9 +76,9 @@ describe("RedisCollaborationPubSub", () => {
       ["owner-a", "owner-a@example.com", "Owner A", 1000],
     );
     await pool.query(
-      `INSERT INTO editor_workspaces (id, name, owner_id, active_document_id, updated_at, created_at)
-       VALUES ($1, $2, $3, NULL, $4, $4)`,
-      ["workspace-a", "Workspace A", "owner-a", 1000],
+      `INSERT INTO editor_workspaces (id, name, updated_at, created_at)
+       VALUES ($1, $2, $3, $3)`,
+      ["workspace-a", "Workspace A", 1000],
     );
     const ignoredOrigins = new Set<unknown>([COLLABORATION_REMOTE_ORIGIN]);
     const persistenceA = new PostgresYjsPersistence(pool, {

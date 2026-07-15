@@ -142,6 +142,30 @@ describe("PostgresWorkspaceStore", () => {
     await expect(store.saveWorkspace("editor-1", createDefaultWorkspace(5000))).resolves.toBeDefined();
   });
 
+  it("does not change an added member's selected workspace", async () => {
+    await seedUser(pool, "owner-1", "owner@example.com", "Owner");
+    await seedUser(pool, "editor-1", "editor@example.com", "Editor");
+    let workspaceSequence = 0;
+    const multiWorkspaceStore = new PostgresWorkspaceStore(pool, {
+      idFactory: () => `workspace-${++workspaceSequence}`,
+      now: () => 3000 + workspaceSequence,
+    });
+    await multiWorkspaceStore.ensurePersonalWorkspace("owner-1", "Owner workspace");
+    await multiWorkspaceStore.ensurePersonalWorkspace("editor-1", "Editor workspace");
+    const selectedBefore = await pool.query(
+      "SELECT selected_workspace_id FROM workspace_preferences WHERE user_id = $1",
+      ["editor-1"],
+    );
+
+    await multiWorkspaceStore.addMember("owner-1", "editor@example.com", "editor");
+
+    const selectedAfter = await pool.query(
+      "SELECT selected_workspace_id FROM workspace_preferences WHERE user_id = $1",
+      ["editor-1"],
+    );
+    expect(selectedAfter.rows).toEqual(selectedBefore.rows);
+  });
+
   it("resolves document-specific workspace access for collaboration", async () => {
     await seedUser(pool, "owner-1", "owner@example.com", "林夏");
     await seedUser(pool, "editor-1", "editor@example.com", "周宁");
