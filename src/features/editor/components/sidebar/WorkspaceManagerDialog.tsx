@@ -1,0 +1,151 @@
+"use client";
+
+import { ArrowLeft, Pencil, Plus, Search } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import type { WorkspaceCatalog, WorkspaceSummary } from "../../../../shared/workspace";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+
+const ROLE_LABELS = { editor: "编辑者", owner: "所有者", viewer: "访客" } as const;
+
+interface WorkspaceManagerDialogProps {
+  catalog: WorkspaceCatalog;
+  error: string;
+  isTransitioning: boolean;
+  onClose: () => void;
+  onCreate: (name: string) => Promise<void>;
+  onRename: (workspaceId: string, name: string) => Promise<void>;
+  onSwitch: (workspaceId: string) => Promise<void>;
+  open: boolean;
+}
+
+type View = { type: "list" } | { type: "create" } | { type: "rename"; workspace: WorkspaceSummary };
+
+export function WorkspaceManagerDialog({
+  catalog,
+  error,
+  isTransitioning,
+  onClose,
+  onCreate,
+  onRename,
+  onSwitch,
+  open,
+}: WorkspaceManagerDialogProps) {
+  const [view, setView] = useState<View>({ type: "list" });
+  const [query, setQuery] = useState("");
+  const [name, setName] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!open) {
+      setView({ type: "list" });
+      setName("");
+    }
+  }, [open]);
+
+  const visibleWorkspaces = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    return normalized
+      ? catalog.workspaces.filter((workspace) => workspace.name.toLowerCase().includes(normalized))
+      : catalog.workspaces;
+  }, [catalog.workspaces, query]);
+
+  const openCreate = () => {
+    setName("");
+    setView({ type: "create" });
+  };
+  const openRename = (workspace: WorkspaceSummary) => {
+    setName(workspace.name);
+    setView({ type: "rename", workspace });
+  };
+  const returnToList = () => {
+    setName("");
+    setView({ type: "list" });
+  };
+  const submit = async () => {
+    if (!name.trim() || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      if (view.type === "create") await onCreate(name);
+      if (view.type === "rename") await onRename(view.workspace.id, name);
+      returnToList();
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }} open={open}>
+      <DialogContent className="max-h-[min(42rem,calc(100dvh-2rem))] max-w-xl overflow-hidden p-0">
+        <DialogHeader className="border-b px-5 py-4 pr-12">
+          <DialogTitle>工作区管理</DialogTitle>
+        </DialogHeader>
+        {view.type === "list" ? (
+          <div className="grid min-h-0 gap-4 p-5">
+            <label className="relative">
+              <Search aria-hidden="true" className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                aria-label="搜索工作区"
+                className="pl-9"
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="搜索工作区"
+                role="searchbox"
+                value={query}
+              />
+            </label>
+            <div className="grid max-h-[22rem] gap-1 overflow-y-auto">
+              {visibleWorkspaces.map((workspace) => {
+                const current = workspace.id === catalog.currentWorkspaceId;
+                return (
+                  <div className="flex min-h-14 items-center gap-3 border-b px-1 py-2 last:border-b-0" data-testid={`workspace-row-${workspace.id}`} key={workspace.id}>
+                    <span aria-hidden="true" className="grid size-8 shrink-0 place-items-center rounded-md border bg-muted text-sm font-semibold">
+                      {workspace.name.trim().charAt(0).toUpperCase() || "N"}
+                    </span>
+                    <span className="grid min-w-0 flex-1">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <strong className="truncate text-sm">{workspace.name}</strong>
+                        {current ? <Badge variant="secondary">当前</Badge> : null}
+                      </span>
+                      <span className="text-xs text-muted-foreground">{ROLE_LABELS[workspace.role]}</span>
+                    </span>
+                    {workspace.role === "owner" ? (
+                      <Button aria-label={`重命名 ${workspace.name}`} onClick={() => openRename(workspace)} size="icon" type="button" variant="ghost">
+                        <Pencil aria-hidden="true" className="size-4" />
+                      </Button>
+                    ) : null}
+                    {!current ? (
+                      <Button disabled={isTransitioning} onClick={() => void onSwitch(workspace.id)} size="sm" type="button" variant="outline">
+                        切换到{workspace.name}
+                      </Button>
+                    ) : null}
+                  </div>
+                );
+              })}
+              {visibleWorkspaces.length === 0 ? <p className="py-8 text-center text-sm text-muted-foreground">没有匹配的工作区</p> : null}
+            </div>
+            {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+            <Button disabled={isTransitioning} onClick={openCreate} type="button">
+              <Plus aria-hidden="true" className="size-4" />新建工作区
+            </Button>
+          </div>
+        ) : (
+          <form className="grid gap-5 p-5" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+            <Button aria-label="返回工作区列表" className="w-fit" onClick={returnToList} size="sm" type="button" variant="ghost">
+              <ArrowLeft aria-hidden="true" className="size-4" />返回
+            </Button>
+            <label className="grid gap-2 text-sm font-medium">
+              工作区名称
+              <Input autoFocus maxLength={80} onChange={(event) => setName(event.target.value)} value={name} />
+            </label>
+            {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+            <Button disabled={isSubmitting || isTransitioning || !name.trim()} type="submit">
+              {view.type === "create" ? "创建并切换" : "保存名称"}
+            </Button>
+          </form>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}

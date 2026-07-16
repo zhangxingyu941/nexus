@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { flushSync } from "react-dom";
 import { useDocumentCollaboration } from "../collaboration/useDocumentCollaboration";
+import type { WorkspaceSummary } from "../../../shared/workspace";
 import type { Block, BlockData, BlockStatus, BlockType, EditorDocument, EditorWorkspace, MoveDirection } from "../model/block";
 import {
   addBlockComment,
@@ -22,7 +23,6 @@ import {
   updateDocumentTitle,
 } from "../model/documentOperations";
 import {
-  createDefaultWorkspace,
   type CreateWorkspaceDocumentInput,
   createWorkspaceDocument,
   deleteWorkspaceDocument,
@@ -42,19 +42,15 @@ import {
 } from "../model/workspaceOperations";
 import {
   addWorkspaceMember,
-  loadSyncedWorkspace,
   loadWorkspaceMembers,
-  saveSyncedWorkspace,
 } from "../persistence/workspaceSyncRepository";
 import type {
   DatabaseWorkspaceMember,
   EditorSessionUser,
-  WorkspaceAccessRole,
 } from "../session/sessionTypes";
+import type { WorkspaceSaveStatus } from "../session/useWorkspaceSession";
 import { DocumentEditor } from "./DocumentEditor";
 import { WorkspaceSidebar } from "./WorkspaceSidebar";
-
-type SaveStatus = "local" | "remote" | "saving" | "unsaved" | "failed" | "readonly";
 
 type UndoDeleteNotice =
   | {
@@ -74,79 +70,49 @@ function nextTimestamp(document: EditorDocument) {
 }
 
 interface EditorPageProps {
+  membersEnabled: boolean;
+  onManageWorkspaces: () => void;
   onSignOut?: () => void;
+  onWorkspaceChange: (updater: (current: EditorWorkspace) => EditorWorkspace) => void;
+  saveStatus: WorkspaceSaveStatus;
   sessionUser?: EditorSessionUser | null;
+  workspace: EditorWorkspace;
+  workspaceId: string;
+  workspaceSummary: WorkspaceSummary;
 }
 
-export function EditorPage({ onSignOut, sessionUser = null }: EditorPageProps = {}) {
-  const [workspace, setWorkspace] = useState<EditorWorkspace | null>(null);
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>("remote");
+export function EditorPage({
+  membersEnabled,
+  onManageWorkspaces,
+  onSignOut,
+  onWorkspaceChange,
+  saveStatus,
+  sessionUser = null,
+  workspace,
+  workspaceId,
+  workspaceSummary,
+}: EditorPageProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [workspaceMembers, setWorkspaceMembers] = useState<DatabaseWorkspaceMember[]>([]);
-  const [workspaceRole, setWorkspaceRole] = useState<WorkspaceAccessRole | null>(null);
   const [titleFocusRequest, setTitleFocusRequest] = useState(0);
   const [undoDeleteNotice, setUndoDeleteNotice] = useState<UndoDeleteNotice | null>(null);
   const [focusBlockId, setFocusBlockId] = useState<string | null>(null);
-  const hasLoadedWorkspace = useRef(false);
+  const workspaceRole = workspaceSummary.role;
 
   useEffect(() => {
-    // 首次进入时恢复整个工作区；失败时回退到空工作区，避免编辑器白屏。
-    let cancelled = false;
-
-    async function loadInitialWorkspace() {
-      try {
-        const syncedWorkspace = await loadSyncedWorkspace();
-        if (!cancelled) {
-          setWorkspace(syncedWorkspace.workspace ?? createDefaultWorkspace());
-          setSaveStatus(
-            syncedWorkspace.role === "viewer"
-              ? "readonly"
-              : syncedWorkspace.source === "remote" ? "remote" : "local",
-          );
-          setWorkspaceRole(syncedWorkspace.role ?? null);
-          if (syncedWorkspace.role) {
-            loadWorkspaceMembers()
-              .then((members) => {
-                if (!cancelled) {
-                  setWorkspaceMembers(members);
-                }
-              })
-              .catch(() => undefined);
-          }
-          hasLoadedWorkspace.current = true;
-        }
-      } catch {
-        if (!cancelled) {
-          setWorkspace(createDefaultWorkspace());
-          setSaveStatus("failed");
-          hasLoadedWorkspace.current = true;
-        }
-      }
+    if (!membersEnabled) {
+      setWorkspaceMembers([]);
+      return;
     }
-
-    void loadInitialWorkspace();
+    let cancelled = false;
+    loadWorkspaceMembers()
+      .then((members) => { if (!cancelled) setWorkspaceMembers(members); })
+      .catch(() => undefined);
 
     return () => {
       cancelled = true;
     };
-  }, []);
-
-  useEffect(() => {
-    // 工作区变更后防抖保存：优先同步后端，失败时保留本地草稿。
-    if (!workspace || !hasLoadedWorkspace.current || workspaceRole === "viewer") {
-      return;
-    }
-
-    setSaveStatus("unsaved");
-    const timeoutId = window.setTimeout(() => {
-      setSaveStatus("saving");
-      saveSyncedWorkspace(workspace)
-        .then((target) => setSaveStatus(target === "remote" ? "remote" : "local"))
-        .catch(() => setSaveStatus("failed"));
-    }, 250);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [workspace, workspaceRole]);
+  }, [membersEnabled, workspaceId]);
 
   useEffect(() => {
     if (!isSidebarOpen) {
@@ -175,7 +141,7 @@ export function EditorPage({ onSignOut, sessionUser = null }: EditorPageProps = 
   );
   const workspaceTasks = workspace ? getWorkspaceTasks(workspace) : [];
   const handleRemotePatches = useCallback((patches: Parameters<typeof applyRemoteBlockContentPatch>[1][]) => {
-    setWorkspace((current) => {
+    onWorkspaceChange((current) => {
       if (!current) {
         return current;
       }
@@ -185,7 +151,7 @@ export function EditorPage({ onSignOut, sessionUser = null }: EditorPageProps = 
   }, []);
   const handleRemoteDocumentStructurePatch = useCallback(
     (patch: Parameters<typeof applyRemoteDocumentStructurePatch>[1]) => {
-      setWorkspace((current) => (current ? applyRemoteDocumentStructurePatch(current, patch) : current));
+      onWorkspaceChange((current) => applyRemoteDocumentStructurePatch(current, patch));
     },
     [],
   );
@@ -198,27 +164,25 @@ export function EditorPage({ onSignOut, sessionUser = null }: EditorPageProps = 
 
   const applyActiveDocumentChange = useCallback(
     (operation: (document: EditorDocument) => EditorDocument) => {
-      setWorkspace((current) =>
-        current ? updateActiveDocument(current, operation, Date.now()) : current,
-      );
+      onWorkspaceChange((current) => updateActiveDocument(current, operation, Date.now()));
     },
     [],
   );
 
   const handleCreateDocument = useCallback((input?: CreateWorkspaceDocumentInput) => {
-    setWorkspace((current) => (current ? createWorkspaceDocument(current, Date.now(), input) : current));
+    onWorkspaceChange((current) => createWorkspaceDocument(current, Date.now(), input));
     setIsSidebarOpen(false);
   }, []);
 
   const handleSelectDocument = useCallback((documentId: string) => {
-    setWorkspace((current) => (current ? switchActiveDocument(current, documentId, Date.now()) : current));
+    onWorkspaceChange((current) => switchActiveDocument(current, documentId, Date.now()));
     setIsSidebarOpen(false);
   }, []);
 
   const handleSelectTask = useCallback((documentId: string, blockId: string) => {
     flushSync(() => {
       setFocusBlockId(blockId);
-      setWorkspace((current) => (current ? switchActiveDocument(current, documentId, Date.now()) : current));
+      onWorkspaceChange((current) => switchActiveDocument(current, documentId, Date.now()));
     });
 
     window.setTimeout(() => {
@@ -231,18 +195,18 @@ export function EditorPage({ onSignOut, sessionUser = null }: EditorPageProps = 
   }, []);
 
   const handleRenameDocument = useCallback((documentId: string) => {
-    setWorkspace((current) => (current ? switchActiveDocument(current, documentId, Date.now()) : current));
+    onWorkspaceChange((current) => switchActiveDocument(current, documentId, Date.now()));
     setTitleFocusRequest((current) => current + 1);
   }, []);
 
   const handleDuplicateDocument = useCallback((documentId: string) => {
-    setWorkspace((current) =>
+    onWorkspaceChange((current) =>
       current ? duplicateWorkspaceDocument(current, documentId, Date.now()) : current,
     );
   }, []);
 
   const handleToggleDocumentPinned = useCallback((documentId: string) => {
-    setWorkspace((current) => (current ? toggleDocumentPinned(current, documentId, Date.now()) : current));
+    onWorkspaceChange((current) => toggleDocumentPinned(current, documentId, Date.now()));
   }, []);
 
   const handleDeleteDocument = useCallback(
@@ -265,7 +229,7 @@ export function EditorPage({ onSignOut, sessionUser = null }: EditorPageProps = 
       }
 
       setUndoDeleteNotice({ document, type: "document" });
-      setWorkspace((current) =>
+      onWorkspaceChange((current) =>
         current ? deleteWorkspaceDocument(current, documentId, Date.now()) : current,
       );
     },
@@ -273,7 +237,7 @@ export function EditorPage({ onSignOut, sessionUser = null }: EditorPageProps = 
   );
 
   const handleRestoreDeletedDocument = useCallback(() => {
-    setWorkspace((current) => {
+    onWorkspaceChange((current) => {
       if (!current || !undoDeleteNotice) {
         return current;
       }
@@ -319,7 +283,7 @@ export function EditorPage({ onSignOut, sessionUser = null }: EditorPageProps = 
 
       flushSync(() => {
         setFocusBlockId(nextBlockId);
-        setWorkspace((current) =>
+        onWorkspaceChange((current) =>
           current
             ? updateActiveDocument(
                 current,
@@ -428,7 +392,7 @@ export function EditorPage({ onSignOut, sessionUser = null }: EditorPageProps = 
   );
 
   const handleCompleteTask = useCallback((documentId: string, blockId: string) => {
-    setWorkspace((current) =>
+    onWorkspaceChange((current) =>
       current ? updateDocumentBlockStatus(current, documentId, blockId, "done", Date.now()) : current,
     );
   }, []);
@@ -452,7 +416,7 @@ export function EditorPage({ onSignOut, sessionUser = null }: EditorPageProps = 
   );
 
   const handleRestoreDocumentVersion = useCallback((document: EditorDocument) => {
-    setWorkspace((current) => {
+    onWorkspaceChange((current) => {
       if (!current || !current.documents.some((item) => item.id === document.id)) {
         return current;
       }
@@ -486,6 +450,10 @@ export function EditorPage({ onSignOut, sessionUser = null }: EditorPageProps = 
         onRenameDocument={handleRenameDocument}
         onCompleteTask={handleCompleteTask}
         onOpenUtilityDialog={() => setIsSidebarOpen(false)}
+        onManageWorkspaces={() => {
+          setIsSidebarOpen(false);
+          onManageWorkspaces();
+        }}
         onSelectDocument={handleSelectDocument}
         onSelectTask={handleSelectTask}
         onToggleDocumentPinned={handleToggleDocumentPinned}
@@ -493,6 +461,7 @@ export function EditorPage({ onSignOut, sessionUser = null }: EditorPageProps = 
         collaborators={workspaceCollaborators}
         getSearchResults={getSearchResults}
         tasks={workspaceTasks}
+        workspaceSummary={workspaceSummary}
       />
       {isSidebarOpen ? (
         <button
@@ -512,7 +481,7 @@ export function EditorPage({ onSignOut, sessionUser = null }: EditorPageProps = 
         focusBlockId={focusBlockId}
         isWorkspaceNavigationOpen={isSidebarOpen}
         isReadOnly={workspaceRole === "viewer"}
-        onInviteMember={workspaceRole === "owner" ? handleInviteMember : undefined}
+        onInviteMember={membersEnabled && workspaceRole === "owner" ? handleInviteMember : undefined}
         onSignOut={onSignOut}
         onAddAfter={handleAddAfter}
         onAddBlockComment={handleAddBlockComment}

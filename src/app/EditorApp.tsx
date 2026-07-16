@@ -7,7 +7,7 @@ import {
 import { useEffect, useState } from "react";
 import { BrandMark } from "@/components/BrandMark";
 import { Button } from "@/components/ui/button";
-import { EditorPage } from "../features/editor/components/EditorPage";
+import { WorkspaceShell } from "../features/editor/components/WorkspaceShell";
 import type { EditorSessionUser } from "../features/editor/session/sessionTypes";
 import { AuthScreen } from "./AuthScreen";
 
@@ -114,10 +114,15 @@ export function EditorApp() {
     );
   }
 
+  if (session.status === "local") {
+    return <WorkspaceShell mode="local" sessionUser={null} />;
+  }
+
   return (
-    <EditorPage
-      onSignOut={session.status === "authenticated" ? handleSignOut : undefined}
-      sessionUser={session.status === "authenticated" ? session.user : null}
+    <WorkspaceShell
+      mode="database"
+      onSignOut={handleSignOut}
+      sessionUser={session.user}
     />
   );
 }

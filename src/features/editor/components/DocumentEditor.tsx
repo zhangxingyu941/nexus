@@ -18,7 +18,8 @@ import { CommentsPanel } from "./document/CommentsPanel";
 import { DocumentTitleSection } from "./document/DocumentTitleSection";
 import { DocumentTopbar } from "./document/DocumentTopbar";
 import { getBlockPreview, getDocumentTitle } from "./document/documentEditorTypes";
-import type { CommentFilter, SaveStatus, SharePermission } from "./document/documentEditorTypes";
+import type { WorkspaceSaveStatus } from "../session/useWorkspaceSession";
+import type { CommentFilter, SharePermission } from "./document/documentEditorTypes";
 import { HistoryPanel } from "./document/HistoryPanel";
 import { MembersPopover } from "./document/MembersPopover";
 import { SharePopover } from "./document/SharePopover";
@@ -35,7 +36,7 @@ interface DocumentEditorProps {
   isReadOnly: boolean;
   onSignOut?: () => void;
   onInviteMember?: (email: string, role: "editor" | "viewer") => Promise<void>;
-  saveStatus: SaveStatus;
+  saveStatus: WorkspaceSaveStatus;
   sessionUser: EditorSessionUser | null;
   workspaceMembers: DatabaseWorkspaceMember[];
   workspaceRole: WorkspaceAccessRole | null;

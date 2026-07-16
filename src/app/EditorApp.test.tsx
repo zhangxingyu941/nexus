@@ -29,16 +29,18 @@ beforeAll(async () => {
   };
 });
 
-vi.mock("../features/editor/components/EditorPage", () => ({
-  EditorPage: ({
+vi.mock("../features/editor/components/WorkspaceShell", () => ({
+  WorkspaceShell: ({
+    mode,
     onSignOut,
     sessionUser,
   }: {
+    mode: "database" | "local";
     onSignOut?: () => void;
     sessionUser?: { displayName: string } | null;
   }) => (
     <main aria-label="Next 编辑器入口">
-      编辑器已加载
+      编辑器已加载 {mode}
       {sessionUser ? <span>{sessionUser.displayName}</span> : null}
       {onSignOut ? <button onClick={onSignOut}>退出测试用户</button> : null}
     </main>
