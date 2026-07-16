@@ -171,6 +171,112 @@ describe("PostgresWorkspaceInviteStore", () => {
       .rejects.toMatchObject({ code: "invite_rate_limited" });
   });
 
+  it("resolves a raw token without exposing it and rejects the rotated token", async () => {
+    const created = await store.createInvite({
+      actorUserId: "owner-1",
+      email: "recipient@example.com",
+      role: "editor",
+      workspaceId: "workspace-1",
+    });
+
+    await expect(store.resolveRawToken(created.rawToken)).resolves.toEqual({
+      expiresAt: created.invite.expiresAt,
+      id: created.invite.id,
+      invitedBy: { displayName: "Owner", id: "owner-1" },
+      maskedEmail: "r***@example.com",
+      role: "editor",
+      workspaceId: "workspace-1",
+      workspaceName: "Product",
+    });
+
+    now += 61_000;
+    const resent = await store.resendInvite("owner-1", "workspace-1", created.invite.id);
+
+    await expect(store.resolveRawToken(created.rawToken))
+      .rejects.toMatchObject({ code: "invite_not_found" });
+    await expect(store.resolveRawToken(resent.rawToken)).resolves.toMatchObject({
+      id: created.invite.id,
+      workspaceName: "Product",
+    });
+  });
+
+  it("persists delivery results and starts the resend cooldown on the first delivery", async () => {
+    const created = await store.createInvite({
+      actorUserId: "owner-1",
+      email: "recipient@example.com",
+      role: "viewer",
+      workspaceId: "workspace-1",
+    });
+
+    await expect(store.markDeliveryResult(
+      "owner-1",
+      "workspace-1",
+      created.invite.id,
+      "sent",
+    )).resolves.toMatchObject({
+      deliveryStatus: "sent",
+      lastSentAt: now,
+      updatedAt: now,
+    });
+    await expect(inviteDeliveryAttemptAt(pool, created.invite.id)).resolves.toBe(now);
+    await expect(store.resendInvite("owner-1", "workspace-1", created.invite.id))
+      .rejects.toMatchObject({ code: "invite_rate_limited" });
+
+    now += 61_000;
+    await expect(store.markDeliveryResult(
+      "owner-1",
+      "workspace-1",
+      created.invite.id,
+      "failed",
+    )).resolves.toMatchObject({
+      deliveryStatus: "failed",
+      lastSentAt: 1_000,
+      updatedAt: now,
+    });
+    await expect(inviteDeliveryAttemptAt(pool, created.invite.id)).resolves.toBe(now);
+  });
+
+  it("expires a raw token before returning its terminal state", async () => {
+    const created = await store.createInvite({
+      actorUserId: "owner-1",
+      email: "recipient@example.com",
+      role: "viewer",
+      workspaceId: "workspace-1",
+    });
+    now = created.invite.expiresAt;
+
+    await expect(store.resolveRawToken(created.rawToken))
+      .rejects.toMatchObject({ code: "invite_expired" });
+    await expect(pool.query(
+      "SELECT status FROM workspace_invites WHERE id = $1",
+      [created.invite.id],
+    )).resolves.toMatchObject({ rows: [{ status: "expired" }] });
+  });
+
+  it("reports terminal status codes when resolving a current raw token", async () => {
+    const created = await store.createInvite({
+      actorUserId: "owner-1",
+      email: "recipient@example.com",
+      role: "viewer",
+      workspaceId: "workspace-1",
+    });
+    const terminalStates = [
+      ["accepted", "invite_already_accepted"],
+      ["declined", "invite_declined"],
+      ["revoked", "invite_revoked"],
+    ] as const;
+
+    for (const [status, code] of terminalStates) {
+      await pool.query(
+        "UPDATE workspace_invites SET status = $1 WHERE id = $2",
+        [status, created.invite.id],
+      );
+
+      await expect(store.resolveRawToken(created.rawToken))
+        .rejects.toMatchObject({ code });
+    }
+  });
+
   it("revokes a pending invite once and prevents subsequent resends", async () => {
     const created = await store.createInvite({
       actorUserId: "owner-1",

@@ -232,6 +232,86 @@ export class PostgresWorkspaceInviteStore {
     );
   }
 
+  async resolveRawToken(rawToken: string): Promise<ReceivedWorkspaceInvite> {
+    const tokenHash = this.tokenService.hashRawToken(rawToken);
+    const client = await this.pool.connect();
+    let committed = false;
+
+    try {
+      await client.query("BEGIN");
+      const matchResult = await client.query(
+        `SELECT id, workspace_id
+         FROM workspace_invites
+         WHERE token_hash = $1
+         LIMIT 1`,
+        [tokenHash],
+      );
+      const match = matchResult.rows[0];
+      if (!match) {
+        throw new WorkspaceDomainError("invite_not_found", "Invitation not found");
+      }
+
+      const workspace = await this.lockWorkspace(client, String(match.workspace_id));
+      await this.expirePendingInvites(client, workspace);
+      const invite = await this.lockInvite(client, workspace.id, String(match.id));
+      if (String(invite.token_hash) !== tokenHash) {
+        throw new WorkspaceDomainError("invite_not_found", "Invitation not found");
+      }
+
+      const terminalError = terminalInviteError(String(invite.status));
+      if (terminalError) {
+        await client.query("COMMIT");
+        committed = true;
+        throw terminalError;
+      }
+
+      const resolved = await this.toReceivedInvite(client, workspace, invite);
+      await client.query("COMMIT");
+      committed = true;
+      return resolved;
+    } catch (error) {
+      if (!committed) {
+        await client.query("ROLLBACK");
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async markDeliveryResult(
+    actorUserId: string,
+    workspaceId: string,
+    inviteId: string,
+    deliveryStatus: "sent" | "failed",
+  ): Promise<WorkspaceInviteSummary> {
+    return this.mutatePendingInvite(
+      actorUserId,
+      workspaceId,
+      inviteId,
+      async (client, _workspace, invite) => {
+        const now = this.now();
+        const id = String(invite.id);
+        const lastSentAt = deliveryStatus === "sent" ? now : invite.last_sent_at;
+        await client.query(
+          `UPDATE workspace_invites
+           SET delivery_status = $1, last_delivery_attempt_at = $2, last_sent_at = $3,
+               updated_at = $2
+           WHERE id = $4`,
+          [deliveryStatus, now, lastSentAt, id],
+        );
+
+        return this.toInviteSummary(client, {
+          ...invite,
+          delivery_status: deliveryStatus,
+          last_delivery_attempt_at: now,
+          last_sent_at: lastSentAt,
+          updated_at: now,
+        });
+      },
+    );
+  }
+
   async listOwnerInvites(
     actorUserId: string,
     workspaceId: string,
@@ -419,6 +499,33 @@ export class PostgresWorkspaceInviteStore {
       invited_by_display_name: inviter.display_name,
       invited_by_id: inviter.id,
     });
+  }
+
+  private async toReceivedInvite(
+    client: PoolClient,
+    workspace: LockedWorkspace,
+    invite: Record<string, unknown>,
+  ): Promise<ReceivedWorkspaceInvite> {
+    const inviterResult = await client.query(
+      "SELECT id, display_name FROM app_users WHERE id = $1",
+      [invite.invited_by],
+    );
+    const inviter = inviterResult.rows[0];
+    if (!inviter) {
+      throw new WorkspaceDomainError("invite_not_found", "Invitation inviter not found");
+    }
+    return {
+      expiresAt: Number(invite.expires_at),
+      id: String(invite.id),
+      invitedBy: {
+        displayName: String(inviter.display_name),
+        id: String(inviter.id),
+      },
+      maskedEmail: maskEmail(String(invite.email)),
+      role: invite.role as WorkspaceInviteRole,
+      workspaceId: workspace.id,
+      workspaceName: workspace.name,
+    };
   }
 
   private async requireOwner(
