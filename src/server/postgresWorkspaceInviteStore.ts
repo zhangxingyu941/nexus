@@ -283,23 +283,32 @@ export class PostgresWorkspaceInviteStore {
     actorUserId: string,
     workspaceId: string,
     inviteId: string,
+    expectedTokenHash: string,
     deliveryStatus: "sent" | "failed",
-  ): Promise<WorkspaceInviteSummary> {
+  ): Promise<WorkspaceInviteSummary | null> {
     return this.mutatePendingInvite(
       actorUserId,
       workspaceId,
       inviteId,
       async (client, _workspace, invite) => {
+        if (String(invite.token_hash) !== expectedTokenHash) {
+          return null;
+        }
+
         const now = this.now();
         const id = String(invite.id);
         const lastSentAt = deliveryStatus === "sent" ? now : invite.last_sent_at;
-        await client.query(
+        const updated = await client.query(
           `UPDATE workspace_invites
            SET delivery_status = $1, last_delivery_attempt_at = $2, last_sent_at = $3,
                updated_at = $2
-           WHERE id = $4`,
-          [deliveryStatus, now, lastSentAt, id],
+           WHERE id = $4 AND status = 'pending' AND token_hash = $5
+           RETURNING id`,
+          [deliveryStatus, now, lastSentAt, id, expectedTokenHash],
         );
+        if (!updated.rows[0]) {
+          return null;
+        }
 
         return this.toInviteSummary(client, {
           ...invite,

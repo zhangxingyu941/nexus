@@ -207,11 +207,13 @@ describe("PostgresWorkspaceInviteStore", () => {
       role: "viewer",
       workspaceId: "workspace-1",
     });
+    const tokenHash = await inviteTokenHash(pool, created.invite.id);
 
     await expect(store.markDeliveryResult(
       "owner-1",
       "workspace-1",
       created.invite.id,
+      tokenHash,
       "sent",
     )).resolves.toMatchObject({
       deliveryStatus: "sent",
@@ -227,6 +229,7 @@ describe("PostgresWorkspaceInviteStore", () => {
       "owner-1",
       "workspace-1",
       created.invite.id,
+      tokenHash,
       "failed",
     )).resolves.toMatchObject({
       deliveryStatus: "failed",
@@ -234,6 +237,49 @@ describe("PostgresWorkspaceInviteStore", () => {
       updatedAt: now,
     });
     await expect(inviteDeliveryAttemptAt(pool, created.invite.id)).resolves.toBe(now);
+  });
+
+  it("ignores a delayed delivery result for a token replaced by resend", async () => {
+    const created = await store.createInvite({
+      actorUserId: "owner-1",
+      email: "recipient@example.com",
+      role: "viewer",
+      workspaceId: "workspace-1",
+    });
+    const staleTokenHash = await inviteTokenHash(pool, created.invite.id);
+
+    now += 61_000;
+    await store.resendInvite("owner-1", "workspace-1", created.invite.id);
+    const currentTokenHash = await inviteTokenHash(pool, created.invite.id);
+
+    await expect(store.markDeliveryResult(
+      "owner-1",
+      "workspace-1",
+      created.invite.id,
+      staleTokenHash,
+      "sent",
+    )).resolves.toBeNull();
+    await expect(pool.query(
+      `SELECT delivery_status, last_delivery_attempt_at, last_sent_at, updated_at
+       FROM workspace_invites
+       WHERE id = $1`,
+      [created.invite.id],
+    )).resolves.toMatchObject({
+      rows: [{
+        delivery_status: "pending",
+        last_delivery_attempt_at: now,
+        last_sent_at: null,
+        updated_at: now,
+      }],
+    });
+
+    await expect(store.markDeliveryResult(
+      "owner-1",
+      "workspace-1",
+      created.invite.id,
+      currentTokenHash,
+      "sent",
+    )).resolves.toMatchObject({ deliveryStatus: "sent", lastSentAt: now });
   });
 
   it("expires a raw token before returning its terminal state", async () => {
