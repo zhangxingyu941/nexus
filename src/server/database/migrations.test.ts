@@ -64,6 +64,29 @@ describe("authentication database migration", () => {
     expect(Number(migration.rows[0].count)).toBe(1);
   });
 
+  it("creates workspace invites and independent audit tables idempotently", async () => {
+    await migrateDatabase(pool);
+    await migrateDatabase(pool);
+
+    const tables = await pool.query(
+      `SELECT table_name
+       FROM information_schema.tables
+       WHERE table_schema = 'public'
+         AND table_name IN ('workspace_audit_events', 'workspace_invites')
+       ORDER BY table_name`,
+    );
+    const migration = await pool.query(
+      "SELECT COUNT(*)::int AS count FROM schema_migrations WHERE id = $1",
+      ["2026-07-16-workspace-invitations-audit"],
+    );
+
+    expect(tables.rows.map((row) => row.table_name)).toEqual([
+      "workspace_audit_events",
+      "workspace_invites",
+    ]);
+    expect(Number(migration.rows[0].count)).toBe(1);
+  });
+
   it("enforces provider account uniqueness", async () => {
     await migrateDatabase(pool);
     await pool.query(

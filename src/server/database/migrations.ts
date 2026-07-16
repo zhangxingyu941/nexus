@@ -101,6 +101,8 @@ const PRODUCTION_AUTHENTICATION_MIGRATION_ID = "2026-07-13-production-authentica
 const YJS_PERSISTENCE_MIGRATION_ID = "2026-07-13-yjs-persistence";
 const MULTI_WORKSPACE_FOUNDATION_MIGRATION_ID = "2026-07-15-multi-workspace-foundation";
 const ORPHANED_USER_WORKSPACES_MIGRATION_ID = "2026-07-16-orphaned-user-workspaces";
+const WORKSPACE_INVITATIONS_AUDIT_MIGRATION_ID =
+  "2026-07-16-workspace-invitations-audit";
 const MIGRATION_LOCK_ID = "__migration_lock__";
 
 const WORKSPACE_SCOPED_CONTENT_SCHEMA = [
@@ -253,6 +255,38 @@ const MULTI_WORKSPACE_FOUNDATION_SCHEMA = [
    ON workspace_document_preferences(workspace_id, user_id)`,
 ];
 
+const WORKSPACE_INVITATIONS_AUDIT_SCHEMA = [
+  "CREATE TABLE workspace_audit_events ("
+    + "id TEXT PRIMARY KEY,"
+    + "workspace_id TEXT NOT NULL,"
+    + "workspace_name TEXT NOT NULL,"
+    + "actor_user_id TEXT REFERENCES app_users(id) ON DELETE SET NULL,"
+    + "event_type TEXT NOT NULL,target_type TEXT NOT NULL,target_id TEXT NOT NULL,"
+    + "metadata JSONB NOT NULL,created_at BIGINT NOT NULL)",
+  "CREATE TABLE workspace_invites ("
+    + "id TEXT PRIMARY KEY,"
+    + "workspace_id TEXT NOT NULL REFERENCES editor_workspaces(id) ON DELETE CASCADE,"
+    + "email TEXT NOT NULL,"
+    + "role TEXT NOT NULL CHECK (role IN ('editor','viewer')),"
+    + "token_hash TEXT NOT NULL UNIQUE,"
+    + "status TEXT NOT NULL CHECK (status IN ('pending','accepted','declined','revoked','expired')),"
+    + "delivery_status TEXT NOT NULL CHECK (delivery_status IN ('pending','sent','failed')),"
+    + "invited_by TEXT NOT NULL REFERENCES app_users(id) ON DELETE RESTRICT,"
+    + "accepted_by TEXT REFERENCES app_users(id) ON DELETE SET NULL,"
+    + "declined_by TEXT REFERENCES app_users(id) ON DELETE SET NULL,"
+    + "created_at BIGINT NOT NULL,updated_at BIGINT NOT NULL,expires_at BIGINT NOT NULL,"
+    + "last_delivery_attempt_at BIGINT,last_sent_at BIGINT,accepted_at BIGINT,"
+    + "declined_at BIGINT,revoked_at BIGINT)",
+  "CREATE UNIQUE INDEX workspace_invites_pending_email_idx "
+    + "ON workspace_invites(workspace_id,email) WHERE status='pending'",
+  "CREATE INDEX workspace_invites_recipient_idx "
+    + "ON workspace_invites(email,status,expires_at)",
+  "CREATE INDEX workspace_invites_workspace_history_idx "
+    + "ON workspace_invites(workspace_id,created_at DESC)",
+  "CREATE INDEX workspace_audit_events_workspace_idx "
+    + "ON workspace_audit_events(workspace_id,created_at DESC)",
+];
+
 export async function migrateDatabase(pool: Pool) {
   const client = await pool.connect();
 
@@ -396,6 +430,22 @@ export async function migrateDatabase(pool: Pool) {
       await client.query(
         "INSERT INTO schema_migrations (id, applied_at) VALUES ($1, $2)",
         [ORPHANED_USER_WORKSPACES_MIGRATION_ID, Date.now()],
+      );
+    }
+
+    const workspaceInvitationsAuditResult = await client.query(
+      "SELECT id FROM schema_migrations WHERE id = $1",
+      [WORKSPACE_INVITATIONS_AUDIT_MIGRATION_ID],
+    );
+
+    if (workspaceInvitationsAuditResult.rows.length === 0) {
+      for (const statement of WORKSPACE_INVITATIONS_AUDIT_SCHEMA) {
+        await client.query(statement);
+      }
+
+      await client.query(
+        "INSERT INTO schema_migrations (id, applied_at) VALUES ($1, $2)",
+        [WORKSPACE_INVITATIONS_AUDIT_MIGRATION_ID, Date.now()],
       );
     }
 
