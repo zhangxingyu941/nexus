@@ -80,15 +80,16 @@ export class PostgresWorkspaceStore {
       return existingAccess.workspaceId;
     }
 
-    const client = await this.pool.connect();
+    const useOwnClient = executor === this.pool;
+    const client = useOwnClient ? await this.pool.connect() : executor;
 
     try {
-      await client.query("BEGIN");
+      if (useOwnClient) await client.query("BEGIN");
 
       const access = await this.findAccess(client, userId);
       if (access) {
-        await client.query("COMMIT");
-        await this.ensureDefaultDocument(client, access.workspaceId);
+        if (useOwnClient) await client.query("COMMIT");
+        if (useOwnClient) await this.ensureDefaultDocument(client, access.workspaceId);
         return access.workspaceId;
       }
 
@@ -111,16 +112,16 @@ export class PostgresWorkspaceStore {
          ON CONFLICT (user_id) DO UPDATE SET workspace_id = EXCLUDED.workspace_id`,
         [userId, workspaceId],
       );
-      await client.query("COMMIT");
+      if (useOwnClient) await client.query("COMMIT");
 
-      await this.ensureDefaultDocument(client, workspaceId);
+      if (useOwnClient) await this.ensureDefaultDocument(client, workspaceId);
 
       return workspaceId;
     } catch (error) {
-      await client.query("ROLLBACK");
+      if (useOwnClient) await client.query("ROLLBACK");
       throw error;
     } finally {
-      client.release();
+      if (useOwnClient) client.release();
     }
   }
 
