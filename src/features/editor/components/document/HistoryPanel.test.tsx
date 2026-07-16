@@ -46,6 +46,7 @@ describe("HistoryPanel", () => {
         isReadOnly={false}
         onClose={() => undefined}
         onRestoreDocument={onRestoreDocument}
+        workspaceId="workspace-a"
       />,
     );
 
@@ -55,6 +56,7 @@ describe("HistoryPanel", () => {
     await user.click(screen.getByRole("button", { name: "恢复版本 第二版" }));
 
     expect(historyRepositoryMock.restoreDocumentVersion).toHaveBeenCalledWith(
+      "workspace-a",
       restoredDocument.id,
       "version-2",
     );
@@ -80,6 +82,7 @@ describe("HistoryPanel", () => {
         isReadOnly
         onClose={() => undefined}
         onRestoreDocument={() => undefined}
+        workspaceId="workspace-a"
       />,
     );
 

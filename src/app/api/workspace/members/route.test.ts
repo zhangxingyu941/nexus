@@ -52,7 +52,8 @@ describe("workspace member route", () => {
   it("rejects member management from non-owners", async () => {
     const owner = await authStore.createSession({ displayName: "林夏", email: "owner@example.com" });
     const editor = await authStore.createSession({ displayName: "周宁", email: "editor@example.com" });
-    await workspaceStore.addMember(owner.user.id, "editor@example.com", "editor");
+    const workspaceId = (await workspaceStore.listWorkspaces(owner.user.id)).currentWorkspaceId;
+    await workspaceStore.addMember(owner.user.id, workspaceId, "editor@example.com", "editor");
     const ownerAccess = await workspaceStore.getWorkspaceAccess(owner.user.id);
     expect(ownerAccess).not.toBeNull();
     await pool.query(

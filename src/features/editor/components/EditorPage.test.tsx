@@ -469,13 +469,13 @@ describe("EditorPage", () => {
           workspace: databaseWorkspace,
         }), { status: 200 }));
       }
-      if (url === `/api/history/${currentDocument.id}` && init?.method === "POST") {
+      if (url === `/api/workspaces/workspace-test/history/${currentDocument.id}` && init?.method === "POST") {
         return Promise.resolve(new Response(JSON.stringify({
           document: restoredDocument,
           restored: true,
         }), { status: 200 }));
       }
-      if (url === `/api/history/${currentDocument.id}`) {
+      if (url === `/api/workspaces/workspace-test/history/${currentDocument.id}`) {
         return Promise.resolve(new Response(JSON.stringify({
           versions: [
             { createdAt: 2000, createdBy: "林夏", documentId: currentDocument.id, id: "version-current", title: "当前标题" },

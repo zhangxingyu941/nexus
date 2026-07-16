@@ -57,7 +57,7 @@ describe("PostgresWorkspaceStore", () => {
     });
     await multiWorkspaceStore.ensurePersonalWorkspace("owner-1", "Owner workspace");
     await multiWorkspaceStore.ensurePersonalWorkspace("owner-2", "Second workspace");
-    await multiWorkspaceStore.addMember("owner-2", "owner@example.com", "editor");
+    await multiWorkspaceStore.addMember("owner-2", "workspace-2", "owner@example.com", "editor");
 
     await expect(multiWorkspaceStore.listWorkspaces("owner-1")).resolves.toEqual({
       currentWorkspaceId: "workspace-1",
@@ -88,7 +88,7 @@ describe("PostgresWorkspaceStore", () => {
     expect(created.content.documents).toHaveLength(1);
     expect((await multiWorkspaceStore.listWorkspaces("owner-1")).currentWorkspaceId).toBe("workspace-3");
 
-    await multiWorkspaceStore.addMember("owner-1", "editor@example.com", "editor");
+    await multiWorkspaceStore.addMember("owner-1", "workspace-3", "editor@example.com", "editor");
     await expect(
       multiWorkspaceStore.renameWorkspace("editor-1", "workspace-3", "越权名称"),
     ).rejects.toBeInstanceOf(WorkspacePermissionError);
@@ -116,7 +116,8 @@ describe("PostgresWorkspaceStore", () => {
     );
     workspace.activeDocumentId = workspace.documents[0].id;
     await store.saveWorkspace("owner-1", workspace);
-    await store.addMember("owner-1", "editor@example.com", "editor");
+    await store.addMember("owner-1", "workspace-test", "editor@example.com", "editor");
+    await store.loadWorkspace("editor-1", "workspace-test");
     await pool.query(
       `UPDATE workspace_document_preferences
        SET active_document_id = $1
@@ -144,7 +145,7 @@ describe("PostgresWorkspaceStore", () => {
     });
     await multiWorkspaceStore.ensurePersonalWorkspace("owner-1", "Owner workspace");
     await multiWorkspaceStore.ensurePersonalWorkspace("owner-2", "Second workspace");
-    await multiWorkspaceStore.addMember("owner-2", "owner@example.com", "editor");
+    await multiWorkspaceStore.addMember("owner-2", "workspace-2", "owner@example.com", "editor");
     const secondWorkspace = await multiWorkspaceStore.loadWorkspace("owner-1", "workspace-2");
     const updatedContent = {
       ...secondWorkspace.content,
@@ -176,7 +177,7 @@ describe("PostgresWorkspaceStore", () => {
     });
     await multiWorkspaceStore.ensurePersonalWorkspace("owner-1", "Owner workspace");
     await multiWorkspaceStore.ensurePersonalWorkspace("owner-2", "Second workspace");
-    await multiWorkspaceStore.addMember("owner-2", "owner@example.com", "editor");
+    await multiWorkspaceStore.addMember("owner-2", "workspace-2", "owner@example.com", "editor");
     const secondWorkspace = await multiWorkspaceStore.loadWorkspace("owner-1", "workspace-2");
     const secondDocumentId = secondWorkspace.content.activeDocumentId;
 
@@ -267,7 +268,7 @@ describe("PostgresWorkspaceStore", () => {
     await store.ensurePersonalWorkspace("owner-1", "林夏的工作区");
     const workspace = createDefaultWorkspace(1000);
     await store.saveWorkspace("owner-1", workspace);
-    await store.addMember("owner-1", "viewer@example.com", "viewer");
+    await store.addMember("owner-1", "workspace-test", "viewer@example.com", "viewer");
 
     await expect(store.loadWorkspace("viewer-1")).resolves.toMatchObject({
       role: "viewer",
@@ -281,14 +282,33 @@ describe("PostgresWorkspaceStore", () => {
     await seedUser(pool, "editor-1", "editor@example.com", "周宁");
     await store.ensurePersonalWorkspace("owner-1", "团队知识库");
 
-    await store.addMember("owner-1", "editor@example.com", "editor");
-    const members = await store.listMembers("owner-1");
+    await store.addMember("owner-1", "workspace-test", "editor@example.com", "editor");
+    const members = await store.listMembers("owner-1", "workspace-test");
 
     expect(members).toEqual([
       expect.objectContaining({ displayName: "林夏", email: "owner@example.com", role: "owner" }),
       expect.objectContaining({ displayName: "周宁", email: "editor@example.com", role: "editor" }),
     ]);
     await expect(store.saveWorkspace("editor-1", createDefaultWorkspace(5000))).resolves.toBeDefined();
+  });
+
+  it("rejects member and history access when workspace and resource ids do not match", async () => {
+    await seedUser(pool, "owner-1", "owner@example.com", "Owner");
+    let workspaceSequence = 0;
+    const scopedStore = new PostgresWorkspaceStore(pool, {
+      idFactory: () => `workspace-${++workspaceSequence}`,
+      now: () => 3000 + workspaceSequence,
+    });
+    await scopedStore.ensurePersonalWorkspace("owner-1", "Workspace A");
+    const workspaceA = createDefaultWorkspace(1000);
+    await scopedStore.saveWorkspace("owner-1", "workspace-1", workspaceA);
+    await scopedStore.createWorkspace("owner-1", "Workspace B");
+
+    await expect(scopedStore.listMembers("owner-1", "missing-workspace"))
+      .rejects.toBeInstanceOf(WorkspaceNotFoundError);
+    await expect(
+      scopedStore.listDocumentVersions("owner-1", "workspace-2", workspaceA.activeDocumentId),
+    ).rejects.toBeInstanceOf(WorkspaceNotFoundError);
   });
 
   it("does not change an added member's selected workspace", async () => {
@@ -306,7 +326,7 @@ describe("PostgresWorkspaceStore", () => {
       ["editor-1"],
     );
 
-    await multiWorkspaceStore.addMember("owner-1", "editor@example.com", "editor");
+    await multiWorkspaceStore.addMember("owner-1", "workspace-1", "editor@example.com", "editor");
 
     const selectedAfter = await pool.query(
       "SELECT selected_workspace_id FROM workspace_preferences WHERE user_id = $1",
@@ -325,7 +345,8 @@ describe("PostgresWorkspaceStore", () => {
       "Second document",
     );
     await store.saveWorkspace("owner-1", workspace);
-    await store.addMember("owner-1", "editor@example.com", "editor");
+    await store.addMember("owner-1", "workspace-test", "editor@example.com", "editor");
+    await store.loadWorkspace("editor-1", "workspace-test");
     const memberActiveDocumentId = workspace.documents[1].id;
     await pool.query(
       `UPDATE workspace_document_preferences
@@ -372,13 +393,17 @@ describe("PostgresWorkspaceStore", () => {
     await store.ensurePersonalWorkspace("owner-1", "团队知识库");
     const workspace = createDefaultWorkspace(1000);
     await store.saveWorkspace("owner-1", workspace);
-    await store.addMember("owner-1", "editor@example.com", "editor");
+    await store.addMember("owner-1", "workspace-test", "editor@example.com", "editor");
 
-    await expect(store.getDocumentAccess("editor-1", workspace.activeDocumentId)).resolves.toEqual({
+    await expect(
+      store.getDocumentAccess("editor-1", "workspace-test", workspace.activeDocumentId),
+    ).resolves.toEqual({
       role: "editor",
       workspaceId: "workspace-test",
     });
-    await expect(store.getDocumentAccess("editor-1", "missing-document")).resolves.toBeNull();
+    await expect(
+      store.getDocumentAccess("editor-1", "workspace-test", "missing-document"),
+    ).resolves.toBeNull();
   });
 
   it("isolates identical document and block ids across different workspaces", async () => {
@@ -431,13 +456,14 @@ describe("PostgresWorkspaceStore", () => {
     };
     await store.saveWorkspace("owner-1", changedWorkspace);
 
-    const versions = await store.listDocumentVersions("owner-1", documentId);
+    const versions = await store.listDocumentVersions("owner-1", "workspace-test", documentId);
 
     expect(versions).toHaveLength(2);
     expect(versions.map((version) => version.title)).toEqual(["第二版标题", "未命名文档"]);
 
     const restored = await store.restoreDocumentVersion(
       "owner-1",
+      "workspace-test",
       documentId,
       versions[1].id,
     );
@@ -456,12 +482,21 @@ describe("PostgresWorkspaceStore", () => {
     await store.ensurePersonalWorkspace("owner-1", "林夏的工作区");
     const workspace = createDefaultWorkspace(1000);
     await store.saveWorkspace("owner-1", workspace);
-    await store.addMember("owner-1", "viewer@example.com", "viewer");
-    const versions = await store.listDocumentVersions("viewer-1", workspace.activeDocumentId);
+    await store.addMember("owner-1", "workspace-test", "viewer@example.com", "viewer");
+    const versions = await store.listDocumentVersions(
+      "viewer-1",
+      "workspace-test",
+      workspace.activeDocumentId,
+    );
 
     expect(versions).toHaveLength(1);
     await expect(
-      store.restoreDocumentVersion("viewer-1", workspace.activeDocumentId, versions[0].id),
+      store.restoreDocumentVersion(
+        "viewer-1",
+        "workspace-test",
+        workspace.activeDocumentId,
+        versions[0].id,
+      ),
     ).rejects.toBeInstanceOf(WorkspacePermissionError);
   });
 });

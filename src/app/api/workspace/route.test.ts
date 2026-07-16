@@ -115,9 +115,14 @@ describe("database workspace route", () => {
     const viewerSession = await authStore.createSession({ displayName: "访客", email: "viewer@example.com" });
     const workspace = createDefaultWorkspace(1000);
     await workspaceStore.saveWorkspace(ownerSession.user.id, workspace);
-    await workspaceStore.addMember(ownerSession.user.id, "viewer@example.com", "viewer");
     const ownerAccess = await workspaceStore.getWorkspaceAccess(ownerSession.user.id);
     expect(ownerAccess).not.toBeNull();
+    await workspaceStore.addMember(
+      ownerSession.user.id,
+      ownerAccess!.workspaceId,
+      "viewer@example.com",
+      "viewer",
+    );
     await pool.query(
       "UPDATE workspace_preferences SET selected_workspace_id = $1 WHERE user_id = $2",
       [ownerAccess!.workspaceId, viewerSession.user.id],

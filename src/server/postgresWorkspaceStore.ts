@@ -599,6 +599,7 @@ export class PostgresWorkspaceStore {
 
   async addMember(
     ownerUserId: string,
+    workspaceId: string,
     email: string,
     role: AssignableWorkspaceRole,
   ) {
@@ -607,10 +608,12 @@ export class PostgresWorkspaceStore {
     try {
       await client.query("BEGIN");
 
-      const access = await this.findAccess(client, ownerUserId);
+      const access = await this.findAccess(client, ownerUserId, workspaceId);
 
-      if (!access || access.role !== "owner") {
-        await client.query("ROLLBACK");
+      if (!access) {
+        throw new WorkspaceNotFoundError();
+      }
+      if (access.role !== "owner") {
         throw new WorkspacePermissionError("只有工作区所有者可以管理成员");
       }
 
@@ -621,7 +624,6 @@ export class PostgresWorkspaceStore {
       const userId = userResult.rows[0]?.id;
 
       if (!userId) {
-        await client.query("ROLLBACK");
         throw new WorkspaceMemberNotFoundError();
       }
 
@@ -629,15 +631,8 @@ export class PostgresWorkspaceStore {
         `INSERT INTO workspace_members (workspace_id, user_id, role, created_at)
          VALUES ($1, $2, $3, $4)
          ON CONFLICT (workspace_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
-        [access.workspaceId, String(userId), role, this.now()],
+        [workspaceId, String(userId), role, this.now()],
       );
-      await client.query(
-        `INSERT INTO workspace_preferences (user_id, selected_workspace_id)
-         VALUES ($1, $2)
-         ON CONFLICT (user_id) DO NOTHING`,
-        [String(userId), access.workspaceId],
-      );
-      await this.ensureDefaultDocument(client, String(userId), access.workspaceId);
 
       await client.query("COMMIT");
     } catch (error) {
@@ -648,11 +643,11 @@ export class PostgresWorkspaceStore {
     }
   }
 
-  async listMembers(userId: string): Promise<WorkspaceMember[]> {
-    const access = await this.findAccess(this.pool, userId);
+  async listMembers(userId: string, workspaceId: string): Promise<WorkspaceMember[]> {
+    const access = await this.findAccess(this.pool, userId, workspaceId);
 
     if (!access) {
-      throw new WorkspacePermissionError("没有查看此工作区成员的权限");
+      throw new WorkspaceNotFoundError();
     }
 
     const result = await this.pool.query(
@@ -662,7 +657,7 @@ export class PostgresWorkspaceStore {
        WHERE members.workspace_id = $1
        ORDER BY CASE members.role WHEN 'owner' THEN 0 WHEN 'editor' THEN 1 ELSE 2 END,
                 users.created_at ASC`,
-      [access.workspaceId],
+      [workspaceId],
     );
 
     return result.rows.map((row) => ({
@@ -740,12 +735,13 @@ export class PostgresWorkspaceStore {
 
   async listDocumentVersions(
     userId: string,
+    workspaceId: string,
     documentId: string,
   ): Promise<DocumentVersionSummary[]> {
-    const access = await this.findAccess(this.pool, userId);
+    const access = await this.getDocumentAccess(userId, workspaceId, documentId);
 
     if (!access) {
-      throw new WorkspacePermissionError("没有查看此文档历史的权限");
+      throw new WorkspaceNotFoundError();
     }
 
     const result = await this.pool.query(
@@ -755,7 +751,7 @@ export class PostgresWorkspaceStore {
        LEFT JOIN app_users users ON users.id = versions.created_by
        WHERE versions.workspace_id = $1 AND versions.document_id = $2
        ORDER BY versions.created_at DESC, versions.id DESC`,
-      [access.workspaceId, documentId],
+      [workspaceId, documentId],
     );
 
     return result.rows.map((row) => ({
@@ -769,12 +765,16 @@ export class PostgresWorkspaceStore {
 
   async restoreDocumentVersion(
     userId: string,
+    workspaceId: string,
     documentId: string,
     versionId: string,
   ) {
-    const access = await this.findAccess(this.pool, userId);
+    const access = await this.getDocumentAccess(userId, workspaceId, documentId);
 
-    if (!access || access.role === "viewer") {
+    if (!access) {
+      throw new WorkspaceNotFoundError();
+    }
+    if (access.role === "viewer") {
       throw new WorkspacePermissionError("没有恢复此文档版本的权限");
     }
 
@@ -782,7 +782,7 @@ export class PostgresWorkspaceStore {
       `SELECT snapshot
        FROM document_versions
        WHERE workspace_id = $1 AND document_id = $2 AND id = $3`,
-      [access.workspaceId, documentId, versionId],
+      [workspaceId, documentId, versionId],
     );
     const snapshot = versionResult.rows[0]?.snapshot;
 
@@ -790,10 +790,7 @@ export class PostgresWorkspaceStore {
       throw new Error("文档版本不存在");
     }
 
-    const loaded = await this.loadWorkspace(userId);
-    if (!loaded) {
-      throw new Error("工作区不存在");
-    }
+    const loaded = await this.loadWorkspace(userId, workspaceId);
 
     const now = this.now();
     const restoredDocument = snapshot as EditorDocument;
@@ -807,14 +804,14 @@ export class PostgresWorkspaceStore {
       updatedAt: now,
     };
     const nextWorkspace: EditorWorkspace = {
-      ...loaded.workspace,
-      documents: loaded.workspace.documents.map((document) =>
+      ...loaded.content,
+      documents: loaded.content.documents.map((document) =>
         document.id === documentId ? nextDocument : document,
       ),
       updatedAt: now,
     };
 
-    await this.saveWorkspace(userId, nextWorkspace);
+    await this.saveWorkspace(userId, workspaceId, nextWorkspace);
     return nextDocument;
   }
 

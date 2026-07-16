@@ -39,6 +39,7 @@ interface DocumentEditorProps {
   saveStatus: WorkspaceSaveStatus;
   sessionUser: EditorSessionUser | null;
   workspaceMembers: DatabaseWorkspaceMember[];
+  workspaceId: string;
   workspaceRole: WorkspaceAccessRole | null;
   titleFocusRequest: number;
   onAddAfter: (blockId: string) => void;
@@ -76,6 +77,7 @@ export function DocumentEditor({
   saveStatus,
   sessionUser,
   workspaceMembers,
+  workspaceId,
   workspaceRole,
   titleFocusRequest,
   onAddAfter,
@@ -302,6 +304,7 @@ export function DocumentEditor({
             isReadOnly={isReadOnly}
             onClose={() => setIsHistoryOpen(false)}
             onRestoreDocument={onRestoreDocumentVersion}
+            workspaceId={workspaceId}
           />
         ) : null}
       </main>

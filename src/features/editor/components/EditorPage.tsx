@@ -43,7 +43,7 @@ import {
 import {
   addWorkspaceMember,
   loadWorkspaceMembers,
-} from "../persistence/workspaceSyncRepository";
+} from "../persistence/workspaceMemberRepository";
 import type {
   DatabaseWorkspaceMember,
   EditorSessionUser,
@@ -105,7 +105,7 @@ export function EditorPage({
       return;
     }
     let cancelled = false;
-    loadWorkspaceMembers()
+    loadWorkspaceMembers(workspaceId)
       .then((members) => { if (!cancelled) setWorkspaceMembers(members); })
       .catch(() => undefined);
 
@@ -398,8 +398,8 @@ export function EditorPage({
   }, []);
 
   const handleInviteMember = useCallback(async (email: string, role: "editor" | "viewer") => {
-    setWorkspaceMembers(await addWorkspaceMember(email, role));
-  }, []);
+    setWorkspaceMembers(await addWorkspaceMember(workspaceId, email, role));
+  }, [workspaceId]);
 
   const handleAddBlockComment = useCallback(
     (blockId: string, body: string) => {
@@ -504,6 +504,7 @@ export function EditorPage({
         saveStatus={saveStatus}
         sessionUser={sessionUser}
         workspaceMembers={workspaceMembers}
+        workspaceId={workspaceId}
         workspaceRole={workspaceRole}
         titleFocusRequest={titleFocusRequest}
       />

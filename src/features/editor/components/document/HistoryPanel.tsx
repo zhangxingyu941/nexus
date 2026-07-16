@@ -23,6 +23,7 @@ interface HistoryPanelProps {
   isReadOnly: boolean;
   onClose: () => void;
   onRestoreDocument: (document: EditorDocument) => void;
+  workspaceId: string;
 }
 
 function formatVersionTime(timestamp: number) {
@@ -40,6 +41,7 @@ export function HistoryPanel({
   isReadOnly,
   onClose,
   onRestoreDocument,
+  workspaceId,
 }: HistoryPanelProps) {
   const [versions, setVersions] = useState<DocumentVersionSummary[] | null>(null);
   const [restoreStatus, setRestoreStatus] = useState("");
@@ -48,7 +50,7 @@ export function HistoryPanel({
   useEffect(() => {
     let cancelled = false;
 
-    loadDocumentVersions(documentId)
+    loadDocumentVersions(workspaceId, documentId)
       .then((nextVersions) => {
         if (!cancelled) {
           setVersions(nextVersions);
@@ -63,17 +65,17 @@ export function HistoryPanel({
     return () => {
       cancelled = true;
     };
-  }, [documentId]);
+  }, [documentId, workspaceId]);
 
   const handleRestore = async (version: DocumentVersionSummary) => {
     setRestoringVersionId(version.id);
     setRestoreStatus("");
 
     try {
-      const restoredDocument = await restoreDocumentVersion(documentId, version.id);
+      const restoredDocument = await restoreDocumentVersion(workspaceId, documentId, version.id);
       onRestoreDocument(restoredDocument);
       setRestoreStatus("版本已恢复");
-      setVersions(await loadDocumentVersions(documentId));
+      setVersions(await loadDocumentVersions(workspaceId, documentId));
     } catch (error) {
       setRestoreStatus(error instanceof Error ? error.message : "版本恢复失败");
     } finally {

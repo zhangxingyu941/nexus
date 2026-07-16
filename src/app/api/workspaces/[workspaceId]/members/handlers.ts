@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import type { PostgresAuthStore } from "../../../../server/postgresAuthStore";
-import type { PostgresWorkspaceStore } from "../../../../server/postgresWorkspaceStore";
+import type { PostgresAuthStore } from "@/server/postgresAuthStore";
+import type { PostgresWorkspaceStore } from "@/server/postgresWorkspaceStore";
 import {
   WorkspaceMemberNotFoundError,
+  WorkspaceNotFoundError,
   WorkspacePermissionError,
-} from "../../../../server/postgresWorkspaceStore";
-import { getSessionToken } from "../../../../server/sessionCookie";
+} from "@/server/postgresWorkspaceStore";
+import { getSessionToken } from "@/server/sessionCookie";
 
 interface WorkspaceMemberRouteDependencies {
   authStore: PostgresAuthStore;
@@ -21,23 +22,22 @@ export function createWorkspaceMemberRouteHandlers({
   }
 
   return {
-    async GET(request: Request) {
+    async GET(request: Request, workspaceId: string) {
       const user = await authenticate(request);
+      if (!user) return unauthorizedResponse();
 
-      if (!user) {
-        return NextResponse.json({ error: "请先进入工作区" }, { status: 401 });
+      try {
+        return NextResponse.json({
+          members: await workspaceStore.listMembers(user.id, workspaceId),
+        });
+      } catch (error) {
+        return mapMemberError(error);
       }
-
-      const workspaceId = (await workspaceStore.listWorkspaces(user.id)).currentWorkspaceId;
-      return NextResponse.json({ members: await workspaceStore.listMembers(user.id, workspaceId) });
     },
 
-    async POST(request: Request) {
+    async POST(request: Request, workspaceId: string) {
       const user = await authenticate(request);
-
-      if (!user) {
-        return NextResponse.json({ error: "请先进入工作区" }, { status: 401 });
-      }
+      if (!user) return unauthorizedResponse();
 
       let payload: unknown;
       try {
@@ -57,22 +57,28 @@ export function createWorkspaceMemberRouteHandlers({
       }
 
       try {
-        const workspaceId = (await workspaceStore.listWorkspaces(user.id)).currentWorkspaceId;
         await workspaceStore.addMember(user.id, workspaceId, email, role);
         return NextResponse.json(
           { members: await workspaceStore.listMembers(user.id, workspaceId) },
           { status: 201 },
         );
       } catch (error) {
-        if (error instanceof WorkspacePermissionError) {
-          return NextResponse.json({ error: error.message }, { status: 403 });
-        }
-        if (error instanceof WorkspaceMemberNotFoundError) {
-          return NextResponse.json({ error: error.message }, { status: 404 });
-        }
-
-        throw error;
+        return mapMemberError(error);
       }
     },
   };
+}
+
+function unauthorizedResponse() {
+  return NextResponse.json({ error: "请先进入工作区" }, { status: 401 });
+}
+
+function mapMemberError(error: unknown) {
+  if (error instanceof WorkspaceNotFoundError || error instanceof WorkspaceMemberNotFoundError) {
+    return NextResponse.json({ error: error.message }, { status: 404 });
+  }
+  if (error instanceof WorkspacePermissionError) {
+    return NextResponse.json({ error: error.message }, { status: 403 });
+  }
+  throw error;
 }
