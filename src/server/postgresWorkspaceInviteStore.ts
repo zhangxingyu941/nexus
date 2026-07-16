@@ -142,6 +142,96 @@ export class PostgresWorkspaceInviteStore {
     }
   }
 
+  async resendInvite(
+    actorUserId: string,
+    workspaceId: string,
+    inviteId: string,
+  ): Promise<{ invite: WorkspaceInviteSummary; rawToken: string }> {
+    const rawToken = this.tokenService.createRawToken();
+    const tokenHash = this.tokenService.hashRawToken(rawToken);
+
+    return this.mutatePendingInvite(
+      actorUserId,
+      workspaceId,
+      inviteId,
+      async (client, workspace, invite) => {
+        const now = this.now();
+        const id = String(invite.id);
+        const lastDeliveryAttemptAt = optionalTimestamp(invite.last_delivery_attempt_at);
+        if (
+          lastDeliveryAttemptAt !== null
+          && now - lastDeliveryAttemptAt < 60_000
+        ) {
+          throw new WorkspaceDomainError(
+            "invite_rate_limited",
+            "Please wait before resending this invitation",
+          );
+        }
+
+        const expiresAt = now + INVITE_DURATION_MS;
+        await client.query(
+          `UPDATE workspace_invites
+           SET token_hash = $1, delivery_status = 'pending', expires_at = $2,
+               last_delivery_attempt_at = $3, updated_at = $3
+           WHERE id = $4`,
+          [tokenHash, expiresAt, now, id],
+        );
+        await this.auditStore.write(client, {
+          actorUserId,
+          eventType: "workspace_invite_resent",
+          metadata: { status: "pending" },
+          targetId: id,
+          targetType: "workspace_invite",
+          workspaceId: workspace.id,
+          workspaceName: workspace.name,
+        });
+
+        return {
+          invite: await this.toInviteSummary(client, {
+            ...invite,
+            delivery_status: "pending",
+            expires_at: expiresAt,
+            last_delivery_attempt_at: now,
+            token_hash: tokenHash,
+            updated_at: now,
+          }),
+          rawToken,
+        };
+      },
+    );
+  }
+
+  async revokeInvite(
+    actorUserId: string,
+    workspaceId: string,
+    inviteId: string,
+  ): Promise<void> {
+    await this.mutatePendingInvite(
+      actorUserId,
+      workspaceId,
+      inviteId,
+      async (client, workspace, invite) => {
+        const now = this.now();
+        const id = String(invite.id);
+        await client.query(
+          `UPDATE workspace_invites
+           SET status = 'revoked', revoked_at = $1, updated_at = $1
+           WHERE id = $2`,
+          [now, id],
+        );
+        await this.auditStore.write(client, {
+          actorUserId,
+          eventType: "workspace_invite_revoked",
+          metadata: { status: "revoked" },
+          targetId: id,
+          targetType: "workspace_invite",
+          workspaceId: workspace.id,
+          workspaceName: workspace.name,
+        });
+      },
+    );
+  }
+
   async listOwnerInvites(
     actorUserId: string,
     workspaceId: string,
@@ -237,6 +327,46 @@ export class PostgresWorkspaceInviteStore {
     }
   }
 
+  private async mutatePendingInvite<T>(
+    actorUserId: string,
+    workspaceId: string,
+    inviteId: string,
+    mutation: (
+      client: PoolClient,
+      workspace: LockedWorkspace,
+      invite: Record<string, unknown>,
+    ) => Promise<T>,
+  ): Promise<T> {
+    const client = await this.pool.connect();
+    let committed = false;
+
+    try {
+      await client.query("BEGIN");
+      const workspace = await this.lockWorkspace(client, workspaceId);
+      await this.requireOwner(client, actorUserId, workspace.id);
+      await this.expirePendingInvites(client, workspace);
+      const invite = await this.lockInvite(client, workspace.id, inviteId);
+      const terminalError = terminalInviteError(String(invite.status));
+      if (terminalError) {
+        await client.query("COMMIT");
+        committed = true;
+        throw terminalError;
+      }
+
+      const result = await mutation(client, workspace, invite);
+      await client.query("COMMIT");
+      committed = true;
+      return result;
+    } catch (error) {
+      if (!committed) {
+        await client.query("ROLLBACK");
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   private async lockWorkspace(client: PoolClient, workspaceId: string): Promise<LockedWorkspace> {
     const result = await client.query(
       `SELECT id, name
@@ -250,6 +380,45 @@ export class PostgresWorkspaceInviteStore {
       throw new WorkspaceDomainError("workspace_not_found", "Workspace not found");
     }
     return { id: String(row.id), name: String(row.name) };
+  }
+
+  private async lockInvite(
+    client: PoolClient,
+    workspaceId: string,
+    inviteId: string,
+  ): Promise<Record<string, unknown>> {
+    const result = await client.query(
+      `SELECT id, workspace_id, email, role, token_hash, status, delivery_status, invited_by,
+              created_at, updated_at, expires_at, last_delivery_attempt_at, last_sent_at
+       FROM workspace_invites
+       WHERE id = $1 AND workspace_id = $2
+       FOR UPDATE`,
+      [inviteId, workspaceId],
+    );
+    const invite = result.rows[0];
+    if (!invite) {
+      throw new WorkspaceDomainError("invite_not_found", "Invitation not found");
+    }
+    return invite;
+  }
+
+  private async toInviteSummary(
+    client: PoolClient,
+    invite: Record<string, unknown>,
+  ): Promise<WorkspaceInviteSummary> {
+    const inviterResult = await client.query(
+      "SELECT id, display_name FROM app_users WHERE id = $1",
+      [invite.invited_by],
+    );
+    const inviter = inviterResult.rows[0];
+    if (!inviter) {
+      throw new WorkspaceDomainError("invite_not_found", "Invitation inviter not found");
+    }
+    return toWorkspaceInviteSummary({
+      ...invite,
+      invited_by_display_name: inviter.display_name,
+      invited_by_id: inviter.id,
+    });
   }
 
   private async requireOwner(
@@ -338,8 +507,36 @@ export class PostgresWorkspaceInviteStore {
   }
 }
 
+function terminalInviteError(status: string): WorkspaceDomainError | null {
+  switch (status) {
+    case "accepted":
+      return new WorkspaceDomainError(
+        "invite_already_accepted",
+        "This invitation has already been accepted",
+      );
+    case "declined":
+      return new WorkspaceDomainError("invite_declined", "This invitation was declined");
+    case "expired":
+      return new WorkspaceDomainError("invite_expired", "This invitation has expired");
+    case "revoked":
+      return new WorkspaceDomainError("invite_revoked", "This invitation was revoked");
+    case "pending":
+      return null;
+    default:
+      return new WorkspaceDomainError("invite_not_found", "Invitation not found");
+  }
+}
+
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
+}
+
+function optionalTimestamp(value: unknown) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const timestamp = Number(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
 }
 
 function validateRole(role: WorkspaceInviteRole) {
