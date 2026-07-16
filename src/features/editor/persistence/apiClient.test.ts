@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { jsonRequest, requestJson } from "./apiClient";
+import { ApiRequestError, jsonRequest, requestJson } from "./apiClient";
 
 describe("apiClient", () => {
   afterEach(() => {
@@ -17,6 +17,17 @@ describe("apiClient", () => {
       code: "invite_rate_limited",
       message: "邀请发送过于频繁",
       retryAfterSeconds: 60,
+    });
+  });
+
+  it("normalizes transport failures as stable API errors", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+    const request = requestJson("/api/test", { method: "GET" });
+
+    await expect(request).rejects.toBeInstanceOf(ApiRequestError);
+    await expect(request).rejects.toMatchObject({
+      code: "service_unavailable",
+      message: "工作区服务请求失败",
     });
   });
 

@@ -14,7 +14,14 @@ export class ApiRequestError extends Error {
 }
 
 export async function requestJson<T>(url: string, init: RequestInit): Promise<T> {
-  const response = await fetch(url, init);
+  let response: Response;
+
+  try {
+    response = await fetch(url, init);
+  } catch {
+    throw new ApiRequestError("工作区服务请求失败", "service_unavailable");
+  }
+
   const payload = await response.json().catch(() => INVALID_JSON) as unknown;
 
   if (payload === INVALID_JSON && response.ok) {
