@@ -54,6 +54,7 @@ export function createRegisterRouteHandler({
         password: password ?? "",
       });
     } catch (error) {
+      console.error("[register] unexpected error:", error);
       await recordAuthAudit(security, request, "registration", false, null);
       const credentialResponse = authCredentialErrorResponse(error);
       if (credentialResponse) {
