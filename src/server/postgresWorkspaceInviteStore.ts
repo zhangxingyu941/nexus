@@ -283,9 +283,11 @@ export class PostgresWorkspaceInviteStore {
     actorUserId: string,
     workspaceId: string,
     inviteId: string,
-    expectedTokenHash: string,
+    expectedRawToken: string,
     deliveryStatus: "sent" | "failed",
   ): Promise<WorkspaceInviteSummary | null> {
+    const expectedTokenHash = this.tokenService.hashRawToken(expectedRawToken);
+
     return this.mutatePendingInvite(
       actorUserId,
       workspaceId,

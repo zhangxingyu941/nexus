@@ -207,13 +207,12 @@ describe("PostgresWorkspaceInviteStore", () => {
       role: "viewer",
       workspaceId: "workspace-1",
     });
-    const tokenHash = await inviteTokenHash(pool, created.invite.id);
 
     await expect(store.markDeliveryResult(
       "owner-1",
       "workspace-1",
       created.invite.id,
-      tokenHash,
+      created.rawToken,
       "sent",
     )).resolves.toMatchObject({
       deliveryStatus: "sent",
@@ -229,7 +228,7 @@ describe("PostgresWorkspaceInviteStore", () => {
       "owner-1",
       "workspace-1",
       created.invite.id,
-      tokenHash,
+      created.rawToken,
       "failed",
     )).resolves.toMatchObject({
       deliveryStatus: "failed",
@@ -246,17 +245,15 @@ describe("PostgresWorkspaceInviteStore", () => {
       role: "viewer",
       workspaceId: "workspace-1",
     });
-    const staleTokenHash = await inviteTokenHash(pool, created.invite.id);
 
     now += 61_000;
-    await store.resendInvite("owner-1", "workspace-1", created.invite.id);
-    const currentTokenHash = await inviteTokenHash(pool, created.invite.id);
+    const resent = await store.resendInvite("owner-1", "workspace-1", created.invite.id);
 
     await expect(store.markDeliveryResult(
       "owner-1",
       "workspace-1",
       created.invite.id,
-      staleTokenHash,
+      created.rawToken,
       "sent",
     )).resolves.toBeNull();
     await expect(pool.query(
@@ -277,7 +274,7 @@ describe("PostgresWorkspaceInviteStore", () => {
       "owner-1",
       "workspace-1",
       created.invite.id,
-      currentTokenHash,
+      resent.rawToken,
       "sent",
     )).resolves.toMatchObject({ deliveryStatus: "sent", lastSentAt: now });
   });
