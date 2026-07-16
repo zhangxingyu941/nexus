@@ -72,14 +72,17 @@ describe("remote workspace repository", () => {
     );
   });
 
-  it("surfaces server errors and rejects invalid JSON responses", async () => {
+  it("surfaces API errors and rejects invalid JSON responses", async () => {
     const fetchSpy = vi.fn()
-      .mockResolvedValueOnce(jsonResponse({ error: "工作区不存在" }, 404))
+      .mockResolvedValueOnce(jsonResponse({ code: "workspace_not_found", error: "工作区不存在" }, 404))
       .mockResolvedValueOnce(new Response("not-json", { status: 200 }));
     vi.stubGlobal("fetch", fetchSpy);
     const repository = createRemoteWorkspaceRepository();
 
-    await expect(repository.load("missing")).rejects.toThrow("工作区不存在");
+    await expect(repository.load("missing")).rejects.toMatchObject({
+      code: "workspace_not_found",
+      message: "工作区不存在",
+    });
     await expect(repository.list()).rejects.toThrow("工作区服务返回无效响应");
   });
 });
