@@ -8,6 +8,7 @@ import {
 
 describe("workspace invite context cookie", () => {
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllEnvs();
   });
 
@@ -26,6 +27,17 @@ describe("workspace invite context cookie", () => {
     expect(response.headers.get("set-cookie")).toContain("HttpOnly");
     expect(response.headers.get("set-cookie")).toContain("SameSite=lax");
     expect(response.headers.get("set-cookie")).not.toContain("Secure");
+  });
+
+  it("caps the cookie expiry at thirty minutes", () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_000);
+    const response = NextResponse.json({ ok: true });
+
+    setWorkspaceInviteContextCookie(response, "signed-context", 2 * 60 * 60_000);
+
+    expect(response.headers.get("set-cookie")).toContain(
+      "Expires=Thu, 01 Jan 1970 00:30:01 GMT",
+    );
   });
 
   it("clears the scoped cookie with an immediate expiration", () => {

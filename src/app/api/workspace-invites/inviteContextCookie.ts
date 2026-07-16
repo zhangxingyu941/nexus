@@ -3,16 +3,21 @@ import type { NextResponse } from "next/server";
 export const WORKSPACE_INVITE_CONTEXT_COOKIE = "nexus_workspace_invite_context";
 
 const WORKSPACE_INVITE_CONTEXT_COOKIE_PATH = "/api/workspace-invites";
+const WORKSPACE_INVITE_CONTEXT_MAX_LIFETIME_MS = 30 * 60_000;
 
 export function setWorkspaceInviteContextCookie(
   response: NextResponse,
   context: string,
   expiresAt: number,
 ) {
+  const cappedExpiresAt = Math.min(
+    expiresAt,
+    Date.now() + WORKSPACE_INVITE_CONTEXT_MAX_LIFETIME_MS,
+  );
   response.cookies.set(
     WORKSPACE_INVITE_CONTEXT_COOKIE,
     context,
-    getWorkspaceInviteContextCookieOptions(expiresAt),
+    getWorkspaceInviteContextCookieOptions(cappedExpiresAt),
   );
 }
 

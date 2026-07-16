@@ -4,9 +4,11 @@ import { SignJWT } from "jose";
 import { describe, expect, it } from "vitest";
 import { WorkspaceInviteTokenService } from "./workspaceInviteTokens";
 
+const TEST_SECRET = "test-workspace-invite-secret-at-least-32-bytes";
+
 describe("WorkspaceInviteTokenService", () => {
   it("hashes raw tokens and verifies a short invite context", async () => {
-    const service = new WorkspaceInviteTokenService("test-secret", () => 1_000);
+    const service = new WorkspaceInviteTokenService(TEST_SECRET, () => 1_000);
     const token = service.createRawToken();
     const tokenHash = service.hashRawToken(token);
 
@@ -27,7 +29,7 @@ describe("WorkspaceInviteTokenService", () => {
 
   it("caps the context lifetime at thirty minutes", async () => {
     const now = 1_000;
-    const service = new WorkspaceInviteTokenService("test-secret", () => now);
+    const service = new WorkspaceInviteTokenService(TEST_SECRET, () => now);
     const context = await service.signContext({
       expiresAt: now + 60 * 60_000,
       inviteId: "invite-1",
@@ -39,9 +41,27 @@ describe("WorkspaceInviteTokenService", () => {
     });
   });
 
+  it("honors millisecond context expiry without extending it", async () => {
+    let now = 1_001;
+    const service = new WorkspaceInviteTokenService(TEST_SECRET, () => now);
+    const context = await service.signContext({
+      expiresAt: 1_500,
+      inviteId: "invite-1",
+      tokenHash: "a".repeat(64),
+    });
+
+    await expect(service.verifyContext(context)).resolves.toMatchObject({
+      expiresAt: 1_500,
+    });
+
+    now = 1_500;
+
+    await expect(service.verifyContext(context)).rejects.toThrow();
+  });
+
   it("rejects an expired context", async () => {
     let now = 1_000;
-    const service = new WorkspaceInviteTokenService("test-secret", () => now);
+    const service = new WorkspaceInviteTokenService(TEST_SECRET, () => now);
     const context = await service.signContext({
       expiresAt: 2_000,
       inviteId: "invite-1",
@@ -53,8 +73,14 @@ describe("WorkspaceInviteTokenService", () => {
   });
 
   it("rejects a context signed with another secret", async () => {
-    const issuer = new WorkspaceInviteTokenService("issuer-secret", () => 1_000);
-    const verifier = new WorkspaceInviteTokenService("verifier-secret", () => 1_000);
+    const issuer = new WorkspaceInviteTokenService(
+      "issuer-workspace-invite-secret-at-least-32-bytes",
+      () => 1_000,
+    );
+    const verifier = new WorkspaceInviteTokenService(
+      "verifier-workspace-invite-secret-at-least-32-bytes",
+      () => 1_000,
+    );
     const context = await issuer.signContext({
       expiresAt: 2_000,
       inviteId: "invite-1",
@@ -68,7 +94,7 @@ describe("WorkspaceInviteTokenService", () => {
     { audience: "other-audience", issuer: "nexus" },
     { audience: "nexus-workspace-invite", issuer: "other-issuer" },
   ])("rejects contexts with an unexpected issuer or audience", async ({ audience, issuer }) => {
-    const service = new WorkspaceInviteTokenService("test-secret", () => 1_000);
+    const service = new WorkspaceInviteTokenService(TEST_SECRET, () => 1_000);
     const context = await new SignJWT({
       inviteId: "invite-1",
       tokenHash: "a".repeat(64),
@@ -77,8 +103,16 @@ describe("WorkspaceInviteTokenService", () => {
       .setAudience(audience)
       .setIssuer(issuer)
       .setExpirationTime(2)
-      .sign(new TextEncoder().encode("test-secret"));
+      .sign(new TextEncoder().encode(TEST_SECRET));
 
     await expect(service.verifyContext(context)).rejects.toThrow();
+  });
+
+  it.each([
+    "",
+    " ".repeat(32),
+    "x".repeat(31),
+  ])("rejects a secret shorter than 32 bytes or blank", (secret) => {
+    expect(() => new WorkspaceInviteTokenService(secret)).toThrow();
   });
 });
