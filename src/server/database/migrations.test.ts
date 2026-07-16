@@ -171,6 +171,41 @@ describe("authentication database migration", () => {
       },
     ]);
   });
+
+  it("provisions one personal workspace for an existing user without membership", async () => {
+    await migrateDatabase(pool);
+    await pool.query(
+      "DELETE FROM schema_migrations WHERE id = $1",
+      ["2026-07-16-orphaned-user-workspaces"],
+    );
+    await pool.query(
+      `INSERT INTO app_users
+       (id, email, display_name, password_hash, email_verified_at, updated_at, created_at)
+       VALUES ($1, $2, $3, NULL, NULL, NULL, $4)`,
+      ["orphan-user", "orphan@example.com", "Orphan User", 1000],
+    );
+
+    await migrateDatabase(pool);
+    await migrateDatabase(pool);
+
+    const result = await pool.query(
+      `SELECT workspaces.id, workspaces.name, members.role,
+              preferences.selected_workspace_id
+       FROM workspace_members members
+       INNER JOIN editor_workspaces workspaces ON workspaces.id = members.workspace_id
+       INNER JOIN workspace_preferences preferences ON preferences.user_id = members.user_id
+       WHERE members.user_id = $1`,
+      ["orphan-user"],
+    );
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]).toMatchObject({
+      id: expect.stringMatching(/^workspace-/),
+      name: "Orphan User的工作区",
+      role: "owner",
+    });
+    expect(result.rows[0].selected_workspace_id).toBe(result.rows[0].id);
+  });
 });
 
 async function createLegacyMultiWorkspaceFixture(pool: Pool) {
@@ -242,9 +277,7 @@ async function createLegacyMultiWorkspaceFixture(pool: Pool) {
   );
   await pool.query(
     `INSERT INTO workspace_members (workspace_id, user_id, role, created_at)
-     VALUES
-       ('workspace-1', 'owner-1', 'owner', 1000),
-       ('workspace-1', 'member-1', 'editor', 1000)`,
+     VALUES ('workspace-1', 'member-1', 'editor', 1000)`,
   );
   await pool.query(
     `INSERT INTO editor_documents

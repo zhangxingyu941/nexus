@@ -371,6 +371,7 @@ interface Block {
 - M6 第一批：PostgreSQL 与 IndexedDB v2 多工作区目录，支持创建、搜索、主动切换和 owner 重命名，并按用户记忆每个工作区的活动文档。
 - M6 作用域：工作区内容、成员、历史、文件对象和 Yjs 房间均显式携带 `workspaceId`；旧隐式 `/api/workspace` 与 `/api/history/:documentId` 路由已删除。
 - 本地迁移：IndexedDB v1 的单工作区或单文档数据会自动迁移为 `Nexus 工作区`，迁移后可继续创建隔离的本地工作区。
+- PostgreSQL 迁移：删除旧 `owner_id` 前回填 owner 成员关系；已完成旧迁移但没有任何成员关系的历史用户会获得个人工作区。
 - 认证：QQ SMTP 6 位邮箱验证码注册与找回密码、无密码遗留账号原地升级、明确业务错误、10 分钟有效期、同账号 60 秒重发冷却、前端倒计时、一次性消费、Redis 限流和可选 GitHub OAuth。
 - 协同基础设施：Yjs PostgreSQL 快照/增量持久化与压缩、Redis 多实例 Pub/Sub、鉴权 WebSocket 和工作区作用域协作房间。
 - 部署基础设施：Redis 会话缓存、本地/S3 对象存储，以及包含 PostgreSQL、Redis、迁移、Web 和协作服务的 Docker Compose。
@@ -383,6 +384,7 @@ interface Block {
 - 验证码只存储带用户和用途作用域的 HMAC；认证邮件提供灰白简约 HTML 和纯文本双版本。
 - viewer 不进入可写 Yjs 通道，服务端拒绝其协同写入，避免绕过客户端只读限制。
 - M6 第一批验收覆盖数据库双工作区内容隔离、活动文档记忆、重命名、刷新恢复，以及本地 IndexedDB v1 到 v2 迁移。
+- PostgreSQL 升级验收覆盖缺失 owner 成员关系的旧工作区，以及完全没有工作区的历史用户。
 - M6 第二批仍处于规划：工作区删除、邮件邀请、成员移除/退出、所有权转让和账号设置；这些能力未标记为已实现。
 - 真实分享权限和页面权限归入 M7；当前分享界面不构成服务端授权。
 
