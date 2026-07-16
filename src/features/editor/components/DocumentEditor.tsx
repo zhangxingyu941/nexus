@@ -230,6 +230,7 @@ export function DocumentEditor({
               onResolveBlockComment={onResolveBlockComment}
               onToggleTodo={onToggleTodo}
               scrollElementRef={documentScrollRef}
+              workspaceId={workspaceId}
             />
 
             <div className="slash-hint">

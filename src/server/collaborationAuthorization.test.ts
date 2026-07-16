@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { authorizeCollaborationRequest, isAllowedCollaborationOrigin } from "./collaborationAuthorization";
 
-function createRequest(roomName = "document:document-1", cookie = "notion_editor_session=session-token") {
+function createRequest(
+  roomName = "workspace:workspace-a:document:document-1",
+  cookie = "notion_editor_session=session-token",
+) {
   return new Request(`http://localhost:1234/${encodeURIComponent(roomName)}`, {
     headers: { cookie },
   });
@@ -25,7 +28,7 @@ describe("collaboration WebSocket authorization", () => {
       status: 403,
     });
 
-    workspaceStore.getDocumentAccess.mockResolvedValueOnce({ role: "viewer", workspaceId: "workspace-1" });
+    workspaceStore.getDocumentAccess.mockResolvedValueOnce({ role: "viewer", workspaceId: "workspace-a" });
     await expect(authorizeCollaborationRequest(createRequest(), { authStore, workspaceStore })).resolves.toMatchObject({
       ok: false,
       status: 403,
@@ -35,22 +38,31 @@ describe("collaboration WebSocket authorization", () => {
   it("allows editors to connect only to a valid document room", async () => {
     const authStore = { getUserBySessionToken: vi.fn().mockResolvedValue({ id: "editor-1" }) };
     const workspaceStore = {
-      getDocumentAccess: vi.fn().mockResolvedValue({ role: "editor", workspaceId: "workspace-1" }),
+      getDocumentAccess: vi.fn().mockResolvedValue({ role: "editor", workspaceId: "workspace-a" }),
     };
 
     await expect(authorizeCollaborationRequest(createRequest(), { authStore, workspaceStore })).resolves.toEqual({
-      access: { role: "editor", workspaceId: "workspace-1" },
+      access: { role: "editor", workspaceId: "workspace-a" },
       documentId: "document-1",
       ok: true,
-      roomName: "document:document-1",
+      roomName: "workspace:workspace-a:document:document-1",
       userId: "editor-1",
     });
-    expect(workspaceStore.getDocumentAccess).toHaveBeenCalledWith("editor-1", "document-1");
+    expect(workspaceStore.getDocumentAccess).toHaveBeenCalledWith(
+      "editor-1",
+      "workspace-a",
+      "document-1",
+    );
 
     await expect(authorizeCollaborationRequest(createRequest("other-room"), { authStore, workspaceStore })).resolves.toMatchObject({
       ok: false,
       status: 400,
     });
+
+    workspaceStore.getDocumentAccess.mockResolvedValueOnce({ role: "editor", workspaceId: "workspace-b" });
+    await expect(
+      authorizeCollaborationRequest(createRequest(), { authStore, workspaceStore }),
+    ).resolves.toMatchObject({ ok: false, status: 403 });
   });
 
   it("accepts only configured browser origins", () => {

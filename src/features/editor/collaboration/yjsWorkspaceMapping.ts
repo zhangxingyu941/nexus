@@ -2,8 +2,8 @@ import type { Block, BlockData, EditorDocument } from "../model/block";
 import type { RemoteBlockContentPatch, RemoteDocumentStructurePatch } from "../model/workspaceOperations";
 import type { BlockContentRecord, DocumentStructureRecord } from "./collaborationTypes";
 
-export function getCollaborationRoomName(documentId: string) {
-  return `document:${documentId}`;
+export function getCollaborationRoomName(workspaceId: string, documentId: string) {
+  return `workspace:${workspaceId}:document:${documentId}`;
 }
 
 export function getBlockCollaborationField(blockId: string) {

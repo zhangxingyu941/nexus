@@ -36,12 +36,17 @@ describe("AttachmentBlockEditor", () => {
         kind="image"
         onChangeContent={() => undefined}
         onChangeData={onChangeData}
+        workspaceId="workspace-a"
       />,
     );
 
     await user.upload(screen.getByLabelText("上传图片"), file);
 
-    expect(attachmentRepositoryMock.uploadAttachment).toHaveBeenCalledWith(file, "image");
+    expect(attachmentRepositoryMock.uploadAttachment).toHaveBeenCalledWith(
+      "workspace-a",
+      file,
+      "image",
+    );
     await waitFor(() => expect(onChangeData).toHaveBeenCalledWith(attachment));
   });
 
@@ -64,6 +69,7 @@ describe("AttachmentBlockEditor", () => {
         kind="file"
         onChangeContent={() => undefined}
         onChangeData={onChangeData}
+        workspaceId="workspace-a"
       />,
     );
 
@@ -79,6 +85,7 @@ describe("AttachmentBlockEditor", () => {
         kind="file"
         onChangeContent={() => undefined}
         onChangeData={onChangeData}
+        workspaceId="workspace-a"
       />,
     );
     expect(screen.queryByRole("button", { name: "移除文件 需求方案.pdf" })).not.toBeInTheDocument();

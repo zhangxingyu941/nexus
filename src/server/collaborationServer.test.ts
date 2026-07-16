@@ -19,7 +19,7 @@ afterEach(async () => {
 async function listen(collaborationServer: ReturnType<typeof createCollaborationServer>) {
   await collaborationServer.listen(0, "127.0.0.1");
   const address = collaborationServer.server.address() as AddressInfo;
-  return `ws://127.0.0.1:${address.port}/document%3Adocument-1`;
+  return `ws://127.0.0.1:${address.port}/workspace%3Aworkspace-1%3Adocument%3Adocument-1`;
 }
 
 function getRejectedStatus(url: string, origin: string) {
@@ -58,13 +58,14 @@ describe("authenticated collaboration server", () => {
       _request: unknown,
       _options: { docName: string },
     ) => socket.send("ready"));
+    const getDocumentAccess = vi.fn().mockResolvedValue({ role: "editor", workspaceId: "workspace-1" });
     const collaborationServer = createCollaborationServer({
       allowedOrigins: ["http://localhost:3000"],
       authStore: { getUserBySessionToken: vi.fn().mockResolvedValue({ id: "editor-1" }) },
       prepareRoom,
       setupConnection,
       workspaceStore: {
-        getDocumentAccess: vi.fn().mockResolvedValue({ role: "editor", workspaceId: "workspace-1" }),
+        getDocumentAccess,
       },
     });
     servers.push(collaborationServer);
@@ -86,6 +87,7 @@ describe("authenticated collaboration server", () => {
       docName: "workspace:workspace-1:document:document-1",
     });
     expect(prepareRoom).toHaveBeenCalledWith("workspace:workspace-1:document:document-1");
+    expect(getDocumentAccess).toHaveBeenCalledWith("editor-1", "workspace-1", "document-1");
     expect(prepareRoom.mock.invocationCallOrder[0]).toBeLessThan(setupConnection.mock.invocationCallOrder[0]);
   });
 

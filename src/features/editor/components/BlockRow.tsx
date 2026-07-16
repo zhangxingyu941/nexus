@@ -40,6 +40,7 @@ interface BlockRowProps {
   onOutdent: (blockId: string) => void;
   onResolveBlockComment: (blockId: string, commentId: string) => void;
   onToggleTodo: (blockId: string) => void;
+  workspaceId: string;
 }
 
 type OpenMenu = "block" | "slash" | "collab" | "comments" | null;
@@ -69,6 +70,7 @@ export function BlockRow({
   onOutdent,
   onResolveBlockComment,
   onToggleTodo,
+  workspaceId,
 }: BlockRowProps) {
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const [activeSlashIndex, setActiveSlashIndex] = useState(0);
@@ -201,6 +203,7 @@ export function BlockRow({
             kind={block.type}
             onChangeContent={(content) => onChangeContent(block.id, content)}
             onChangeData={(data) => onChangeBlockData(block.id, data)}
+            workspaceId={workspaceId}
           />
         ) : block.type === "table" ? (
           block.data?.kind === "table" ? (

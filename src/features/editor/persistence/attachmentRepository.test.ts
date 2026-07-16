@@ -23,9 +23,10 @@ describe("attachment repository", () => {
       }),
     );
 
-    await expect(uploadAttachment(file, "image")).resolves.toEqual(attachment);
+    await expect(uploadAttachment("workspace-a", file, "image")).resolves.toEqual(attachment);
     const [, request] = fetchSpy.mock.calls[0];
     const body = request?.body as FormData;
+    expect(body.get("workspaceId")).toBe("workspace-a");
     expect(body.get("kind")).toBe("image");
     expect(body.get("file")).toBe(file);
   });
@@ -39,7 +40,11 @@ describe("attachment repository", () => {
     );
 
     await expect(
-      uploadAttachment(new File(["pdf"], "方案.pdf", { type: "application/pdf" }), "image"),
+      uploadAttachment(
+        "workspace-a",
+        new File(["pdf"], "方案.pdf", { type: "application/pdf" }),
+        "image",
+      ),
     ).rejects.toThrow("图片块只能上传图片文件");
   });
 });

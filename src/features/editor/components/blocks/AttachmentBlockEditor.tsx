@@ -12,6 +12,7 @@ interface AttachmentBlockEditorProps {
   kind: "image" | "file";
   onChangeContent: (content: string) => void;
   onChangeData: (data: AttachmentBlockData | null) => void;
+  workspaceId: string;
 }
 
 function formatFileSize(size: number) {
@@ -32,6 +33,7 @@ export function AttachmentBlockEditor({
   kind,
   onChangeContent,
   onChangeData,
+  workspaceId,
 }: AttachmentBlockEditorProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [status, setStatus] = useState("");
@@ -47,7 +49,7 @@ export function AttachmentBlockEditor({
     setStatus("");
 
     try {
-      onChangeData(await uploadAttachment(file, kind));
+      onChangeData(await uploadAttachment(workspaceId, file, kind));
       setStatus(`${label}已上传`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : `${label}上传失败`);

@@ -147,6 +147,7 @@ describe("useDocumentCollaboration", () => {
         useDocumentCollaboration({
           document: currentDocument,
           onRemotePatches,
+          workspaceId: "workspace-a",
         }),
       {
         initialProps: {
@@ -195,6 +196,7 @@ describe("useDocumentCollaboration", () => {
       useDocumentCollaboration({
         document,
         onRemotePatches,
+        workspaceId: "workspace-a",
       }),
     );
     const provider = websocketMock.instances[0];
@@ -218,6 +220,7 @@ describe("useDocumentCollaboration", () => {
         useDocumentCollaboration({
           document: currentDocument,
           onRemotePatches,
+          workspaceId: "workspace-a",
         }),
       {
         initialProps: {
@@ -256,6 +259,7 @@ describe("useDocumentCollaboration", () => {
         useDocumentCollaboration({
           document: currentDocument,
           onRemotePatches,
+          workspaceId: "workspace-a",
         }),
       {
         initialProps: {
@@ -266,7 +270,7 @@ describe("useDocumentCollaboration", () => {
     const firstProvider = websocketMock.instances[0];
 
     expect(result.current.ydoc).toBeNull();
-    expect(result.current.roomName).toBe("document:document-1000");
+    expect(result.current.roomName).toBe("workspace:workspace-a:document:document-1000");
 
     act(() => {
       firstProvider.emit("sync", true);
@@ -283,7 +287,7 @@ describe("useDocumentCollaboration", () => {
     expect(firstProvider.destroyed).toBe(true);
     expect(result.current.ydoc).toBeNull();
     expect(result.current.ydoc).not.toBe(firstYDoc);
-    expect(result.current.roomName).toBe("document:document-2000");
+    expect(result.current.roomName).toBe("workspace:workspace-a:document:document-2000");
 
     act(() => {
       websocketMock.instances[1].emit("sync", true);
@@ -301,6 +305,7 @@ describe("useDocumentCollaboration", () => {
       useDocumentCollaboration({
         document,
         onRemotePatches,
+        workspaceId: "workspace-a",
       }),
     );
     const provider = websocketMock.instances[0];
@@ -346,6 +351,7 @@ describe("useDocumentCollaboration", () => {
         useDocumentCollaboration({
           document: currentDocument,
           onRemotePatches,
+          workspaceId: "workspace-a",
         }),
       {
         initialProps: {
@@ -403,6 +409,7 @@ describe("useDocumentCollaboration", () => {
           name: "Me",
         },
         onRemotePatches,
+        workspaceId: "workspace-a",
       }),
     );
     const provider = websocketMock.instances[0];
@@ -475,6 +482,7 @@ describe("useDocumentCollaboration", () => {
         document,
         onRemoteDocumentStructurePatch,
         onRemotePatches,
+        workspaceId: "workspace-a",
       }),
     );
 

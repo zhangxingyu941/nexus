@@ -36,6 +36,7 @@ interface UseDocumentCollaborationInput {
   onRemoteDocumentStructurePatch?: (patch: RemoteDocumentStructurePatch) => void;
   onRemotePatches: (patches: RemoteBlockContentPatch[]) => void;
   serverUrl?: string;
+  workspaceId: string;
 }
 
 interface CollaborationStatusEvent {
@@ -235,6 +236,7 @@ export function useDocumentCollaboration({
   onRemoteDocumentStructurePatch,
   onRemotePatches,
   serverUrl = getDefaultCollaborationUrl(),
+  workspaceId,
 }: UseDocumentCollaborationInput) {
   const localUserColor = localUser.color;
   const localUserName = localUser.name;
@@ -248,7 +250,10 @@ export function useDocumentCollaboration({
   const providerRef = useRef<WebsocketProvider | null>(null);
   const documentRef = useRef<EditorDocument | null>(document);
   const isApplyingLocalRecords = useRef(false);
-  const roomName = useMemo(() => (document ? getCollaborationRoomName(document.id) : null), [document?.id]);
+  const roomName = useMemo(
+    () => (document ? getCollaborationRoomName(workspaceId, document.id) : null),
+    [document?.id, workspaceId],
+  );
 
   documentRef.current = document;
 

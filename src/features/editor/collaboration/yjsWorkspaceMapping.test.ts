@@ -12,7 +12,9 @@ import {
 
 describe("Yjs workspace mapping", () => {
   it("uses document id as the collaboration room boundary", () => {
-    expect(getCollaborationRoomName("document-1")).toBe("document:document-1");
+    expect(getCollaborationRoomName("workspace-a", "document-1")).toBe(
+      "workspace:workspace-a:document:document-1",
+    );
   });
 
   it("uses block id as the TipTap collaboration field boundary", () => {

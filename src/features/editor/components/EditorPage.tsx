@@ -160,6 +160,7 @@ export function EditorPage({
     enabled: workspaceRole !== "viewer",
     onRemoteDocumentStructurePatch: handleRemoteDocumentStructurePatch,
     onRemotePatches: handleRemotePatches,
+    workspaceId,
   });
 
   const applyActiveDocumentChange = useCallback(
