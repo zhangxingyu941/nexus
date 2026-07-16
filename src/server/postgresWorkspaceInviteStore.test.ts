@@ -7,18 +7,20 @@ import { WorkspaceInviteTokenService } from "./workspaceInviteTokens";
 
 describe("PostgresWorkspaceInviteStore", () => {
   let now: number;
+  let auditEventSequence: number;
   let pool: Pool;
   let store: PostgresWorkspaceInviteStore;
 
   beforeEach(async () => {
     now = 1_000;
+    auditEventSequence = 0;
     pool = createPgMemPool();
     await migrateDatabase(pool);
     await seedUser(pool, "owner-1", "owner@example.com", "Owner");
     await seedUser(pool, "member-1", "member@example.com", "Member");
     await seedWorkspace(pool, "workspace-1", "Product", "owner-1");
     store = new PostgresWorkspaceInviteStore(pool, {
-      auditEventIdFactory: () => `audit-${now}`,
+      auditEventIdFactory: () => `audit-${++auditEventSequence}`,
       idFactory: () => "invite-1",
       now: () => now,
       tokenService: new WorkspaceInviteTokenService(
@@ -400,6 +402,156 @@ describe("PostgresWorkspaceInviteStore", () => {
        WHERE event_type = 'workspace_invite_expired' AND target_id = $1`,
       [created.invite.id],
     )).resolves.toMatchObject({ rows: [{ count: 1 }] });
+  });
+
+  it("accepts a matching invite once with membership, preference, and audit in one transaction", async () => {
+    const created = await store.createInvite({
+      actorUserId: "owner-1",
+      email: "member@example.com",
+      role: "editor",
+      workspaceId: "workspace-1",
+    });
+
+    await expect(store.acceptInvite({
+      inviteId: created.invite.id,
+      tokenHash: null,
+      userEmail: " MEMBER@example.com ",
+      userId: "member-1",
+    })).resolves.toEqual({ workspaceId: "workspace-1" });
+
+    await expect(pool.query(
+      `SELECT role
+       FROM workspace_members
+       WHERE workspace_id = $1 AND user_id = $2`,
+      ["workspace-1", "member-1"],
+    )).resolves.toMatchObject({ rows: [{ role: "editor" }] });
+    await expect(pool.query(
+      `SELECT active_document_id, updated_at
+       FROM workspace_document_preferences
+       WHERE workspace_id = $1 AND user_id = $2`,
+      ["workspace-1", "member-1"],
+    )).resolves.toMatchObject({
+      rows: [{ active_document_id: null, updated_at: now }],
+    });
+    await expect(pool.query(
+      `SELECT accepted_at, accepted_by, status
+       FROM workspace_invites
+       WHERE id = $1`,
+      [created.invite.id],
+    )).resolves.toMatchObject({
+      rows: [{ accepted_at: now, accepted_by: "member-1", status: "accepted" }],
+    });
+    await expect(pool.query(
+      `SELECT actor_user_id, event_type, metadata
+       FROM workspace_audit_events
+       WHERE target_id = $1 AND event_type = 'workspace_invite_accepted'`,
+      [created.invite.id],
+    )).resolves.toMatchObject({
+      rows: [{
+        actor_user_id: "member-1",
+        event_type: "workspace_invite_accepted",
+        metadata: { role: "editor", status: "accepted" },
+      }],
+    });
+    await expect(store.acceptInvite({
+      inviteId: created.invite.id,
+      tokenHash: null,
+      userEmail: "member@example.com",
+      userId: "member-1",
+    })).rejects.toMatchObject({ code: "invite_already_accepted" });
+  });
+
+  it("rejects acceptance when the session email or context token does not match", async () => {
+    const created = await store.createInvite({
+      actorUserId: "owner-1",
+      email: "member@example.com",
+      role: "viewer",
+      workspaceId: "workspace-1",
+    });
+    const tokenService = new WorkspaceInviteTokenService(
+      "test-workspace-invite-secret-at-least-32-bytes",
+    );
+
+    await expect(store.acceptInvite({
+      inviteId: created.invite.id,
+      tokenHash: null,
+      userEmail: "other@example.com",
+      userId: "member-1",
+    })).rejects.toMatchObject({ code: "invite_email_mismatch" });
+    await expect(store.acceptInvite({
+      inviteId: created.invite.id,
+      tokenHash: tokenService.hashRawToken("stale-token"),
+      userEmail: "member@example.com",
+      userId: "member-1",
+    })).rejects.toMatchObject({ code: "invite_not_found" });
+    await expect(pool.query(
+      "SELECT status FROM workspace_invites WHERE id = $1",
+      [created.invite.id],
+    )).resolves.toMatchObject({ rows: [{ status: "pending" }] });
+  });
+
+  it("declines a matching pending invite and rejects a second transition", async () => {
+    const created = await store.createInvite({
+      actorUserId: "owner-1",
+      email: "member@example.com",
+      role: "viewer",
+      workspaceId: "workspace-1",
+    });
+
+    await expect(store.declineInvite({
+      inviteId: created.invite.id,
+      tokenHash: null,
+      userEmail: "member@example.com",
+      userId: "member-1",
+    })).resolves.toBeUndefined();
+
+    await expect(pool.query(
+      `SELECT declined_at, declined_by, status
+       FROM workspace_invites
+       WHERE id = $1`,
+      [created.invite.id],
+    )).resolves.toMatchObject({
+      rows: [{ declined_at: now, declined_by: "member-1", status: "declined" }],
+    });
+    await expect(pool.query(
+      `SELECT actor_user_id, event_type, metadata
+       FROM workspace_audit_events
+       WHERE target_id = $1 AND event_type = 'workspace_invite_declined'`,
+      [created.invite.id],
+    )).resolves.toMatchObject({
+      rows: [{
+        actor_user_id: "member-1",
+        event_type: "workspace_invite_declined",
+        metadata: { status: "declined" },
+      }],
+    });
+    await expect(store.declineInvite({
+      inviteId: created.invite.id,
+      tokenHash: null,
+      userEmail: "member@example.com",
+      userId: "member-1",
+    })).rejects.toMatchObject({ code: "invite_declined" });
+  });
+
+  it("expires an invite before rejecting a recipient acceptance", async () => {
+    const created = await store.createInvite({
+      actorUserId: "owner-1",
+      email: "member@example.com",
+      role: "viewer",
+      workspaceId: "workspace-1",
+    });
+    now = created.invite.expiresAt;
+
+    await expect(store.acceptInvite({
+      inviteId: created.invite.id,
+      tokenHash: null,
+      userEmail: "member@example.com",
+      userId: "member-1",
+    })).rejects.toMatchObject({ code: "invite_expired" });
+    await expect(pool.query(
+      "SELECT status FROM workspace_invites WHERE id = $1",
+      [created.invite.id],
+    )).resolves.toMatchObject({ rows: [{ status: "expired" }] });
   });
 });
 

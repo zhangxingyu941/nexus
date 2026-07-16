@@ -28,6 +28,13 @@ interface OwnerAccess {
   displayName: string;
 }
 
+interface RecipientInviteInput {
+  inviteId: string;
+  tokenHash: string | null;
+  userEmail: string;
+  userId: string;
+}
+
 export class PostgresWorkspaceInviteStore {
   private readonly auditStore: WorkspaceAuditStore;
   private readonly idFactory: () => string;
@@ -418,6 +425,61 @@ export class PostgresWorkspaceInviteStore {
     }
   }
 
+  async acceptInvite(input: RecipientInviteInput): Promise<{ workspaceId: string }> {
+    return this.mutateRecipientInvite(input, async (client, workspace, invite) => {
+      const now = this.now();
+      await client.query(
+        `INSERT INTO workspace_members (workspace_id, user_id, role, created_at)
+         VALUES ($1, $2, $3, $4)`,
+        [workspace.id, input.userId, String(invite.role), now],
+      );
+      await client.query(
+        `INSERT INTO workspace_document_preferences
+           (user_id, workspace_id, active_document_id, updated_at)
+         VALUES ($1, $2, NULL, $3)`,
+        [input.userId, workspace.id, now],
+      );
+      await client.query(
+        `UPDATE workspace_invites
+         SET status = 'accepted', accepted_by = $1, accepted_at = $2, updated_at = $2
+         WHERE id = $3`,
+        [input.userId, now, String(invite.id)],
+      );
+      await this.auditStore.write(client, {
+        actorUserId: input.userId,
+        eventType: "workspace_invite_accepted",
+        metadata: { role: String(invite.role), status: "accepted" },
+        targetId: String(invite.id),
+        targetType: "workspace_invite",
+        workspaceId: workspace.id,
+        workspaceName: workspace.name,
+      });
+
+      return { workspaceId: workspace.id };
+    });
+  }
+
+  async declineInvite(input: RecipientInviteInput): Promise<void> {
+    await this.mutateRecipientInvite(input, async (client, workspace, invite) => {
+      const now = this.now();
+      await client.query(
+        `UPDATE workspace_invites
+         SET status = 'declined', declined_by = $1, declined_at = $2, updated_at = $2
+         WHERE id = $3`,
+        [input.userId, now, String(invite.id)],
+      );
+      await this.auditStore.write(client, {
+        actorUserId: input.userId,
+        eventType: "workspace_invite_declined",
+        metadata: { status: "declined" },
+        targetId: String(invite.id),
+        targetType: "workspace_invite",
+        workspaceId: workspace.id,
+        workspaceName: workspace.name,
+      });
+    });
+  }
+
   private async mutatePendingInvite<T>(
     actorUserId: string,
     workspaceId: string,
@@ -451,6 +513,77 @@ export class PostgresWorkspaceInviteStore {
     } catch (error) {
       if (!committed) {
         await client.query("ROLLBACK");
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async mutateRecipientInvite<T>(
+    input: RecipientInviteInput,
+    mutation: (
+      client: PoolClient,
+      workspace: LockedWorkspace,
+      invite: Record<string, unknown>,
+    ) => Promise<T>,
+  ): Promise<T> {
+    const client = await this.pool.connect();
+    let committed = false;
+    let expiryApplied = false;
+
+    try {
+      await client.query("BEGIN");
+      const matchResult = await client.query(
+        `SELECT id, workspace_id
+         FROM workspace_invites
+         WHERE id = $1
+         LIMIT 1`,
+        [input.inviteId],
+      );
+      const match = matchResult.rows[0];
+      if (!match) {
+        throw new WorkspaceDomainError("invite_not_found", "Invitation not found");
+      }
+
+      // Lock the workspace first so direct membership grants serialize with invite acceptance.
+      const workspace = await this.lockWorkspace(client, String(match.workspace_id));
+      await this.expirePendingInvites(client, workspace);
+      expiryApplied = true;
+      const invite = await this.lockInvite(client, workspace.id, String(match.id));
+      if (input.tokenHash !== null && String(invite.token_hash) !== input.tokenHash) {
+        throw new WorkspaceDomainError("invite_not_found", "Invitation not found");
+      }
+
+      await this.requireRecipient(client, input, invite);
+      const terminalError = terminalInviteError(String(invite.status));
+      if (terminalError) {
+        throw terminalError;
+      }
+
+      const member = await client.query(
+        `SELECT user_id
+         FROM workspace_members
+         WHERE workspace_id = $1 AND user_id = $2
+         LIMIT 1`,
+        [workspace.id, input.userId],
+      );
+      if (member.rows[0]) {
+        throw new WorkspaceDomainError("already_member", "This user is already a workspace member");
+      }
+
+      const result = await mutation(client, workspace, invite);
+      await client.query("COMMIT");
+      committed = true;
+      return result;
+    } catch (error) {
+      if (!committed) {
+        if (expiryApplied && error instanceof WorkspaceDomainError) {
+          await client.query("COMMIT");
+          committed = true;
+        } else {
+          await client.query("ROLLBACK");
+        }
       }
       throw error;
     } finally {
@@ -537,6 +670,26 @@ export class PostgresWorkspaceInviteStore {
       workspaceId: workspace.id,
       workspaceName: workspace.name,
     };
+  }
+
+  private async requireRecipient(
+    client: PoolClient,
+    input: RecipientInviteInput,
+    invite: Record<string, unknown>,
+  ) {
+    const email = normalizeEmail(input.userEmail);
+    const userResult = await client.query(
+      "SELECT email FROM app_users WHERE id = $1 FOR UPDATE",
+      [input.userId],
+    );
+    const user = userResult.rows[0];
+    if (
+      !user
+      || normalizeEmail(String(user.email)) !== email
+      || String(invite.email) !== email
+    ) {
+      throw new WorkspaceDomainError("invite_email_mismatch", "Invitation email does not match this user");
+    }
   }
 
   private async requireOwner(
