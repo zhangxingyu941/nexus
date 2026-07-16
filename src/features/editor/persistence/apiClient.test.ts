@@ -29,13 +29,24 @@ describe("apiClient", () => {
 
   it.each([
     ["malformed JSON", new Response("not-json", { status: 503 })],
-    ["a non-contract error payload", jsonResponse({ error: "unknown failure" }, 503)],
+    ["a non-contract error payload", jsonResponse({ message: "unknown failure" }, 503)],
   ])("uses a stable fallback for %s", async (_label, response) => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
 
     await expect(requestJson("/api/test", { method: "GET" })).rejects.toMatchObject({
       code: "service_unavailable",
       message: "工作区服务请求失败",
+    });
+  });
+
+  it("preserves legacy workspace error messages with a stable fallback code", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({
+      error: "工作区不存在",
+    }, 404)));
+
+    await expect(requestJson("/api/workspaces/missing", { method: "GET" })).rejects.toMatchObject({
+      code: "service_unavailable",
+      message: "工作区不存在",
     });
   });
 

@@ -24,6 +24,8 @@ export async function requestJson<T>(url: string, init: RequestInit): Promise<T>
   if (!response.ok) {
     const error = isApiError(payload)
       ? payload
+      : isLegacyErrorPayload(payload)
+        ? { code: "service_unavailable", error: payload.error }
       : { code: "service_unavailable", error: "工作区服务请求失败" };
     throw new ApiRequestError(error.error, error.code, error.retryAfterSeconds);
   }
@@ -49,4 +51,11 @@ function isApiError(value: unknown): value is ApiErrorPayload {
     && typeof (value as ApiErrorPayload).error === "string"
     && ((value as ApiErrorPayload).retryAfterSeconds === undefined
       || typeof (value as ApiErrorPayload).retryAfterSeconds === "number");
+}
+
+function isLegacyErrorPayload(value: unknown): value is { error: string } {
+  return typeof value === "object"
+    && value !== null
+    && !("code" in value)
+    && typeof (value as { error: unknown }).error === "string";
 }
