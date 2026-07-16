@@ -18,8 +18,11 @@ async function parseJsonResponse<T>(response: Response, fallbackMessage: string)
   return payload;
 }
 
-export async function loadDocumentVersions(documentId: string): Promise<DocumentVersionSummary[]> {
-  const response = await fetch(`/api/history/${encodeURIComponent(documentId)}`, {
+export async function loadDocumentVersions(
+  workspaceId: string,
+  documentId: string,
+): Promise<DocumentVersionSummary[]> {
+  const response = await fetch(historyPath(workspaceId, documentId), {
     headers: { Accept: "application/json" },
     method: "GET",
   });
@@ -31,8 +34,12 @@ export async function loadDocumentVersions(documentId: string): Promise<Document
   return payload.versions;
 }
 
-export async function restoreDocumentVersion(documentId: string, versionId: string) {
-  const response = await fetch(`/api/history/${encodeURIComponent(documentId)}`, {
+export async function restoreDocumentVersion(
+  workspaceId: string,
+  documentId: string,
+  versionId: string,
+) {
+  const response = await fetch(historyPath(workspaceId, documentId), {
     body: JSON.stringify({ versionId }),
     headers: {
       Accept: "application/json",
@@ -46,4 +53,8 @@ export async function restoreDocumentVersion(documentId: string, versionId: stri
   );
 
   return payload.document;
+}
+
+function historyPath(workspaceId: string, documentId: string) {
+  return `/api/workspaces/${encodeURIComponent(workspaceId)}/history/${encodeURIComponent(documentId)}`;
 }

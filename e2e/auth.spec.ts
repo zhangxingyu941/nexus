@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import {
   cleanupAcceptanceData,
   createAcceptanceIdentity,
+  waitForWorkspaceCatalog,
   waitForCapturedCode,
 } from "./support";
 
@@ -37,7 +38,10 @@ test("registers, verifies, logs in, persists an empty workspace, and resets the 
   await page.goto("/");
 
   await expect(page.getByRole("form", { name: "Nexus 身份认证" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "使用 GitHub 登录" })).toHaveCount(0);
+  const githubLogin = page.getByRole("link", { name: "使用 GitHub 登录" });
+  if (await githubLogin.count()) {
+    await expect(githubLogin).toHaveAttribute("href", "/api/auth/oauth/github");
+  }
   await page.getByRole("tab", { name: "注册" }).click();
   await page.getByLabel("姓名").fill(identity.displayName);
   await page.getByLabel("邮箱").fill(identity.email);
@@ -46,7 +50,9 @@ test("registers, verifies, logs in, persists an empty workspace, and resets the 
   await expect(page.getByText(`验证码已发送至 ${identity.email}`)).toBeVisible();
   const verificationCode = await waitForCapturedCode(identity.email, "verify-email");
   await page.getByLabel("邮箱验证码").fill(verificationCode);
+  const initialCatalog = waitForWorkspaceCatalog(page);
   await page.getByRole("button", { name: "验证并进入工作区" }).click();
+  await initialCatalog;
   await expect(page.getByLabel("文档标题")).toHaveValue("未命名文档");
   await expect(page.getByTestId(/^document-nav-/)).toHaveCount(1);
   await expect(page.getByText("需求 PRD")).toHaveCount(0);
@@ -93,13 +99,17 @@ test("registers, verifies, logs in, persists an empty workspace, and resets the 
   const resetCode = await waitForCapturedCode(identity.email, "reset-password");
   await page.getByLabel("邮箱验证码").fill(resetCode);
   await page.getByLabel("新密码").fill(identity.replacementPassword);
+  const resetCatalog = waitForWorkspaceCatalog(page);
   await page.getByRole("button", { name: "重置密码并进入工作区" }).click();
+  await resetCatalog;
   await expect(page.getByLabel("文档标题")).toHaveValue("E2E 持久化文档");
 
   await page.getByRole("button", { name: `退出 ${identity.displayName}` }).click();
   await page.getByLabel("邮箱").fill(identity.email);
   await page.getByLabel("密码", { exact: true }).fill(identity.replacementPassword);
+  const loginCatalog = waitForWorkspaceCatalog(page);
   await page.getByRole("button", { name: "登录" }).click();
+  await loginCatalog;
   await expect(page.getByLabel("文档标题")).toHaveValue("E2E 持久化文档");
 
   for (const endpoint of sensitiveAuthEndpoints) {

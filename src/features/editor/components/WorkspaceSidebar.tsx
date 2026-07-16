@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { EditorDocument } from "../model/block";
+import type { WorkspaceSummary } from "../../../shared/workspace";
 import type {
   CreateWorkspaceDocumentInput,
   WorkspaceActivity,
@@ -18,6 +19,7 @@ import { getDocumentTitle } from "./sidebar/sidebarUtils";
 import type { TaskStatusFilter } from "./sidebar/sidebarUtils";
 import { TaskCenterDialog } from "./sidebar/TaskCenterDialog";
 import { TemplateDialog } from "./sidebar/TemplateDialog";
+import { WorkspaceSwitcher } from "./sidebar/WorkspaceSwitcher";
 
 interface WorkspaceSidebarProps {
   activeDocumentId: string;
@@ -31,11 +33,13 @@ interface WorkspaceSidebarProps {
   onDuplicateDocument: (documentId: string) => void;
   onCompleteTask: (documentId: string, blockId: string) => void;
   onOpenUtilityDialog: () => void;
+  onManageWorkspaces: () => void;
   onRenameDocument: (documentId: string) => void;
   onSelectDocument: (documentId: string) => void;
   onSelectTask: (documentId: string, blockId: string) => void;
   onToggleDocumentPinned: (documentId: string) => void;
   tasks: WorkspaceTask[];
+  workspaceSummary: WorkspaceSummary;
 }
 
 export function WorkspaceSidebar({
@@ -49,11 +53,13 @@ export function WorkspaceSidebar({
   onDuplicateDocument,
   onCompleteTask,
   onOpenUtilityDialog,
+  onManageWorkspaces,
   onRenameDocument,
   onSelectDocument,
   onSelectTask,
   onToggleDocumentPinned,
   tasks,
+  workspaceSummary,
 }: WorkspaceSidebarProps) {
   const canDeleteDocument = documents.length > 1;
   const [openActionDocumentId, setOpenActionDocumentId] = useState<string | null>(null);
@@ -162,13 +168,17 @@ export function WorkspaceSidebar({
       aria-label="工作区页面"
       className="workspace-sidebar sticky top-0 z-10 flex h-dvh min-w-0 flex-col overflow-y-auto border-r bg-zinc-50 p-3"
     >
-      <div className="flex min-h-11 items-center gap-2.5 border-b border-border/70 px-1 pb-3">
+      <div className="flex min-h-11 items-center gap-2.5 px-1 pb-2">
         <BrandMark className="size-8 shadow-sm" />
         <div className="grid min-w-0 flex-1">
-          <strong className="truncate text-sm font-semibold text-foreground">团队知识库</strong>
+          <strong className="truncate text-sm font-semibold text-foreground">Nexus</strong>
           <span className="truncate text-xs text-muted-foreground">内容与项目协作</span>
         </div>
         <Badge className="border-emerald-200 bg-emerald-50 px-1.5 text-[10px] text-emerald-700" variant="outline">在线</Badge>
+      </div>
+
+      <div className="border-b border-border/70 pb-2">
+        <WorkspaceSwitcher onOpen={onManageWorkspaces} workspace={workspaceSummary} />
       </div>
 
       <SidebarQuickActions

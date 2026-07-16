@@ -37,6 +37,7 @@ function LargeBlockList({ focusBlockId = null }: { focusBlockId?: string | null 
         onResolveBlockComment={noop}
         onToggleTodo={noop}
         scrollElementRef={scrollElementRef}
+        workspaceId="workspace-a"
         />
       </div>
     </TooltipProvider>

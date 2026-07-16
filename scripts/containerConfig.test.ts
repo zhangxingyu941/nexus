@@ -52,6 +52,7 @@ describe("container configuration", () => {
     expect(dockerfile).toContain("npm install --global pnpm@10.12.1");
     expect(dockerfile).toContain("ENV NEXT_OUTPUT=standalone");
     expect(dockerfile).toContain("/app/.next/standalone");
+    expect(dockerfile).toContain("/app/public ./public");
     expect(dockerfile).toMatch(/USER (node|nextjs)/);
     expect(nextConfig).toContain('process.env.NEXT_OUTPUT === "standalone"');
     expect(dockerignore).toContain(".env");

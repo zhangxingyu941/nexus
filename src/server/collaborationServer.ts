@@ -15,7 +15,7 @@ interface CollaborationServerAuthStore {
 }
 
 interface CollaborationServerWorkspaceStore {
-  getDocumentAccess(userId: string, documentId: string): Promise<{
+  getDocumentAccess(userId: string, workspaceId: string, documentId: string): Promise<{
     role: "owner" | "editor" | "viewer";
     workspaceId: string;
   } | null>;
@@ -96,7 +96,7 @@ export function createCollaborationServer({
         return;
       }
 
-      const docName = `workspace:${authorization.access.workspaceId}:document:${authorization.documentId}`;
+      const docName = authorization.roomName;
       try {
         await prepareRoom?.(docName);
       } catch {

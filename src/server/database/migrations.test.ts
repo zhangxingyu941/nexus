@@ -1,15 +1,18 @@
-import { newDb } from "pg-mem";
 import type { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createPgMemTestDatabase } from "../../test/pgMemDatabase";
 import { migrateDatabase } from "./migrations";
 
 describe("authentication database migration", () => {
   let pool: Pool;
+  let translatedStatements: string[];
 
   beforeEach(() => {
-    const memoryDatabase = newDb({ autoCreateForeignKeyIndices: true });
-    const adapter = memoryDatabase.adapters.createPg();
-    pool = new adapter.Pool() as Pool;
+    const database = createPgMemTestDatabase({
+      noAstCoverageCheck: true,
+    });
+    pool = database.pool;
+    translatedStatements = database.translatedStatements;
   });
 
   afterEach(async () => {
@@ -107,4 +110,195 @@ describe("authentication database migration", () => {
     ]);
     expect(Number(migration.rows[0].count)).toBe(1);
   });
+
+  it("migrates shared active documents to per-member preferences idempotently", async () => {
+    await createLegacyMultiWorkspaceFixture(pool);
+
+    await migrateDatabase(pool);
+    await migrateDatabase(pool);
+
+    const workspaceColumns = await columnNames(pool, "editor_workspaces");
+    const workspacePreferenceColumns = await columnNames(pool, "workspace_preferences");
+    const documentPreferences = await pool.query(
+      `SELECT user_id, workspace_id, active_document_id
+       FROM workspace_document_preferences
+       ORDER BY user_id`,
+    );
+
+    expect(workspaceColumns).not.toContain("owner_id");
+    expect(workspaceColumns).not.toContain("active_document_id");
+    expect(workspacePreferenceColumns).toContain("selected_workspace_id");
+    expect(translatedStatements).toHaveLength(1);
+    expect(translatedStatements[0]).toContain(
+      "ON DELETE SET NULL (active_document_id)",
+    );
+    expect(documentPreferences.rows).toEqual([
+      {
+        active_document_id: "document-1",
+        user_id: "member-1",
+        workspace_id: "workspace-1",
+      },
+      {
+        active_document_id: "document-1",
+        user_id: "owner-1",
+        workspace_id: "workspace-1",
+      },
+    ]);
+
+    await pool.query(
+      "DELETE FROM editor_documents WHERE workspace_id = $1 AND id = $2",
+      ["workspace-1", "document-1"],
+    );
+    const preferencesAfterDelete = await pool.query(
+      `SELECT document_preferences.user_id,
+              preferences.selected_workspace_id,
+              document_preferences.active_document_id
+       FROM workspace_document_preferences document_preferences
+       INNER JOIN workspace_preferences preferences USING (user_id)
+       ORDER BY document_preferences.user_id`,
+    );
+
+    expect(preferencesAfterDelete.rows).toEqual([
+      {
+        active_document_id: null,
+        selected_workspace_id: "workspace-1",
+        user_id: "member-1",
+      },
+      {
+        active_document_id: null,
+        selected_workspace_id: "workspace-1",
+        user_id: "owner-1",
+      },
+    ]);
+  });
+
+  it("provisions one personal workspace for an existing user without membership", async () => {
+    await migrateDatabase(pool);
+    await pool.query(
+      "DELETE FROM schema_migrations WHERE id = $1",
+      ["2026-07-16-orphaned-user-workspaces"],
+    );
+    await pool.query(
+      `INSERT INTO app_users
+       (id, email, display_name, password_hash, email_verified_at, updated_at, created_at)
+       VALUES ($1, $2, $3, NULL, NULL, NULL, $4)`,
+      ["orphan-user", "orphan@example.com", "Orphan User", 1000],
+    );
+
+    await migrateDatabase(pool);
+    await migrateDatabase(pool);
+
+    const result = await pool.query(
+      `SELECT workspaces.id, workspaces.name, members.role,
+              preferences.selected_workspace_id
+       FROM workspace_members members
+       INNER JOIN editor_workspaces workspaces ON workspaces.id = members.workspace_id
+       INNER JOIN workspace_preferences preferences ON preferences.user_id = members.user_id
+       WHERE members.user_id = $1`,
+      ["orphan-user"],
+    );
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]).toMatchObject({
+      id: expect.stringMatching(/^workspace-/),
+      name: "Orphan User的工作区",
+      role: "owner",
+    });
+    expect(result.rows[0].selected_workspace_id).toBe(result.rows[0].id);
+  });
 });
+
+async function createLegacyMultiWorkspaceFixture(pool: Pool) {
+  const statements = [
+    `CREATE TABLE app_users (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      display_name TEXT NOT NULL,
+      created_at BIGINT NOT NULL
+    )`,
+    `CREATE TABLE schema_migrations (
+      id TEXT PRIMARY KEY,
+      applied_at BIGINT NOT NULL
+    )`,
+    `CREATE TABLE editor_workspaces (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      owner_id TEXT NOT NULL REFERENCES app_users(id),
+      active_document_id TEXT,
+      updated_at BIGINT NOT NULL,
+      created_at BIGINT NOT NULL
+    )`,
+    `CREATE TABLE workspace_members (
+      workspace_id TEXT NOT NULL REFERENCES editor_workspaces(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+      role TEXT NOT NULL CHECK (role IN ('owner', 'editor', 'viewer')),
+      created_at BIGINT NOT NULL,
+      PRIMARY KEY (workspace_id, user_id)
+    )`,
+    `CREATE TABLE workspace_preferences (
+      user_id TEXT PRIMARY KEY REFERENCES app_users(id) ON DELETE CASCADE,
+      workspace_id TEXT NOT NULL REFERENCES editor_workspaces(id) ON DELETE CASCADE
+    )`,
+    `CREATE TABLE editor_documents (
+      id TEXT NOT NULL UNIQUE,
+      workspace_id TEXT NOT NULL REFERENCES editor_workspaces(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      template_id TEXT,
+      pinned BOOLEAN,
+      position INTEGER NOT NULL,
+      updated_at BIGINT NOT NULL,
+      PRIMARY KEY (workspace_id, id)
+    )`,
+  ];
+
+  for (const statement of statements) {
+    await pool.query(statement);
+  }
+
+  await pool.query(
+    `INSERT INTO schema_migrations (id, applied_at)
+     VALUES
+       ('__migration_lock__', 0),
+       ('2026-07-10-workspace-scoped-content-keys', 1000),
+       ('2026-07-10-complex-block-data', 1000),
+       ('2026-07-13-production-authentication', 1000),
+       ('2026-07-13-yjs-persistence', 1000)`,
+  );
+  await pool.query(
+    `INSERT INTO app_users (id, email, display_name, created_at)
+     VALUES
+       ('owner-1', 'owner@example.com', 'Owner', 1000),
+       ('member-1', 'member@example.com', 'Member', 1000)`,
+  );
+  await pool.query(
+    `INSERT INTO editor_workspaces
+       (id, name, owner_id, active_document_id, updated_at, created_at)
+     VALUES ('workspace-1', 'Legacy workspace', 'owner-1', 'document-1', 2000, 1000)`,
+  );
+  await pool.query(
+    `INSERT INTO workspace_members (workspace_id, user_id, role, created_at)
+     VALUES ('workspace-1', 'member-1', 'editor', 1000)`,
+  );
+  await pool.query(
+    `INSERT INTO editor_documents
+       (id, workspace_id, title, template_id, pinned, position, updated_at)
+     VALUES ('document-1', 'workspace-1', 'Legacy document', NULL, NULL, 0, 2000)`,
+  );
+  await pool.query(
+    `INSERT INTO workspace_preferences (user_id, workspace_id)
+     VALUES
+       ('owner-1', 'workspace-1'),
+       ('member-1', 'workspace-1')`,
+  );
+}
+
+async function columnNames(pool: Pool, tableName: string) {
+  const result = await pool.query(
+    `SELECT column_name
+     FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = $1
+     ORDER BY ordinal_position`,
+    [tableName],
+  );
+  return result.rows.map((row) => String(row.column_name));
+}

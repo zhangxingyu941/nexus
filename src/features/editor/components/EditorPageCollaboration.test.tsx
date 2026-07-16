@@ -1,4 +1,5 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { insertBlockAfter, updateDocumentTitle } from "../model/documentOperations";
@@ -54,7 +55,7 @@ const collaborationMock = vi.hoisted(() => {
           name: "Remote teammate",
         },
       ],
-      roomName: "document:document-1000",
+      roomName: "workspace:workspace-test:document:document-1000",
       ydoc,
       };
     }),
@@ -75,18 +76,6 @@ vi.mock("../collaboration/useDocumentCollaboration", () => ({
   useDocumentCollaboration: collaborationMock.useDocumentCollaboration,
 }));
 
-vi.mock("../persistence/workspaceSyncRepository", async () => {
-  const { createDefaultWorkspace } = await import("../model/workspaceOperations");
-
-  return {
-    loadSyncedWorkspace: vi.fn(async () => ({
-      source: "local",
-      workspace: createDefaultWorkspace(1000),
-    })),
-    saveSyncedWorkspace: vi.fn(async () => "local"),
-  };
-});
-
 vi.mock("@tiptap/react", async () => {
   const React = await import("react");
 
@@ -105,7 +94,7 @@ describe("EditorPage collaboration wiring", () => {
   });
 
   it("applies remote document structure patches to the editor workspace", async () => {
-    render(<EditorPage />);
+    renderControlledEditor();
 
     await waitFor(() => expect(collaborationMock.getLatestOptions()).not.toBeNull());
 
@@ -127,7 +116,7 @@ describe("EditorPage collaboration wiring", () => {
   });
 
   it("passes the active Yjs document into rich text block editors", async () => {
-    render(<EditorPage />);
+    renderControlledEditor();
 
     await waitFor(() => expect(tiptapMock.useEditor).toHaveBeenCalled());
 
@@ -145,7 +134,7 @@ describe("EditorPage collaboration wiring", () => {
   });
 
   it("surfaces live collaboration presence in the editor chrome", async () => {
-    render(<EditorPage />);
+    renderControlledEditor();
 
     await waitFor(() => expect(screen.getByText(/2 在线/)).toBeInTheDocument());
   });
@@ -153,10 +142,28 @@ describe("EditorPage collaboration wiring", () => {
   it("lists live collaboration presence in the members panel", async () => {
     const user = userEvent.setup();
 
-    render(<EditorPage />);
+    renderControlledEditor();
 
     await user.click(await screen.findByRole("button", { name: /成员/ }));
 
     expect(screen.getByRole("region", { name: "实时在线成员" })).toHaveTextContent("Remote teammate");
   });
 });
+
+function renderControlledEditor() {
+  function ControlledEditor() {
+    const [workspace, setWorkspace] = useState(createDefaultWorkspace(1000));
+    return (
+      <EditorPage
+        membersEnabled={false}
+        onManageWorkspaces={vi.fn()}
+        onWorkspaceChange={(updater) => setWorkspace(updater)}
+        saveStatus="local"
+        workspace={workspace}
+        workspaceId="workspace-test"
+        workspaceSummary={{ createdAt: 1000, id: "workspace-test", name: "Nexus 工作区", role: "owner", updatedAt: workspace.updatedAt }}
+      />
+    );
+  }
+  return render(<ControlledEditor />);
+}

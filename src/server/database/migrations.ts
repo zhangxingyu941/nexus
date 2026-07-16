@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 
 const INITIAL_SCHEMA = [
@@ -98,6 +99,8 @@ const WORKSPACE_SCOPED_CONTENT_MIGRATION_ID = "2026-07-10-workspace-scoped-conte
 const COMPLEX_BLOCK_DATA_MIGRATION_ID = "2026-07-10-complex-block-data";
 const PRODUCTION_AUTHENTICATION_MIGRATION_ID = "2026-07-13-production-authentication";
 const YJS_PERSISTENCE_MIGRATION_ID = "2026-07-13-yjs-persistence";
+const MULTI_WORKSPACE_FOUNDATION_MIGRATION_ID = "2026-07-15-multi-workspace-foundation";
+const ORPHANED_USER_WORKSPACES_MIGRATION_ID = "2026-07-16-orphaned-user-workspaces";
 const MIGRATION_LOCK_ID = "__migration_lock__";
 
 const WORKSPACE_SCOPED_CONTENT_SCHEMA = [
@@ -220,6 +223,36 @@ const YJS_PERSISTENCE_SCHEMA = [
   "CREATE INDEX yjs_room_updates_room_idx ON yjs_room_updates(workspace_id, room_name, id)",
 ];
 
+const MULTI_WORKSPACE_FOUNDATION_SCHEMA = [
+  `INSERT INTO workspace_members (workspace_id, user_id, role, created_at)
+   SELECT id, owner_id, 'owner', created_at
+   FROM editor_workspaces
+   ON CONFLICT (workspace_id, user_id) DO NOTHING`,
+  `CREATE TABLE workspace_document_preferences (
+    user_id TEXT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+    workspace_id TEXT NOT NULL REFERENCES editor_workspaces(id) ON DELETE CASCADE,
+    active_document_id TEXT,
+    updated_at BIGINT NOT NULL,
+    PRIMARY KEY (user_id, workspace_id),
+    FOREIGN KEY (workspace_id, user_id)
+      REFERENCES workspace_members(workspace_id, user_id) ON DELETE CASCADE,
+    FOREIGN KEY (workspace_id, active_document_id)
+      REFERENCES editor_documents(workspace_id, id)
+      ON DELETE SET NULL (active_document_id)
+  )`,
+  `INSERT INTO workspace_document_preferences
+    (user_id, workspace_id, active_document_id, updated_at)
+   SELECT members.user_id, members.workspace_id, workspaces.active_document_id, workspaces.updated_at
+   FROM workspace_members members
+   INNER JOIN editor_workspaces workspaces ON workspaces.id = members.workspace_id
+   ON CONFLICT (user_id, workspace_id) DO NOTHING`,
+  "ALTER TABLE workspace_preferences RENAME COLUMN workspace_id TO selected_workspace_id",
+  "ALTER TABLE editor_workspaces DROP COLUMN owner_id",
+  "ALTER TABLE editor_workspaces DROP COLUMN active_document_id",
+  `CREATE INDEX workspace_document_preferences_workspace_idx
+   ON workspace_document_preferences(workspace_id, user_id)`,
+];
+
 export async function migrateDatabase(pool: Pool) {
   const client = await pool.connect();
 
@@ -302,6 +335,67 @@ export async function migrateDatabase(pool: Pool) {
       await client.query(
         "INSERT INTO schema_migrations (id, applied_at) VALUES ($1, $2)",
         [YJS_PERSISTENCE_MIGRATION_ID, Date.now()],
+      );
+    }
+
+    const multiWorkspaceFoundationResult = await client.query(
+      "SELECT id FROM schema_migrations WHERE id = $1",
+      [MULTI_WORKSPACE_FOUNDATION_MIGRATION_ID],
+    );
+
+    if (multiWorkspaceFoundationResult.rows.length === 0) {
+      for (const statement of MULTI_WORKSPACE_FOUNDATION_SCHEMA) {
+        await client.query(statement);
+      }
+
+      await client.query(
+        "INSERT INTO schema_migrations (id, applied_at) VALUES ($1, $2)",
+        [MULTI_WORKSPACE_FOUNDATION_MIGRATION_ID, Date.now()],
+      );
+    }
+
+    const orphanedUserWorkspacesResult = await client.query(
+      "SELECT id FROM schema_migrations WHERE id = $1",
+      [ORPHANED_USER_WORKSPACES_MIGRATION_ID],
+    );
+
+    if (orphanedUserWorkspacesResult.rows.length === 0) {
+      const orphanedUsers = await client.query(
+        `SELECT users.id, users.display_name
+         FROM app_users users
+         LEFT JOIN workspace_members members ON members.user_id = users.id
+         WHERE members.user_id IS NULL
+         ORDER BY users.created_at ASC, users.id ASC`,
+      );
+
+      for (const user of orphanedUsers.rows) {
+        const userId = String(user.id);
+        const displayName = String(user.display_name).trim();
+        const workspaceId = `workspace-${randomUUID()}`;
+        const now = Date.now();
+
+        await client.query(
+          `INSERT INTO editor_workspaces (id, name, updated_at, created_at)
+           VALUES ($1, $2, $3, $3)`,
+          [workspaceId, displayName ? `${displayName}的工作区` : "我的工作区", now],
+        );
+        await client.query(
+          `INSERT INTO workspace_members (workspace_id, user_id, role, created_at)
+           VALUES ($1, $2, 'owner', $3)`,
+          [workspaceId, userId, now],
+        );
+        await client.query(
+          `INSERT INTO workspace_preferences (user_id, selected_workspace_id)
+           VALUES ($1, $2)
+           ON CONFLICT (user_id) DO UPDATE
+           SET selected_workspace_id = EXCLUDED.selected_workspace_id`,
+          [userId, workspaceId],
+        );
+      }
+
+      await client.query(
+        "INSERT INTO schema_migrations (id, applied_at) VALUES ($1, $2)",
+        [ORPHANED_USER_WORKSPACES_MIGRATION_ID, Date.now()],
       );
     }
 

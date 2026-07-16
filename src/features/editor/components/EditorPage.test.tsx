@@ -1,16 +1,37 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
+import type { EditorWorkspace } from "../model/block";
 import { createDemoWorkspaceFixture } from "../../../test/fixtures/workspace";
 import { createDefaultWorkspace, createWorkspaceDocument } from "../model/workspaceOperations";
-import { clearDocument, clearWorkspace, saveWorkspace } from "../persistence/editorRepository";
 import { EditorPage } from "./EditorPage";
 
-async function renderEditor({ seedFixture = true }: { seedFixture?: boolean } = {}) {
-  if (seedFixture) {
-    await saveWorkspace(createDemoWorkspaceFixture());
+async function renderEditor({
+  role = "owner",
+  seedFixture = true,
+  workspace,
+}: {
+  role?: "owner" | "editor" | "viewer";
+  seedFixture?: boolean;
+  workspace?: EditorWorkspace;
+} = {}) {
+  const initialWorkspace = workspace ?? (seedFixture ? createDemoWorkspaceFixture() : createDefaultWorkspace(1000));
+  function ControlledEditor() {
+    const [current, setCurrent] = useState(initialWorkspace);
+    return (
+      <EditorPage
+        membersEnabled={false}
+        onManageWorkspaces={vi.fn()}
+        onWorkspaceChange={(updater) => setCurrent(updater)}
+        saveStatus={role === "viewer" ? "readonly" : "local"}
+        workspace={current}
+        workspaceId="workspace-test"
+        workspaceSummary={{ createdAt: 1000, id: "workspace-test", name: "Nexus 工作区", role, updatedAt: current.updatedAt }}
+      />
+    );
   }
-  render(<EditorPage />);
+  render(<ControlledEditor />);
   await screen.findByLabelText("文档标题");
 }
 
@@ -30,10 +51,7 @@ async function createBlankDocument(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe("EditorPage", () => {
-  beforeEach(async () => {
-    await clearWorkspace();
-    await clearDocument();
-  });
+  beforeEach(() => undefined);
 
   afterEach(() => {
     vi.restoreAllMocks();
@@ -42,7 +60,8 @@ describe("EditorPage", () => {
   it("renders a collaborative workspace shell with an editable document", async () => {
     await renderEditor({ seedFixture: false });
 
-    expect(within(screen.getByLabelText("工作区页面")).getByText("团队知识库")).toBeInTheDocument();
+    expect(within(screen.getByLabelText("工作区页面")).getByText("Nexus")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "当前工作区 Nexus 工作区，所有者" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "新建文档" })).toBeInTheDocument();
     expect(screen.getByText("项目空间")).toBeInTheDocument();
     expect(screen.getByLabelText("协作操作")).toBeInTheDocument();
@@ -122,20 +141,11 @@ describe("EditorPage", () => {
     expect(screen.getByRole("button", { name: "评论 0" })).toBeInTheDocument();
   });
 
-  it("loads the initial workspace from the backend api when it is available", async () => {
+  it("renders the controlled workspace content", async () => {
     const workspace = createWorkspaceDocument(createDefaultWorkspace(1000), 2000, "后端空间");
-    const fetchSpy = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ workspace }), {
-        headers: { "Content-Type": "application/json" },
-        status: 200,
-      }),
-    );
-    vi.stubGlobal("fetch", fetchSpy);
-
-    await renderEditor();
+    await renderEditor({ workspace });
 
     expect(screen.getByLabelText("文档标题")).toHaveValue("后端空间");
-    expect(fetchSpy).toHaveBeenCalledWith("/api/workspace", expect.objectContaining({ method: "GET" }));
   });
 
   it("renders database viewers in a read-only editor", async () => {
@@ -148,28 +158,7 @@ describe("EditorPage", () => {
       id: "viewer-todo",
       type: "todo",
     });
-    const fetchSpy = vi.fn().mockImplementation((url: string) => {
-      if (url === "/api/workspace/members") {
-        return Promise.resolve(
-          new Response(JSON.stringify({
-            members: [
-              { displayName: "访客", email: "viewer@example.com", id: "viewer-1", role: "viewer" },
-            ],
-          }), { headers: { "Content-Type": "application/json" }, status: 200 }),
-        );
-      }
-
-      return Promise.resolve(
-        new Response(JSON.stringify({
-          role: "viewer",
-          user: { displayName: "访客", email: "viewer@example.com", id: "viewer-1" },
-          workspace,
-        }), { headers: { "Content-Type": "application/json" }, status: 200 }),
-      );
-    });
-    vi.stubGlobal("fetch", fetchSpy);
-
-    await renderEditor();
+    await renderEditor({ role: "viewer", workspace });
 
     expect(screen.getByLabelText("文档标题")).toHaveAttribute("readonly");
     expect(screen.getByText("只读")).toBeInTheDocument();
@@ -467,26 +456,13 @@ describe("EditorPage", () => {
       updatedAt: 2000,
     };
     vi.stubGlobal("fetch", vi.fn().mockImplementation((url: string, init?: RequestInit) => {
-      if (url === "/api/workspace/members") {
-        return Promise.resolve(new Response(JSON.stringify({ members: [] }), { status: 200 }));
-      }
-      if (url === "/api/workspace" && init?.method === "PUT") {
-        return Promise.resolve(new Response(JSON.stringify({ saved: true }), { status: 200 }));
-      }
-      if (url === "/api/workspace") {
-        return Promise.resolve(new Response(JSON.stringify({
-          role: "owner",
-          user: { displayName: "林夏", email: "owner@example.com", id: "owner-1" },
-          workspace: databaseWorkspace,
-        }), { status: 200 }));
-      }
-      if (url === `/api/history/${currentDocument.id}` && init?.method === "POST") {
+      if (url === `/api/workspaces/workspace-test/history/${currentDocument.id}` && init?.method === "POST") {
         return Promise.resolve(new Response(JSON.stringify({
           document: restoredDocument,
           restored: true,
         }), { status: 200 }));
       }
-      if (url === `/api/history/${currentDocument.id}`) {
+      if (url === `/api/workspaces/workspace-test/history/${currentDocument.id}`) {
         return Promise.resolve(new Response(JSON.stringify({
           versions: [
             { createdAt: 2000, createdBy: "林夏", documentId: currentDocument.id, id: "version-current", title: "当前标题" },
@@ -498,7 +474,7 @@ describe("EditorPage", () => {
       return Promise.resolve(new Response(null, { status: 404 }));
     }));
 
-    await renderEditor();
+    await renderEditor({ workspace: databaseWorkspace });
     await user.click(screen.getByRole("button", { name: "历史" }));
     await user.click(await screen.findByRole("button", { name: "恢复版本 历史标题" }));
 

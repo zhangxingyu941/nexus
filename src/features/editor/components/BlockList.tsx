@@ -26,6 +26,7 @@ interface BlockListProps {
   onResolveBlockComment: (blockId: string, commentId: string) => void;
   onToggleTodo: (blockId: string) => void;
   scrollElementRef: RefObject<HTMLElement | null>;
+  workspaceId: string;
 }
 
 const VIRTUALIZATION_THRESHOLD = 100;
@@ -67,6 +68,7 @@ export function BlockList({
   onResolveBlockComment,
   onToggleTodo,
   scrollElementRef,
+  workspaceId,
 }: BlockListProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const [scrollMargin, setScrollMargin] = useState(0);
@@ -167,6 +169,7 @@ export function BlockList({
       onOutdent={onOutdent}
       onResolveBlockComment={onResolveBlockComment}
       onToggleTodo={onToggleTodo}
+      workspaceId={workspaceId}
     />;
   };
 

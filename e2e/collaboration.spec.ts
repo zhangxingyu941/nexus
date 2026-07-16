@@ -5,6 +5,7 @@ import {
   registerAndVerify,
   requestEncryptedAuthApi,
   restartCollaborationService,
+  waitForWorkspaceCatalog,
 } from "./support";
 
 test.beforeEach(() => {
@@ -33,7 +34,12 @@ test("synchronizes two browser contexts and recovers after collaboration restart
 
     const pageA = await contextA.newPage();
     const pageB = await contextB.newPage();
-    await Promise.all([pageA.goto("/"), pageB.goto("/")]);
+    await Promise.all([
+      waitForWorkspaceCatalog(pageA),
+      waitForWorkspaceCatalog(pageB),
+      pageA.goto("/"),
+      pageB.goto("/"),
+    ]);
     await expect(pageA.getByText("协同已连接", { exact: true })).toBeVisible();
     await expect(pageB.getByText("协同已连接", { exact: true })).toBeVisible();
 

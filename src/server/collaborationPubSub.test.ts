@@ -1,8 +1,8 @@
 // @vitest-environment node
 import { createRequire } from "node:module";
-import { newDb } from "pg-mem";
 import type { Pool } from "pg";
 import { afterEach, describe, expect, it } from "vitest";
+import { createPgMemPool } from "../test/pgMemDatabase";
 import {
   COLLABORATION_REMOTE_ORIGIN,
   RedisCollaborationPubSub,
@@ -66,9 +66,7 @@ describe("RedisCollaborationPubSub", () => {
   });
 
   it("persists one logical update when another instance receives it from Redis", async () => {
-    const memoryDatabase = newDb({ autoCreateForeignKeyIndices: true });
-    const adapter = memoryDatabase.adapters.createPg();
-    const pool = new adapter.Pool() as Pool;
+    const pool = createPgMemPool();
     resources.push({ close: () => pool.end() });
     await migrateDatabase(pool);
     await pool.query(
@@ -76,9 +74,9 @@ describe("RedisCollaborationPubSub", () => {
       ["owner-a", "owner-a@example.com", "Owner A", 1000],
     );
     await pool.query(
-      `INSERT INTO editor_workspaces (id, name, owner_id, active_document_id, updated_at, created_at)
-       VALUES ($1, $2, $3, NULL, $4, $4)`,
-      ["workspace-a", "Workspace A", "owner-a", 1000],
+      `INSERT INTO editor_workspaces (id, name, updated_at, created_at)
+       VALUES ($1, $2, $3, $3)`,
+      ["workspace-a", "Workspace A", 1000],
     );
     const ignoredOrigins = new Set<unknown>([COLLABORATION_REMOTE_ORIGIN]);
     const persistenceA = new PostgresYjsPersistence(pool, {

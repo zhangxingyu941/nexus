@@ -24,8 +24,11 @@ describe("document history repository", () => {
       }),
     );
 
-    await expect(loadDocumentVersions("document-1")).resolves.toEqual(versions);
-    expect(fetchSpy).toHaveBeenCalledWith("/api/history/document-1", expect.objectContaining({ method: "GET" }));
+    await expect(loadDocumentVersions("workspace/a", "document/1")).resolves.toEqual(versions);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/workspaces/workspace%2Fa/history/document%2F1",
+      expect.objectContaining({ method: "GET" }),
+    );
   });
 
   it("restores a version and surfaces API errors", async () => {
@@ -44,12 +47,12 @@ describe("document history repository", () => {
         }),
       );
 
-    await expect(restoreDocumentVersion("document-1", "version-1")).resolves.toEqual(document);
+    await expect(restoreDocumentVersion("workspace/a", "document/1", "version-1")).resolves.toEqual(document);
     expect(fetchSpy).toHaveBeenNthCalledWith(
       1,
-      "/api/history/document-1",
+      "/api/workspaces/workspace%2Fa/history/document%2F1",
       expect.objectContaining({ body: JSON.stringify({ versionId: "version-1" }), method: "POST" }),
     );
-    await expect(restoreDocumentVersion("document-1", "version-1")).rejects.toThrow("没有恢复权限");
+    await expect(restoreDocumentVersion("workspace/a", "document/1", "version-1")).rejects.toThrow("没有恢复权限");
   });
 });

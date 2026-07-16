@@ -1,6 +1,11 @@
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
-import { expect, type APIRequestContext, type APIResponse } from "@playwright/test";
+import {
+  expect,
+  type APIRequestContext,
+  type APIResponse,
+  type Page,
+} from "@playwright/test";
 import { CompactEncrypt, importJWK, type JWK } from "jose";
 
 const projectRoot = resolve(import.meta.dirname, "..");
@@ -81,6 +86,15 @@ export async function requestEncryptedAuthApi(
   return request.post(authEndpoints[input.purpose], { data });
 }
 
+export function waitForWorkspaceCatalog(page: Page) {
+  return page.waitForResponse((response) => {
+    const request = response.request();
+    return request.method() === "GET"
+      && new URL(response.url()).pathname === "/api/workspaces"
+      && response.ok();
+  });
+}
+
 export async function waitForCapturedCode(
   email: string,
   purpose: "reset-password" | "verify-email",
@@ -109,7 +123,7 @@ export function cleanupAcceptanceData() {
     "-d",
     "notion_block_editor",
     "-c",
-    "DELETE FROM auth_audit_events WHERE user_id IN (SELECT id FROM app_users WHERE email LIKE 'e2e-%@example.com' OR email LIKE 'collab-%@example.com'); DELETE FROM editor_workspaces WHERE owner_id IN (SELECT id FROM app_users WHERE email LIKE 'e2e-%@example.com' OR email LIKE 'collab-%@example.com'); DELETE FROM app_users WHERE email LIKE 'e2e-%@example.com' OR email LIKE 'collab-%@example.com';",
+    "DELETE FROM auth_audit_events WHERE user_id IN (SELECT id FROM app_users WHERE email LIKE 'e2e-%@example.com' OR email LIKE 'collab-%@example.com' OR email LIKE 'workspace-%@example.com'); DELETE FROM editor_workspaces WHERE id IN (SELECT members.workspace_id FROM workspace_members members INNER JOIN app_users users ON users.id = members.user_id WHERE members.role = 'owner' AND (users.email LIKE 'e2e-%@example.com' OR users.email LIKE 'collab-%@example.com' OR users.email LIKE 'workspace-%@example.com')); DELETE FROM app_users WHERE email LIKE 'e2e-%@example.com' OR email LIKE 'collab-%@example.com' OR email LIKE 'workspace-%@example.com';",
   ]);
   dockerCompose([
     "exec",

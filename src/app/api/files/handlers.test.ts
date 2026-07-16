@@ -32,6 +32,7 @@ describe("file route handlers", () => {
     const formData = new FormData();
     formData.set("kind", "image");
     formData.set("file", new File(["image-body"], "设计稿.png", { type: "image/png" }));
+    formData.set("workspaceId", "workspace-a");
 
     const uploadResponse = await handlers.POST(
       new Request("http://localhost/api/files", { body: formData, method: "POST" }),
@@ -42,14 +43,14 @@ describe("file route handlers", () => {
 
     expect(uploadResponse.status).toBe(201);
     expect(uploadPayload.attachment).toMatchObject({
-      key: "local/object-1.png",
+      key: "workspace-a/object-1.png",
       kind: "image",
       name: "设计稿.png",
-      url: "/api/files/local/object-1.png",
+      url: "/api/files/workspace-a/object-1.png",
     });
 
     const downloadResponse = await handlers.GET(
-      new Request("http://localhost/api/files/local/object-1.png"),
+      new Request("http://localhost/api/files/workspace-a/object-1.png"),
       uploadPayload.attachment.key,
     );
 
@@ -58,23 +59,63 @@ describe("file route handlers", () => {
     await expect(downloadResponse.text()).resolves.toBe("image-body");
   });
 
-  it("requires a database session and rejects viewer uploads", async () => {
+  it("authorizes the workspace submitted by the client instead of the selected workspace", async () => {
     const objectStorage = new MemoryObjectStorage();
-    const authStore = { getUserBySessionToken: vi.fn().mockResolvedValue(null) };
-    const workspaceStore = { getWorkspaceAccess: vi.fn() };
-    const handlers = createFileRouteHandlers({ authStore, objectStorage, workspaceStore });
+    const authStore = { getUserBySessionToken: vi.fn().mockResolvedValue({ id: "editor-1" }) };
+    const workspaceStore = {
+      getWorkspaceAccess: vi.fn().mockResolvedValue({ role: "editor", workspaceId: "workspace-a" }),
+    };
+    const handlers = createFileRouteHandlers({
+      authStore,
+      idFactory: () => "object-1",
+      objectStorage,
+      workspaceStore,
+    });
+    const formData = new FormData();
+    formData.set("kind", "file");
+    formData.set("file", new File(["body"], "方案.pdf", { type: "application/pdf" }));
+    formData.set("workspaceId", "workspace-a");
 
-    const unauthorizedResponse = await handlers.POST(
-      new Request("http://localhost/api/files", { body: new FormData(), method: "POST" }),
+    const uploadResponse = await handlers.POST(
+      new Request("http://localhost/api/files", { body: formData, method: "POST" }),
     );
-    expect(unauthorizedResponse.status).toBe(401);
+    expect(uploadResponse.status).toBe(201);
+    expect(workspaceStore.getWorkspaceAccess).toHaveBeenCalledWith("editor-1", "workspace-a");
+    expect([...objectStorage.objects.keys()]).toEqual(["workspace-a/object-1.pdf"]);
 
-    authStore.getUserBySessionToken.mockResolvedValue({ id: "viewer-1" });
-    workspaceStore.getWorkspaceAccess.mockResolvedValue({ role: "viewer", workspaceId: "workspace-1" });
-    const viewerResponse = await handlers.POST(
-      new Request("http://localhost/api/files", { body: new FormData(), method: "POST" }),
+    const downloadResponse = await handlers.GET(
+      new Request("http://localhost/api/files/workspace-a/object-1.pdf"),
+      "workspace-a/object-1.pdf",
+    );
+    expect(downloadResponse.status).toBe(200);
+    expect(workspaceStore.getWorkspaceAccess).toHaveBeenLastCalledWith("editor-1", "workspace-a");
+  });
+
+  it("rejects invalid local workspace ids and inaccessible database workspaces", async () => {
+    const objectStorage = new MemoryObjectStorage();
+    const invalidForm = new FormData();
+    invalidForm.set("kind", "file");
+    invalidForm.set("file", new File(["body"], "方案.pdf", { type: "application/pdf" }));
+    invalidForm.set("workspaceId", "../outside");
+    const localHandlers = createFileRouteHandlers({ objectStorage });
+    const invalidResponse = await localHandlers.POST(
+      new Request("http://localhost/api/files", { body: invalidForm, method: "POST" }),
+    );
+    expect(invalidResponse.status).toBe(400);
+
+    const deniedHandlers = createFileRouteHandlers({
+      authStore: { getUserBySessionToken: vi.fn().mockResolvedValue({ id: "editor-1" }) },
+      objectStorage,
+      workspaceStore: { getWorkspaceAccess: vi.fn().mockResolvedValue(null) },
+    });
+    const deniedForm = new FormData();
+    deniedForm.set("kind", "file");
+    deniedForm.set("file", new File(["body"], "方案.pdf", { type: "application/pdf" }));
+    deniedForm.set("workspaceId", "workspace-a");
+    const deniedResponse = await deniedHandlers.POST(
+      new Request("http://localhost/api/files", { body: deniedForm, method: "POST" }),
     );
 
-    expect(viewerResponse.status).toBe(403);
+    expect(deniedResponse.status).toBe(403);
   });
 });

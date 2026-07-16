@@ -10,7 +10,7 @@ interface FileAuthStore {
 }
 
 interface FileWorkspaceStore {
-  getWorkspaceAccess: (userId: string) => Promise<WorkspaceAccess | null>;
+  getWorkspaceAccess: (userId: string, workspaceId: string) => Promise<WorkspaceAccess | null>;
 }
 
 interface FileRouteDependencies {
@@ -21,6 +21,7 @@ interface FileRouteDependencies {
 }
 
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+const WORKSPACE_ID_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
 
 export function createFileRouteHandlers({
   authStore,
@@ -28,9 +29,9 @@ export function createFileRouteHandlers({
   objectStorage,
   workspaceStore,
 }: FileRouteDependencies) {
-  async function getScope(request: Request, requireWrite: boolean) {
+  async function getScope(request: Request, workspaceId: string, requireWrite: boolean) {
     if (!authStore || !workspaceStore) {
-      return { role: "owner" as const, workspaceId: "local" };
+      return { role: "owner" as const, workspaceId };
     }
 
     const user = await authStore.getUserBySessionToken(getSessionToken(request));
@@ -38,8 +39,12 @@ export function createFileRouteHandlers({
       return NextResponse.json({ error: "请先进入工作区" }, { status: 401 });
     }
 
-    const access = await workspaceStore.getWorkspaceAccess(user.id);
-    if (!access || (requireWrite && access.role === "viewer")) {
+    const access = await workspaceStore.getWorkspaceAccess(user.id, workspaceId);
+    if (
+      !access ||
+      access.workspaceId !== workspaceId ||
+      (requireWrite && access.role === "viewer")
+    ) {
       return NextResponse.json(
         { error: requireWrite ? "没有上传文件的权限" : "没有读取文件的权限" },
         { status: 403 },
@@ -51,11 +56,6 @@ export function createFileRouteHandlers({
 
   return {
     async POST(request: Request) {
-      const scope = await getScope(request, true);
-      if (scope instanceof NextResponse) {
-        return scope;
-      }
-
       let formData: FormData;
       try {
         formData = await request.formData();
@@ -65,7 +65,11 @@ export function createFileRouteHandlers({
 
       const file = formData.get("file");
       const kind = formData.get("kind");
+      const workspaceId = formData.get("workspaceId");
 
+      if (typeof workspaceId !== "string" || !WORKSPACE_ID_PATTERN.test(workspaceId)) {
+        return NextResponse.json({ error: "工作区标识不正确" }, { status: 400 });
+      }
       if (!(file instanceof File) || (kind !== "image" && kind !== "file")) {
         return NextResponse.json({ error: "请选择要上传的文件" }, { status: 400 });
       }
@@ -76,7 +80,12 @@ export function createFileRouteHandlers({
         return NextResponse.json({ error: "图片块只能上传图片文件" }, { status: 400 });
       }
 
-      const key = createObjectKey(scope.workspaceId, file.name, idFactory);
+      const scope = await getScope(request, workspaceId, true);
+      if (scope instanceof NextResponse) {
+        return scope;
+      }
+
+      const key = createObjectKey(workspaceId, file.name, idFactory);
       const body = new Uint8Array(await file.arrayBuffer());
       const mimeType = file.type || "application/octet-stream";
       await objectStorage.putObject(key, body, mimeType);
@@ -95,11 +104,16 @@ export function createFileRouteHandlers({
     },
 
     async GET(request: Request, key: string) {
-      const scope = await getScope(request, false);
+      const workspaceId = key.split("/", 1)[0];
+      if (!WORKSPACE_ID_PATTERN.test(workspaceId) || !key.startsWith(`${workspaceId}/`)) {
+        return NextResponse.json({ error: "文件标识不正确" }, { status: 400 });
+      }
+
+      const scope = await getScope(request, workspaceId, false);
       if (scope instanceof NextResponse) {
         return scope;
       }
-      if (!key.startsWith(`${scope.workspaceId}/`)) {
+      if (scope.workspaceId !== workspaceId) {
         return NextResponse.json({ error: "没有读取文件的权限" }, { status: 403 });
       }
 

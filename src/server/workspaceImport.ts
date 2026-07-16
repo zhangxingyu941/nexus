@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import type { Pool } from "pg";
-import { isWorkspacePayload } from "./workspaceStore";
+import { isWorkspacePayload } from "./workspacePayload";
 import { PostgresAuthStore } from "./postgresAuthStore";
 import { PostgresWorkspaceStore } from "./postgresWorkspaceStore";
 
@@ -24,9 +24,10 @@ export async function importWorkspaceFromFile(pool: Pool, options: ImportWorkspa
     displayName: options.displayName,
     email: options.email,
   });
+  const workspaceId = (await workspaceStore.listWorkspaces(session.user.id)).currentWorkspaceId;
 
   try {
-    await workspaceStore.saveWorkspace(session.user.id, workspace);
+    await workspaceStore.saveWorkspace(session.user.id, workspaceId, workspace);
   } finally {
     await authStore.deleteSession(session.token);
   }
@@ -35,5 +36,6 @@ export async function importWorkspaceFromFile(pool: Pool, options: ImportWorkspa
     blockCount: workspace.documents.reduce((total, document) => total + document.blocks.length, 0),
     documentCount: workspace.documents.length,
     user: session.user,
+    workspaceId,
   };
 }

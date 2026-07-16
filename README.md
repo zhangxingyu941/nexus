@@ -43,15 +43,28 @@
 - 优雅关闭：刷新写入 → 断开 Redis → 关闭房间 → 关闭数据库
 
 ### 工作区
+- 多工作区目录，支持创建、搜索、主动切换和 owner 重命名
+- 每个工作区保存独立内容，并按用户记忆上次打开的文档
 - 多文档管理、模板库、快速搜索、任务中心
 - owner / editor / viewer 三级权限
 - 文档历史版本（完整快照 + 内容哈希去重）
 - 本地文件存储 / S3 对象存储
+- 成员、历史、文件对象和 Yjs 房间全部显式绑定 `workspaceId`
+
+### 本地数据迁移
+- 浏览器本地模式使用 IndexedDB v2 的工作区目录、内容和偏好对象仓库
+- 首次打开时自动把 v1 `documents/workspace` 或单文档数据迁移为 `Nexus 工作区`
+- 迁移完成后可创建第二个本地工作区；切换和刷新不会混用内容
+- PostgreSQL 升级会回填旧工作区 owner 成员关系，并为没有任何成员关系的历史用户创建个人工作区
+
+### 后续批次
+- M6 第二批：工作区删除、邮件邀请、成员移除/退出、所有权转让和账号设置
+- M7：真实分享权限与页面权限；当前分享弹层仅保留界面交互，不代表服务端授权已生效
 
 ### 部署
 - Docker Compose 一键启动（PostgreSQL + Redis + 迁移 + Web + 协作）
 - 健康检查 + 依赖拓扑，服务按序启动
-- 幂等数据库迁移，支持独立执行
+- 幂等数据库迁移，支持独立执行和历史用户工作区修复
 
 ## 快速开始
 
@@ -137,6 +150,7 @@ docker compose run --rm migrate
 | `REDIS_URL` | Redis 连接地址，生产限流必需 |
 | `AUTH_CREDENTIAL_KEY_ID` | JWE 密钥标识（`pnpm auth:keygen` 自动生成） |
 | `AUTH_CREDENTIAL_PRIVATE_KEY_FILE` | RSA 私钥文件路径（PEM，PKCS#8） |
+| `AUTH_CREDENTIAL_PRIVATE_KEY_HOST_FILE` | Docker Compose 挂载的宿主机私钥路径 |
 | `GITHUB_CLIENT_ID` | GitHub OAuth Client ID（可选） |
 | `GITHUB_CLIENT_SECRET` | GitHub OAuth Client Secret（可选） |
 
@@ -168,7 +182,7 @@ docker compose run --rm migrate
 
 ## 数据库
 
-### 表结构（16 张）
+### 表结构（17 张）
 
 **认证**
 
@@ -184,9 +198,10 @@ docker compose run --rm migrate
 
 | 表 | 说明 |
 |---|---|
-| `editor_workspaces` | 工作区（名称、所有者、激活文档） |
+| `editor_workspaces` | 工作区名称和时间戳 |
 | `workspace_members` | 成员角色（owner / editor / viewer） |
 | `workspace_preferences` | 用户当前工作区偏好 |
+| `workspace_document_preferences` | 用户在每个工作区内的活动文档偏好 |
 
 **内容**
 
@@ -241,14 +256,20 @@ Get-Content -Raw .\nexus.sql | docker compose exec -T postgres psql -U postgres 
 | `GET` | `/api/auth/oauth/config` | OAuth 可用性 |
 | `GET` | `/api/auth/oauth/github` | 发起 GitHub 登录 |
 | `GET` | `/api/auth/oauth/github/callback` | GitHub 回调 |
-| `GET` | `/api/workspace` | 获取工作区 |
-| `PUT` | `/api/workspace` | 保存工作区 |
-| `GET` | `/api/workspace/members` | 成员列表 |
-| `POST` | `/api/workspace/members` | 添加成员 |
-| `GET` | `/api/history/:documentId` | 文档历史 |
-| `POST` | `/api/history/:documentId` | 保存版本 |
-| `POST` | `/api/files` | 上传文件 |
-| `GET` | `/api/files/:key` | 获取文件 |
+| `GET` | `/api/workspaces` | 工作区目录和当前选择 |
+| `POST` | `/api/workspaces` | 创建并选择工作区 |
+| `GET` | `/api/workspaces/:workspaceId` | 获取指定工作区快照 |
+| `PUT` | `/api/workspaces/:workspaceId` | 保存指定工作区内容 |
+| `PATCH` | `/api/workspaces/:workspaceId` | owner 重命名指定工作区 |
+| `POST` | `/api/workspaces/:workspaceId/select` | 主动选择指定工作区 |
+| `GET` | `/api/workspaces/:workspaceId/members` | 获取指定工作区成员 |
+| `POST` | `/api/workspaces/:workspaceId/members` | 添加已注册成员 |
+| `GET` | `/api/workspaces/:workspaceId/history/:documentId` | 获取指定文档历史 |
+| `POST` | `/api/workspaces/:workspaceId/history/:documentId` | 恢复指定文档版本 |
+| `POST` | `/api/files` | 上传文件，表单必须包含 `workspaceId` |
+| `GET` | `/api/files/:workspaceId/:objectKey` | 获取工作区作用域文件 |
+
+协作房间统一使用 `workspace:{workspaceId}:document:{documentId}`。服务端同时验证工作区成员关系和文档归属；文件对象 key 的第一段同样是提交并授权后的工作区 ID。
 
 ## 项目结构
 

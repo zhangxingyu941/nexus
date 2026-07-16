@@ -6,7 +6,11 @@ interface CollaborationAuthStore {
 }
 
 interface CollaborationWorkspaceStore {
-  getDocumentAccess(userId: string, documentId: string): Promise<WorkspaceAccess | null>;
+  getDocumentAccess(
+    userId: string,
+    workspaceId: string,
+    documentId: string,
+  ): Promise<WorkspaceAccess | null>;
 }
 
 interface CollaborationAuthorizationDependencies {
@@ -42,7 +46,8 @@ export async function authorizeCollaborationRequest(
   { authStore, workspaceStore }: CollaborationAuthorizationDependencies,
 ): Promise<CollaborationAuthorizationResult> {
   const roomName = getRoomName(request);
-  if (!roomName.startsWith("document:") || roomName.includes("/") || roomName.length <= "document:".length) {
+  const roomMatch = /^workspace:([^:/]+):document:([^:/]+)$/.exec(roomName);
+  if (!roomMatch) {
     return { message: "协作房间无效", ok: false, status: 400 };
   }
 
@@ -51,9 +56,9 @@ export async function authorizeCollaborationRequest(
     return { message: "请先登录", ok: false, status: 401 };
   }
 
-  const documentId = roomName.slice("document:".length);
-  const access = await workspaceStore.getDocumentAccess(user.id, documentId);
-  if (!access) {
+  const [, workspaceId, documentId] = roomMatch;
+  const access = await workspaceStore.getDocumentAccess(user.id, workspaceId, documentId);
+  if (!access || access.workspaceId !== workspaceId) {
     return { message: "没有访问此协作文档的权限", ok: false, status: 403 };
   }
   if (access.role === "viewer") {

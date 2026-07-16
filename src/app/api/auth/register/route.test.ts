@@ -1,6 +1,6 @@
-import { newDb } from "pg-mem";
 import type { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createPgMemPool } from "@/test/pgMemDatabase";
 import { AuthCredentialServiceUnavailableError } from "../../../../server/authCredentialReplayStore";
 import { AuthCredentialError } from "../../../../server/authCredentialService";
 import { migrateDatabase } from "../../../../server/database/migrations";
@@ -48,9 +48,7 @@ describe("registration route", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    const memoryDatabase = newDb({ autoCreateForeignKeyIndices: true });
-    const adapter = memoryDatabase.adapters.createPg();
-    pool = new adapter.Pool() as Pool;
+    pool = createPgMemPool();
     await migrateDatabase(pool);
     const passwordHasher: PasswordHasher = {
       hash: async (password) => `hashed:${password}`,

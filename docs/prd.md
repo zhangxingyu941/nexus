@@ -6,8 +6,8 @@
 - 项目目录：`E:\DesktopBackup\project\notion-block-editor`
 - 文档类型：产品需求文档 PRD
 - 整理日期：2026-06-10
-- 最近更新：2026-07-14
-- 当前阶段：M6 团队与工作区闭环规划
+- 最近更新：2026-07-16
+- 当前阶段：M6 第一批多工作区基础已完成，第二批规划
 - 来源：用户提供的项目构想文档
 
 ## 2. 项目背景
@@ -360,7 +360,7 @@ interface Block {
 - 第一阶段是否需要 Slash Command，还是放到进阶阶段？
 - 项目名称是否沿用 `notion-block-editor`？
 
-## 14. 当前实现状态（2026-07-13）
+## 14. 当前实现状态（2026-07-16）
 
 已完成：
 
@@ -368,6 +368,10 @@ interface Block {
 - M3：Yjs 文本和结构同步、awareness、离线状态与重连。
 - M4：PostgreSQL 持久化、邮箱密码认证、HttpOnly 会话、owner/editor/viewer 权限和工作区隔离。
 - M5：历史版本恢复、图片/文件/表格/看板块、嵌套块和 200 块虚拟滚动。
+- M6 第一批：PostgreSQL 与 IndexedDB v2 多工作区目录，支持创建、搜索、主动切换和 owner 重命名，并按用户记忆每个工作区的活动文档。
+- M6 作用域：工作区内容、成员、历史、文件对象和 Yjs 房间均显式携带 `workspaceId`；旧隐式 `/api/workspace` 与 `/api/history/:documentId` 路由已删除。
+- 本地迁移：IndexedDB v1 的单工作区或单文档数据会自动迁移为 `Nexus 工作区`，迁移后可继续创建隔离的本地工作区。
+- PostgreSQL 迁移：删除旧 `owner_id` 前回填 owner 成员关系；已完成旧迁移但没有任何成员关系的历史用户会获得个人工作区。
 - 认证：QQ SMTP 6 位邮箱验证码注册与找回密码、无密码遗留账号原地升级、明确业务错误、10 分钟有效期、同账号 60 秒重发冷却、前端倒计时、一次性消费、Redis 限流和可选 GitHub OAuth。
 - 协同基础设施：Yjs PostgreSQL 快照/增量持久化与压缩、Redis 多实例 Pub/Sub、鉴权 WebSocket 和工作区作用域协作房间。
 - 部署基础设施：Redis 会话缓存、本地/S3 对象存储，以及包含 PostgreSQL、Redis、迁移、Web 和协作服务的 Docker Compose。
@@ -379,6 +383,10 @@ interface Block {
 - 无密码且邮箱未验证的遗留账号再次注册时保留原用户 ID、成员关系、工作区和文档，只补齐注册姓名、密码哈希与邮箱验证码。
 - 验证码只存储带用户和用途作用域的 HMAC；认证邮件提供灰白简约 HTML 和纯文本双版本。
 - viewer 不进入可写 Yjs 通道，服务端拒绝其协同写入，避免绕过客户端只读限制。
+- M6 第一批验收覆盖数据库双工作区内容隔离、活动文档记忆、重命名、刷新恢复，以及本地 IndexedDB v1 到 v2 迁移。
+- PostgreSQL 升级验收覆盖缺失 owner 成员关系的旧工作区，以及完全没有工作区的历史用户。
+- M6 第二批仍处于规划：工作区删除、邮件邀请、成员移除/退出、所有权转让和账号设置；这些能力未标记为已实现。
+- 真实分享权限和页面权限归入 M7；当前分享界面不构成服务端授权。
 
 ## 15. 后续产品规划（2026-07-14）
 
@@ -419,12 +427,18 @@ interface Block {
 
 ### 16.2 功能范围
 
-#### 多工作区
+#### 第一批已完成：多工作区基础
 
 - 用户可以创建、查看、切换和重命名多个工作区。
 - 工作区切换必须由用户主动触发，收到邀请或被添加成员时不能自动替换当前工作区。
 - 侧栏显示当前工作区名称、用户角色和切换入口。
 - 所有 API、IndexedDB 缓存键、Yjs room、文件对象键和历史版本都带工作区作用域。
+- IndexedDB v2 自动迁移旧本地数据，默认目录名称为 `Nexus 工作区`。
+- PostgreSQL 使用 `workspace_document_preferences` 记录每名成员在每个工作区的活动文档。
+
+#### M6 第二批规划
+
+- 工作区删除及其确认、级联数据和审计策略。
 
 #### 邮件邀请
 
@@ -450,17 +464,26 @@ interface Block {
 
 ### 16.3 数据与 API
 
-建议新增：
+第一批已交付 API：
+
+- `GET|POST /api/workspaces`
+- `GET|PUT|PATCH /api/workspaces/:workspaceId`
+- `POST /api/workspaces/:workspaceId/select`
+- `GET|POST /api/workspaces/:workspaceId/members`
+- `GET|POST /api/workspaces/:workspaceId/history/:documentId`
+- `POST /api/files`，表单包含 `workspaceId`
+
+第一批已交付数据结构包括 `workspace_document_preferences`，并将工作区成员、内容、版本、文件和规范 Yjs room `workspace:{workspaceId}:document:{documentId}` 绑定到同一作用域。
+
+第二批建议新增：
 
 - `workspace_invites`：邀请 ID、工作区、邮箱、角色、令牌 HMAC、状态、过期时间、邀请人和接受人。
 - `workspace_members.updated_at` 和成员状态字段，用于角色变更和审计。
 - `auth_sessions.last_seen_at`、设备摘要和撤销时间，用于会话管理。
 
-建议新增或调整 API：
+第二批建议新增或调整 API：
 
-- `GET|POST /api/workspaces`
-- `GET|PATCH|DELETE /api/workspaces/:workspaceId`
-- `POST /api/workspaces/:workspaceId/select`
+- `DELETE /api/workspaces/:workspaceId`
 - `GET|POST /api/workspaces/:workspaceId/invites`
 - `POST /api/workspace-invites/:token/accept`
 - `POST /api/workspaces/:workspaceId/invites/:inviteId/resend`
@@ -470,6 +493,15 @@ interface Block {
 - `GET|DELETE /api/auth/sessions`
 
 ### 16.4 验收标准
+
+第一批已通过：
+
+- 用户可在至少两个数据库或本地工作区之间切换，文档内容和活动文档不串联。
+- owner 可重命名工作区，当前选择与内容在刷新后恢复。
+- 未授权工作区、跨工作区文档、文件 key 和协作 room 均被服务端拒绝。
+- IndexedDB v1 数据无损迁移到 v2 `Nexus 工作区`。
+
+第二批待验收：
 
 - 新邮箱收到邀请后可以注册、接受邀请并进入正确工作区。
 - 已注册用户可以接受邀请，且当前工作区不会在未确认时被替换。
