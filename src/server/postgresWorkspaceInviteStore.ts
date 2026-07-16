@@ -59,7 +59,11 @@ export class PostgresWorkspaceInviteStore {
     workspaceId: string;
     email: string;
     role: WorkspaceInviteRole;
-  }): Promise<{ invite: WorkspaceInviteSummary; rawToken: string }> {
+  }): Promise<{
+    invite: WorkspaceInviteSummary;
+    rawToken: string;
+    workspaceName: string;
+  }> {
     const email = normalizeEmail(input.email);
     const role = validateRole(input.role);
     const rawToken = this.tokenService.createRawToken();
@@ -140,6 +144,7 @@ export class PostgresWorkspaceInviteStore {
           workspaceId: workspace.id,
         },
         rawToken,
+        workspaceName: workspace.name,
       };
     } catch (error) {
       await client.query("ROLLBACK");
@@ -153,7 +158,11 @@ export class PostgresWorkspaceInviteStore {
     actorUserId: string,
     workspaceId: string,
     inviteId: string,
-  ): Promise<{ invite: WorkspaceInviteSummary; rawToken: string }> {
+  ): Promise<{
+    invite: WorkspaceInviteSummary;
+    rawToken: string;
+    workspaceName: string;
+  }> {
     const rawToken = this.tokenService.createRawToken();
     const tokenHash = this.tokenService.hashRawToken(rawToken);
 
@@ -172,6 +181,7 @@ export class PostgresWorkspaceInviteStore {
           throw new WorkspaceDomainError(
             "invite_rate_limited",
             "Please wait before resending this invitation",
+            Math.ceil((60_000 - (now - lastDeliveryAttemptAt)) / 1_000),
           );
         }
 
@@ -203,6 +213,7 @@ export class PostgresWorkspaceInviteStore {
             updated_at: now,
           }),
           rawToken,
+          workspaceName: workspace.name,
         };
       },
     );
@@ -363,6 +374,22 @@ export class PostgresWorkspaceInviteStore {
       await client.query("COMMIT");
 
       return result.rows.map(toWorkspaceInviteSummary);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async assertOwnerAccess(actorUserId: string, workspaceId: string): Promise<void> {
+    const client = await this.pool.connect();
+
+    try {
+      await client.query("BEGIN");
+      const workspace = await this.lockWorkspace(client, workspaceId);
+      await this.requireOwner(client, actorUserId, workspace.id);
+      await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;

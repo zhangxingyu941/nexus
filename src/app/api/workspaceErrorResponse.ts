@@ -41,11 +41,12 @@ export function workspaceErrorResponse(
     return null;
   }
 
+  const retryAfter = retryAfterSeconds ?? error.retryAfterSeconds;
   return NextResponse.json(
     {
       code: error.code,
       error: error.message,
-      ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
+      ...(retryAfter === undefined ? {} : { retryAfterSeconds: retryAfter }),
     },
     { status: STATUS_BY_CODE[error.code] },
   );

@@ -30,6 +30,7 @@ export class WorkspaceDomainError extends Error {
   constructor(
     readonly code: WorkspaceErrorCode,
     message: string,
+    readonly retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = "WorkspaceDomainError";
