@@ -55,7 +55,7 @@ const collaborationMock = vi.hoisted(() => {
           name: "Remote teammate",
         },
       ],
-      roomName: "document:document-1000",
+      roomName: "workspace:workspace-test:document:document-1000",
       ydoc,
       };
     }),
