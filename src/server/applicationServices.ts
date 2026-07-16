@@ -18,8 +18,9 @@ export function createPostgresServices(pool: Pool = getDatabasePool()) {
     || (production
       ? ""
       : "development-only-workspace-invite-secret");
+  const workspaceInviteTokenService = new WorkspaceInviteTokenService(workspaceInviteSecret);
   const workspaceInviteStore = new PostgresWorkspaceInviteStore(pool, {
-    tokenService: new WorkspaceInviteTokenService(workspaceInviteSecret),
+    tokenService: workspaceInviteTokenService,
   });
   const authStore = new PostgresAuthStore(pool, workspaceStore, {
     authCodeSecret: process.env.AUTH_HASH_SECRET,
@@ -37,6 +38,7 @@ export function createPostgresServices(pool: Pool = getDatabasePool()) {
     workspaceInviteLimiter,
     workspaceInviteMailer,
     workspaceInviteStore,
+    workspaceInviteTokenService,
     workspaceStore,
   };
 }
