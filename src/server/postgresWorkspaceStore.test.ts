@@ -1,5 +1,5 @@
 import type { Pool } from "pg";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDefaultWorkspace, createWorkspaceDocument } from "../features/editor/model/workspaceOperations";
 import { createPgMemPool } from "../test/pgMemDatabase";
 import { migrateDatabase } from "./database/migrations";
@@ -295,6 +295,45 @@ describe("PostgresWorkspaceStore", () => {
     await expect(
       store.saveWorkspace("editor-1", "workspace-test", createDefaultWorkspace(5000)),
     ).resolves.toBeDefined();
+  });
+
+  it("locks the workspace row before granting direct membership", async () => {
+    const query = vi.fn(async (text: string) => {
+      if (text === "BEGIN" || text === "COMMIT") {
+        return { rows: [] };
+      }
+      if (text.includes("FROM editor_workspaces")) {
+        return { rows: [{ id: "workspace-test" }] };
+      }
+      if (text.includes("FROM workspace_members")) {
+        return { rows: [{ role: "owner", workspace_id: "workspace-test" }] };
+      }
+      if (text.includes("FROM app_users")) {
+        return { rows: [{ id: "editor-1" }] };
+      }
+      if (text.includes("INSERT INTO workspace_members")) {
+        return { rows: [] };
+      }
+      throw new Error(`Unexpected query: ${text}`);
+    });
+    const client = { query, release: vi.fn() };
+    const lockTestStore = new PostgresWorkspaceStore({
+      connect: vi.fn().mockResolvedValue(client),
+    } as unknown as Pool, { now: () => 3_000 });
+
+    await lockTestStore.addMember(
+      "owner-1",
+      "workspace-test",
+      "editor@example.com",
+      "editor",
+    );
+
+    expect(query).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining("FROM editor_workspaces"),
+      ["workspace-test"],
+    );
+    expect(String(query.mock.calls[1]?.[0])).toContain("FOR UPDATE");
   });
 
   it("rejects member and history access when workspace and resource ids do not match", async () => {

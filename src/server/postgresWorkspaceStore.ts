@@ -617,6 +617,17 @@ export class PostgresWorkspaceStore {
     try {
       await client.query("BEGIN");
 
+      const workspace = await client.query(
+        `SELECT id
+         FROM editor_workspaces
+         WHERE id = $1
+         FOR UPDATE`,
+        [workspaceId],
+      );
+      if (!workspace.rows[0]) {
+        throw new WorkspaceNotFoundError();
+      }
+
       const access = await this.findAccess(client, ownerUserId, workspaceId);
 
       if (!access) {
