@@ -85,8 +85,36 @@ export class PostgresWorkspaceStore {
     const existingAccess = await this.findAnyAccess(executor, userId);
 
     if (existingAccess) {
-      await this.ensureDefaultDocument(executor, userId, existingAccess.workspaceId);
+      await this.ensureDefaultDocument(
+        executor,
+        userId,
+        existingAccess.workspaceId,
+      );
       return existingAccess.workspaceId;
+    }
+
+    if (executor !== this.pool) {
+      const workspaceId = this.idFactory();
+      const now = this.now();
+      await executor.query(
+        `INSERT INTO editor_workspaces (id, name, updated_at, created_at)
+         VALUES ($1, $2, $3, $3)`,
+        [workspaceId, name.trim() || "我的工作区", now],
+      );
+      await executor.query(
+        `INSERT INTO workspace_members (workspace_id, user_id, role, created_at)
+         VALUES ($1, $2, 'owner', $3)`,
+        [workspaceId, userId, now],
+      );
+      await executor.query(
+        `INSERT INTO workspace_preferences (user_id, selected_workspace_id)
+         VALUES ($1, $2)
+         ON CONFLICT (user_id) DO UPDATE
+         SET selected_workspace_id = EXCLUDED.selected_workspace_id`,
+        [userId, workspaceId],
+      );
+      await this.ensureDefaultDocument(executor, userId, workspaceId);
+      return workspaceId;
     }
 
     const client = await this.pool.connect();
@@ -121,9 +149,8 @@ export class PostgresWorkspaceStore {
          SET selected_workspace_id = EXCLUDED.selected_workspace_id`,
         [userId, workspaceId],
       );
-      await client.query("COMMIT");
-
       await this.ensureDefaultDocument(client, userId, workspaceId);
+      await client.query("COMMIT");
 
       return workspaceId;
     } catch (error) {
@@ -150,8 +177,9 @@ export class PostgresWorkspaceStore {
       throw new WorkspaceNotFoundError();
     }
 
-    const selectedWorkspaceId = result.rows.find((row) =>
-      row.selected_workspace_id === row.id)?.id;
+    const selectedWorkspaceId = result.rows.find(
+      (row) => row.selected_workspace_id === row.id,
+    )?.id;
     const currentWorkspaceId = selectedWorkspaceId
       ? String(selectedWorkspaceId)
       : String(result.rows[0].id);
@@ -175,7 +203,10 @@ export class PostgresWorkspaceStore {
     };
   }
 
-  async createWorkspace(userId: string, nameInput: string): Promise<WorkspaceSnapshot> {
+  async createWorkspace(
+    userId: string,
+    nameInput: string,
+  ): Promise<WorkspaceSnapshot> {
     const name = normalizeWorkspaceName(nameInput);
     const client = await this.pool.connect();
     const workspaceId = this.idFactory();
@@ -212,7 +243,10 @@ export class PostgresWorkspaceStore {
     return this.loadWorkspace(userId, workspaceId);
   }
 
-  async selectWorkspace(userId: string, workspaceId: string): Promise<WorkspaceSnapshot> {
+  async selectWorkspace(
+    userId: string,
+    workspaceId: string,
+  ): Promise<WorkspaceSnapshot> {
     const client = await this.pool.connect();
 
     try {
@@ -519,7 +553,9 @@ export class PostgresWorkspaceStore {
         );
       }
 
-      const documentIds = new Set(workspace.documents.map((document) => document.id));
+      const documentIds = new Set(
+        workspace.documents.map((document) => document.id),
+      );
       const savedPreferences = new Map(
         documentPreferencesResult.rows.map((row) => [String(row.user_id), row]),
       );
@@ -530,14 +566,17 @@ export class PostgresWorkspaceStore {
       });
 
       for (const [preferenceUserId, preference] of savedPreferences) {
-        const previousActiveDocumentId = preference.active_document_id === null
-          ? null
-          : String(preference.active_document_id);
-        const activeDocumentId = preferenceUserId === userId
-          ? workspace.activeDocumentId
-          : previousActiveDocumentId && documentIds.has(previousActiveDocumentId)
-            ? previousActiveDocumentId
-            : null;
+        const previousActiveDocumentId =
+          preference.active_document_id === null
+            ? null
+            : String(preference.active_document_id);
+        const activeDocumentId =
+          preferenceUserId === userId
+            ? workspace.activeDocumentId
+            : previousActiveDocumentId &&
+                documentIds.has(previousActiveDocumentId)
+              ? previousActiveDocumentId
+              : null;
 
         await client.query(
           `INSERT INTO workspace_document_preferences
@@ -613,7 +652,10 @@ export class PostgresWorkspaceStore {
     }
   }
 
-  async listMembers(userId: string, workspaceId: string): Promise<WorkspaceMember[]> {
+  async listMembers(
+    userId: string,
+    workspaceId: string,
+  ): Promise<WorkspaceMember[]> {
     const access = await this.findAccess(this.pool, userId, workspaceId);
 
     if (!access) {
@@ -673,7 +715,11 @@ export class PostgresWorkspaceStore {
     workspaceId: string,
     documentId: string,
   ): Promise<DocumentVersionSummary[]> {
-    const access = await this.getDocumentAccess(userId, workspaceId, documentId);
+    const access = await this.getDocumentAccess(
+      userId,
+      workspaceId,
+      documentId,
+    );
 
     if (!access) {
       throw new WorkspaceNotFoundError();
@@ -704,7 +750,11 @@ export class PostgresWorkspaceStore {
     documentId: string,
     versionId: string,
   ) {
-    const access = await this.getDocumentAccess(userId, workspaceId, documentId);
+    const access = await this.getDocumentAccess(
+      userId,
+      workspaceId,
+      documentId,
+    );
 
     if (!access) {
       throw new WorkspaceNotFoundError();
@@ -844,7 +894,12 @@ export class PostgresWorkspaceStore {
     if (!activeDocumentId) {
       const workspace = createDefaultWorkspace(updatedAt);
       activeDocumentId = workspace.activeDocumentId;
-      await this.insertDocument(executor, workspaceId, workspace.documents[0], 0);
+      await this.insertDocument(
+        executor,
+        workspaceId,
+        workspace.documents[0],
+        0,
+      );
     }
 
     await executor.query(
