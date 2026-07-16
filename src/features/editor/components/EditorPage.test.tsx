@@ -456,19 +456,6 @@ describe("EditorPage", () => {
       updatedAt: 2000,
     };
     vi.stubGlobal("fetch", vi.fn().mockImplementation((url: string, init?: RequestInit) => {
-      if (url === "/api/workspace/members") {
-        return Promise.resolve(new Response(JSON.stringify({ members: [] }), { status: 200 }));
-      }
-      if (url === "/api/workspace" && init?.method === "PUT") {
-        return Promise.resolve(new Response(JSON.stringify({ saved: true }), { status: 200 }));
-      }
-      if (url === "/api/workspace") {
-        return Promise.resolve(new Response(JSON.stringify({
-          role: "owner",
-          user: { displayName: "林夏", email: "owner@example.com", id: "owner-1" },
-          workspace: databaseWorkspace,
-        }), { status: 200 }));
-      }
       if (url === `/api/workspaces/workspace-test/history/${currentDocument.id}` && init?.method === "POST") {
         return Promise.resolve(new Response(JSON.stringify({
           document: restoredDocument,

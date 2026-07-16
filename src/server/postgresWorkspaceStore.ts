@@ -26,12 +26,6 @@ export interface WorkspaceMember {
   role: WorkspaceRole;
 }
 
-export interface LoadedWorkspace {
-  role: WorkspaceRole;
-  workspace: EditorWorkspace;
-  workspaceId: string;
-}
-
 export interface DocumentVersionSummary {
   id: string;
   documentId: string;
@@ -88,7 +82,7 @@ export class PostgresWorkspaceStore {
     name: string,
     executor: Pick<Pool, "query"> | Pick<PoolClient, "query"> = this.pool,
   ) {
-    const existingAccess = await this.findAccess(executor, userId);
+    const existingAccess = await this.findAnyAccess(executor, userId);
 
     if (existingAccess) {
       await this.ensureDefaultDocument(executor, userId, existingAccess.workspaceId);
@@ -100,7 +94,7 @@ export class PostgresWorkspaceStore {
     try {
       await client.query("BEGIN");
 
-      const access = await this.findAccess(client, userId);
+      const access = await this.findAnyAccess(client, userId);
       if (access) {
         await client.query("COMMIT");
         await this.ensureDefaultDocument(client, userId, access.workspaceId);
@@ -281,19 +275,14 @@ export class PostgresWorkspaceStore {
     }
   }
 
-  async loadWorkspace(userId: string): Promise<LoadedWorkspace | null>;
-  async loadWorkspace(userId: string, workspaceId: string): Promise<WorkspaceSnapshot>;
   async loadWorkspace(
     userId: string,
-    workspaceId?: string,
-  ): Promise<LoadedWorkspace | WorkspaceSnapshot | null> {
+    workspaceId: string,
+  ): Promise<WorkspaceSnapshot> {
     const access = await this.findAccess(this.pool, userId, workspaceId);
 
     if (!access) {
-      if (workspaceId) {
-        throw new WorkspaceNotFoundError();
-      }
-      return null;
+      throw new WorkspaceNotFoundError();
     }
 
     await this.ensureDefaultDocument(this.pool, userId, access.workspaceId);
@@ -310,7 +299,7 @@ export class PostgresWorkspaceStore {
     const workspaceRow = workspaceResult.rows[0];
 
     if (!workspaceRow?.active_document_id) {
-      return null;
+      throw new WorkspaceNotFoundError();
     }
 
     const documentResult = await this.pool.query(
@@ -321,7 +310,7 @@ export class PostgresWorkspaceStore {
       [access.workspaceId],
     );
     if (documentResult.rows.length === 0) {
-      return null;
+      throw new WorkspaceNotFoundError();
     }
 
     const blockResult = await this.pool.query(
@@ -447,55 +436,36 @@ export class PostgresWorkspaceStore {
       updatedAt: Number(workspaceRow.updated_at),
     };
 
-    if (workspaceId) {
-      const summaryResult = await this.pool.query(
-        `SELECT id, name, created_at, updated_at
-         FROM editor_workspaces
-         WHERE id = $1`,
-        [access.workspaceId],
-      );
-      return {
-        content,
-        summary: toWorkspaceSummary({
-          ...summaryResult.rows[0],
-          role: access.role,
-        }),
-      };
-    }
-
+    const summaryResult = await this.pool.query(
+      `SELECT id, name, created_at, updated_at
+       FROM editor_workspaces
+       WHERE id = $1`,
+      [workspaceId],
+    );
     return {
-      role: access.role,
-      workspace: content,
-      workspaceId: access.workspaceId,
+      content,
+      summary: toWorkspaceSummary({
+        ...summaryResult.rows[0],
+        role: access.role,
+      }),
     };
   }
 
-  async saveWorkspace(userId: string, workspace: EditorWorkspace): Promise<EditorWorkspace>;
   async saveWorkspace(
     userId: string,
     workspaceId: string,
     workspace: EditorWorkspace,
-  ): Promise<EditorWorkspace>;
-  async saveWorkspace(
-    userId: string,
-    workspaceOrId: EditorWorkspace | string,
-    scopedWorkspace?: EditorWorkspace,
   ): Promise<EditorWorkspace> {
-    const explicitWorkspaceId = typeof workspaceOrId === "string" ? workspaceOrId : undefined;
-    const workspace = typeof workspaceOrId === "string" ? scopedWorkspace : workspaceOrId;
-    if (!workspace) {
-      throw new Error("工作区数据不存在");
-    }
     const client = await this.pool.connect();
 
     try {
       await client.query("BEGIN");
-      const access = await this.findAccess(client, userId, explicitWorkspaceId);
+      const access = await this.findAccess(client, userId, workspaceId);
 
-      if (!access && explicitWorkspaceId) {
+      if (!access) {
         throw new WorkspaceNotFoundError();
       }
-      if (!access || access.role === "viewer") {
+      if (access.role === "viewer") {
         throw new WorkspacePermissionError();
       }
 
@@ -668,60 +638,25 @@ export class PostgresWorkspaceStore {
     }));
   }
 
-  async getWorkspaceAccess(userId: string): Promise<WorkspaceAccess | null>;
-  async getWorkspaceAccess(userId: string, workspaceId: string): Promise<WorkspaceAccess | null>;
-  async getWorkspaceAccess(userId: string, workspaceId?: string) {
+  async getWorkspaceAccess(userId: string, workspaceId: string) {
     return this.findAccess(this.pool, userId, workspaceId);
   }
 
   async getDocumentAccess(
     userId: string,
-    documentId: string,
-  ): Promise<WorkspaceAccess | null>;
-  async getDocumentAccess(
-    userId: string,
     workspaceId: string,
     documentId: string,
-  ): Promise<WorkspaceAccess | null>;
-  async getDocumentAccess(
-    userId: string,
-    workspaceOrDocumentId: string,
-    scopedDocumentId?: string,
   ): Promise<WorkspaceAccess | null> {
-    const workspaceId = scopedDocumentId ? workspaceOrDocumentId : undefined;
-    const documentId = scopedDocumentId ?? workspaceOrDocumentId;
-    if (workspaceId) {
-      const result = await this.pool.query(
-        `SELECT members.workspace_id, members.role
-         FROM workspace_members members
-         INNER JOIN editor_documents documents
-           ON documents.workspace_id = members.workspace_id
-         WHERE members.user_id = $1
-           AND members.workspace_id = $2
-           AND documents.id = $3
-         LIMIT 1`,
-        [userId, workspaceId, documentId],
-      );
-      const row = result.rows[0];
-      return row
-        ? {
-            role: row.role as WorkspaceRole,
-            workspaceId: String(row.workspace_id),
-          }
-        : null;
-    }
-
     const result = await this.pool.query(
       `SELECT members.workspace_id, members.role
-       FROM workspace_preferences preferences
-       INNER JOIN workspace_members members
-         ON members.workspace_id = preferences.selected_workspace_id
-        AND members.user_id = preferences.user_id
+       FROM workspace_members members
        INNER JOIN editor_documents documents
-         ON documents.workspace_id = preferences.selected_workspace_id
-       WHERE preferences.user_id = $1 AND documents.id = $2
+         ON documents.workspace_id = members.workspace_id
+       WHERE members.user_id = $1
+         AND members.workspace_id = $2
+         AND documents.id = $3
        LIMIT 1`,
-      [userId, documentId],
+      [userId, workspaceId, documentId],
     );
     const row = result.rows[0];
 
@@ -964,36 +899,35 @@ export class PostgresWorkspaceStore {
   private async findAccess(
     executor: Pick<Pool, "query"> | Pick<PoolClient, "query">,
     userId: string,
-    workspaceId?: string,
+    workspaceId: string,
   ) {
-    if (workspaceId) {
-      const exactResult = await executor.query(
-        `SELECT workspace_id, role
-         FROM workspace_members
-         WHERE user_id = $1 AND workspace_id = $2
-         LIMIT 1`,
-        [userId, workspaceId],
-      );
-      const exactRow = exactResult.rows[0];
-      return exactRow
-        ? ({
-            role: exactRow.role as WorkspaceRole,
-            workspaceId: String(exactRow.workspace_id),
-          } satisfies WorkspaceAccess)
-        : null;
-    }
+    const result = await executor.query(
+      `SELECT workspace_id, role
+       FROM workspace_members
+       WHERE user_id = $1 AND workspace_id = $2
+       LIMIT 1`,
+      [userId, workspaceId],
+    );
+    const row = result.rows[0];
 
+    return row
+      ? ({
+          role: row.role as WorkspaceRole,
+          workspaceId: String(row.workspace_id),
+        } satisfies WorkspaceAccess)
+      : null;
+  }
+
+  private async findAnyAccess(
+    executor: Pick<Pool, "query"> | Pick<PoolClient, "query">,
+    userId: string,
+  ) {
     const result = await executor.query(
       `SELECT members.workspace_id, members.role
        FROM workspace_members members
        INNER JOIN editor_workspaces workspaces ON workspaces.id = members.workspace_id
-       LEFT JOIN workspace_preferences preferences ON preferences.user_id = members.user_id
        WHERE members.user_id = $1
-       ORDER BY CASE
-                  WHEN preferences.selected_workspace_id = members.workspace_id THEN 0
-                  ELSE 1
-                END,
-                workspaces.created_at ASC
+       ORDER BY workspaces.created_at ASC, workspaces.id ASC
        LIMIT 1`,
       [userId],
     );

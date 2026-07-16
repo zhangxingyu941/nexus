@@ -6,7 +6,7 @@ import {
   WorkspacePermissionError,
 } from "../../../server/postgresWorkspaceStore";
 import { getSessionToken } from "../../../server/sessionCookie";
-import { isWorkspacePayload } from "../../../server/workspaceStore";
+import { isWorkspacePayload } from "../../../server/workspacePayload";
 import { WorkspaceNameValidationError } from "../../../shared/workspace";
 
 interface WorkspaceRouteDependencies {

@@ -32,9 +32,9 @@ describe("PostgresWorkspaceStore", () => {
     await store.ensurePersonalWorkspace("owner-1", "林夏的工作区");
     await store.ensurePersonalWorkspace("owner-1", "林夏的工作区");
 
-    await expect(store.loadWorkspace("owner-1")).resolves.toMatchObject({
-      role: "owner",
-      workspace: {
+    await expect(store.loadWorkspace("owner-1", "workspace-test")).resolves.toMatchObject({
+      summary: { role: "owner" },
+      content: {
         documents: [
           {
             blocks: [expect.objectContaining({ content: "", type: "paragraph" })],
@@ -115,7 +115,7 @@ describe("PostgresWorkspaceStore", () => {
       "Second document",
     );
     workspace.activeDocumentId = workspace.documents[0].id;
-    await store.saveWorkspace("owner-1", workspace);
+    await store.saveWorkspace("owner-1", "workspace-test", workspace);
     await store.addMember("owner-1", "workspace-test", "editor@example.com", "editor");
     await store.loadWorkspace("editor-1", "workspace-test");
     await pool.query(
@@ -222,14 +222,13 @@ describe("PostgresWorkspaceStore", () => {
       },
     ];
 
-    const saved = await store.saveWorkspace("owner-1", workspace);
-    const loaded = await store.loadWorkspace("owner-1");
+    const saved = await store.saveWorkspace("owner-1", "workspace-test", workspace);
+    const loaded = await store.loadWorkspace("owner-1", "workspace-test");
 
     expect(saved).toEqual(workspace);
-    expect(loaded).toEqual({
-      role: "owner",
-      workspace,
-      workspaceId: "workspace-test",
+    expect(loaded).toMatchObject({
+      content: workspace,
+      summary: { id: "workspace-test", role: "owner" },
     });
 
     const tableCounts = await Promise.all([
@@ -246,7 +245,7 @@ describe("PostgresWorkspaceStore", () => {
     await seedUser(pool, "owner-1", "owner@example.com", "林夏");
     await store.ensurePersonalWorkspace("owner-1", "林夏的工作区");
     const initialWorkspace = createWorkspaceDocument(createDefaultWorkspace(1000), 2000, "待删除文档");
-    await store.saveWorkspace("owner-1", initialWorkspace);
+    await store.saveWorkspace("owner-1", "workspace-test", initialWorkspace);
 
     const remainingDocument = initialWorkspace.documents[0];
     const nextWorkspace = {
@@ -255,9 +254,11 @@ describe("PostgresWorkspaceStore", () => {
       updatedAt: 4000,
     };
 
-    await store.saveWorkspace("owner-1", nextWorkspace);
+    await store.saveWorkspace("owner-1", "workspace-test", nextWorkspace);
 
-    expect(await store.loadWorkspace("owner-1")).toMatchObject({ workspace: nextWorkspace });
+    expect(await store.loadWorkspace("owner-1", "workspace-test")).toMatchObject({
+      content: nextWorkspace,
+    });
     expect(await countRows(pool, "editor_documents")).toBe(1);
     expect(await countRows(pool, "editor_blocks")).toBe(nextWorkspace.documents[0].blocks.length);
   });
@@ -267,14 +268,16 @@ describe("PostgresWorkspaceStore", () => {
     await seedUser(pool, "viewer-1", "viewer@example.com", "访客");
     await store.ensurePersonalWorkspace("owner-1", "林夏的工作区");
     const workspace = createDefaultWorkspace(1000);
-    await store.saveWorkspace("owner-1", workspace);
+    await store.saveWorkspace("owner-1", "workspace-test", workspace);
     await store.addMember("owner-1", "workspace-test", "viewer@example.com", "viewer");
 
-    await expect(store.loadWorkspace("viewer-1")).resolves.toMatchObject({
-      role: "viewer",
-      workspace,
+    await expect(store.loadWorkspace("viewer-1", "workspace-test")).resolves.toMatchObject({
+      content: workspace,
+      summary: { role: "viewer" },
     });
-    await expect(store.saveWorkspace("viewer-1", workspace)).rejects.toBeInstanceOf(WorkspacePermissionError);
+    await expect(
+      store.saveWorkspace("viewer-1", "workspace-test", workspace),
+    ).rejects.toBeInstanceOf(WorkspacePermissionError);
   });
 
   it("lets owners grant editor access and lists real workspace members", async () => {
@@ -289,7 +292,9 @@ describe("PostgresWorkspaceStore", () => {
       expect.objectContaining({ displayName: "林夏", email: "owner@example.com", role: "owner" }),
       expect.objectContaining({ displayName: "周宁", email: "editor@example.com", role: "editor" }),
     ]);
-    await expect(store.saveWorkspace("editor-1", createDefaultWorkspace(5000))).resolves.toBeDefined();
+    await expect(
+      store.saveWorkspace("editor-1", "workspace-test", createDefaultWorkspace(5000)),
+    ).resolves.toBeDefined();
   });
 
   it("rejects member and history access when workspace and resource ids do not match", async () => {
@@ -344,7 +349,7 @@ describe("PostgresWorkspaceStore", () => {
       2000,
       "Second document",
     );
-    await store.saveWorkspace("owner-1", workspace);
+    await store.saveWorkspace("owner-1", "workspace-test", workspace);
     await store.addMember("owner-1", "workspace-test", "editor@example.com", "editor");
     await store.loadWorkspace("editor-1", "workspace-test");
     const memberActiveDocumentId = workspace.documents[1].id;
@@ -355,7 +360,7 @@ describe("PostgresWorkspaceStore", () => {
       [memberActiveDocumentId, "editor-1", "workspace-test"],
     );
 
-    await store.saveWorkspace("owner-1", {
+    await store.saveWorkspace("owner-1", "workspace-test", {
       ...workspace,
       updatedAt: 3000,
     });
@@ -370,7 +375,7 @@ describe("PostgresWorkspaceStore", () => {
       active_document_id: memberActiveDocumentId,
     }]);
 
-    await store.saveWorkspace("owner-1", {
+    await store.saveWorkspace("owner-1", "workspace-test", {
       activeDocumentId: workspace.documents[0].id,
       documents: [workspace.documents[0]],
       updatedAt: 4000,
@@ -392,7 +397,7 @@ describe("PostgresWorkspaceStore", () => {
     await seedUser(pool, "editor-1", "editor@example.com", "周宁");
     await store.ensurePersonalWorkspace("owner-1", "团队知识库");
     const workspace = createDefaultWorkspace(1000);
-    await store.saveWorkspace("owner-1", workspace);
+    await store.saveWorkspace("owner-1", "workspace-test", workspace);
     await store.addMember("owner-1", "workspace-test", "editor@example.com", "editor");
 
     await expect(
@@ -418,18 +423,22 @@ describe("PostgresWorkspaceStore", () => {
     await isolatedStore.ensurePersonalWorkspace("owner-2", "工作区二");
     const sharedIdsWorkspace = createDefaultWorkspace(1000);
 
-    await isolatedStore.saveWorkspace("owner-1", sharedIdsWorkspace);
-    await isolatedStore.saveWorkspace("owner-2", {
+    await isolatedStore.saveWorkspace("owner-1", "isolated-workspace-1", sharedIdsWorkspace);
+    await isolatedStore.saveWorkspace("owner-2", "isolated-workspace-2", {
       ...sharedIdsWorkspace,
       documents: sharedIdsWorkspace.documents.map((document) => ({ ...document, title: "第二个工作区" })),
       updatedAt: 2000,
     });
 
-    await expect(isolatedStore.loadWorkspace("owner-1")).resolves.toMatchObject({
-      workspace: { documents: [expect.objectContaining({ title: "未命名文档" })] },
+    await expect(
+      isolatedStore.loadWorkspace("owner-1", "isolated-workspace-1"),
+    ).resolves.toMatchObject({
+      content: { documents: [expect.objectContaining({ title: "未命名文档" })] },
     });
-    await expect(isolatedStore.loadWorkspace("owner-2")).resolves.toMatchObject({
-      workspace: { documents: [expect.objectContaining({ title: "第二个工作区" })] },
+    await expect(
+      isolatedStore.loadWorkspace("owner-2", "isolated-workspace-2"),
+    ).resolves.toMatchObject({
+      content: { documents: [expect.objectContaining({ title: "第二个工作区" })] },
     });
   });
 
@@ -439,8 +448,8 @@ describe("PostgresWorkspaceStore", () => {
     const initialWorkspace = createDefaultWorkspace(1000);
     const documentId = initialWorkspace.activeDocumentId;
 
-    await store.saveWorkspace("owner-1", initialWorkspace);
-    await store.saveWorkspace("owner-1", initialWorkspace);
+    await store.saveWorkspace("owner-1", "workspace-test", initialWorkspace);
+    await store.saveWorkspace("owner-1", "workspace-test", initialWorkspace);
 
     const changedWorkspace = {
       ...initialWorkspace,
@@ -454,7 +463,7 @@ describe("PostgresWorkspaceStore", () => {
       })),
       updatedAt: 2000,
     };
-    await store.saveWorkspace("owner-1", changedWorkspace);
+    await store.saveWorkspace("owner-1", "workspace-test", changedWorkspace);
 
     const versions = await store.listDocumentVersions("owner-1", "workspace-test", documentId);
 
@@ -469,8 +478,8 @@ describe("PostgresWorkspaceStore", () => {
     );
 
     expect(restored.title).toBe("未命名文档");
-    await expect(store.loadWorkspace("owner-1")).resolves.toMatchObject({
-      workspace: {
+    await expect(store.loadWorkspace("owner-1", "workspace-test")).resolves.toMatchObject({
+      content: {
         documents: [expect.objectContaining({ title: "未命名文档" })],
       },
     });
@@ -481,7 +490,7 @@ describe("PostgresWorkspaceStore", () => {
     await seedUser(pool, "viewer-1", "viewer@example.com", "访客");
     await store.ensurePersonalWorkspace("owner-1", "林夏的工作区");
     const workspace = createDefaultWorkspace(1000);
-    await store.saveWorkspace("owner-1", workspace);
+    await store.saveWorkspace("owner-1", "workspace-test", workspace);
     await store.addMember("owner-1", "workspace-test", "viewer@example.com", "viewer");
     const versions = await store.listDocumentVersions(
       "viewer-1",

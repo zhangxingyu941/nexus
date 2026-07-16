@@ -40,7 +40,9 @@ describe("importWorkspaceFromFile", () => {
       user: { displayName: "迁移管理员", email: "migration@example.com" },
     });
     const store = new PostgresWorkspaceStore(pool);
-    await expect(store.loadWorkspace(result.user.id)).resolves.toMatchObject({ workspace });
+    await expect(store.loadWorkspace(result.user.id, result.workspaceId)).resolves.toMatchObject({
+      content: workspace,
+    });
   });
 
   it("rejects an invalid legacy workspace before writing database rows", async () => {
