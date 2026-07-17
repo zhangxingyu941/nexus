@@ -70,8 +70,10 @@ function nextTimestamp(document: EditorDocument) {
 }
 
 interface EditorPageProps {
+  inviteCount?: number;
   membersEnabled: boolean;
   onManageWorkspaces: () => void;
+  onOpenInvites?: () => void;
   onSignOut?: () => void;
   onWorkspaceChange: (updater: (current: EditorWorkspace) => EditorWorkspace) => void;
   saveStatus: WorkspaceSaveStatus;
@@ -82,8 +84,10 @@ interface EditorPageProps {
 }
 
 export function EditorPage({
+  inviteCount = 0,
   membersEnabled,
   onManageWorkspaces,
+  onOpenInvites,
   onSignOut,
   onWorkspaceChange,
   saveStatus,
@@ -480,9 +484,11 @@ export function EditorPage({
         collaborationState={collaboration.connectionState}
         document={activeDocument}
         focusBlockId={focusBlockId}
+        inviteCount={inviteCount}
         isWorkspaceNavigationOpen={isSidebarOpen}
         isReadOnly={workspaceRole === "viewer"}
         onInviteMember={membersEnabled && workspaceRole === "owner" ? handleInviteMember : undefined}
+        onOpenInvites={onOpenInvites}
         onSignOut={onSignOut}
         onAddAfter={handleAddAfter}
         onAddBlockComment={handleAddBlockComment}

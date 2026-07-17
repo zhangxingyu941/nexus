@@ -8,10 +8,14 @@ import { createDefaultWorkspace, createWorkspaceDocument } from "../model/worksp
 import { EditorPage } from "./EditorPage";
 
 async function renderEditor({
+  inviteCount = 0,
+  onOpenInvites,
   role = "owner",
   seedFixture = true,
   workspace,
 }: {
+  inviteCount?: number;
+  onOpenInvites?: () => void;
   role?: "owner" | "editor" | "viewer";
   seedFixture?: boolean;
   workspace?: EditorWorkspace;
@@ -21,8 +25,10 @@ async function renderEditor({
     const [current, setCurrent] = useState(initialWorkspace);
     return (
       <EditorPage
+        inviteCount={inviteCount}
         membersEnabled={false}
         onManageWorkspaces={vi.fn()}
+        onOpenInvites={onOpenInvites}
         onWorkspaceChange={(updater) => setCurrent(updater)}
         saveStatus={role === "viewer" ? "readonly" : "local"}
         workspace={current}
@@ -74,6 +80,18 @@ describe("EditorPage", () => {
     expect(screen.queryByText("最后编辑 10:42")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("块类型")).not.toBeInTheDocument();
     expect(screen.getAllByLabelText("打开块菜单").length).toBeGreaterThan(0);
+  });
+
+  it("opens invitations from a fixed-size topbar control without shifting for the count", async () => {
+    const user = userEvent.setup();
+    const onOpenInvites = vi.fn();
+    await renderEditor({ inviteCount: 12, onOpenInvites });
+
+    const button = screen.getByRole("button", { name: "工作区邀请 12" });
+    expect(button).toHaveClass("size-8");
+    await user.click(button);
+
+    expect(onOpenInvites).toHaveBeenCalledTimes(1);
   });
 
   it("opens and closes the responsive workspace navigation", async () => {

@@ -32,10 +32,12 @@ interface DocumentEditorProps {
   collaborationState: CollaborationConnectionState;
   document: EditorDocument;
   focusBlockId: string | null;
+  inviteCount: number;
   isWorkspaceNavigationOpen: boolean;
   isReadOnly: boolean;
   onSignOut?: () => void;
   onInviteMember?: (email: string, role: "editor" | "viewer") => Promise<void>;
+  onOpenInvites?: () => void;
   saveStatus: WorkspaceSaveStatus;
   sessionUser: EditorSessionUser | null;
   workspaceMembers: DatabaseWorkspaceMember[];
@@ -70,10 +72,12 @@ export function DocumentEditor({
   collaborationState,
   document,
   focusBlockId,
+  inviteCount,
   isWorkspaceNavigationOpen,
   isReadOnly,
   onSignOut,
   onInviteMember,
+  onOpenInvites,
   saveStatus,
   sessionUser,
   workspaceMembers,
@@ -171,6 +175,8 @@ export function DocumentEditor({
         isMembersOpen={isMembersOpen}
         isShareOpen={isShareOpen}
         isWorkspaceNavigationOpen={isWorkspaceNavigationOpen}
+        inviteCount={inviteCount}
+        onOpenInvites={onOpenInvites}
         onSignOut={onSignOut}
         openCommentCount={openCommentCount}
         presenceCount={collaborationPresence.length}

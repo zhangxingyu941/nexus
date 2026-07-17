@@ -1,4 +1,4 @@
-import { History, LogOut, Menu, MessageSquare, PanelRight, Share2 } from "lucide-react";
+import { History, LogOut, Mail, Menu, MessageSquare, PanelRight, Share2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -16,6 +16,8 @@ interface DocumentTopbarProps {
   isMembersOpen: boolean;
   isShareOpen: boolean;
   isWorkspaceNavigationOpen: boolean;
+  inviteCount: number;
+  onOpenInvites?: () => void;
   onSignOut?: () => void;
   openCommentCount: number;
   memberCount: number;
@@ -39,6 +41,8 @@ export function DocumentTopbar({
   isMembersOpen,
   isShareOpen,
   isWorkspaceNavigationOpen,
+  inviteCount,
+  onOpenInvites,
   onSignOut,
   openCommentCount,
   memberCount,
@@ -87,6 +91,33 @@ export function DocumentTopbar({
             <span>{COLLABORATION_STATUS_LABELS[collaborationState]}</span>
             {presenceCount > 0 ? <span className="text-[10px] opacity-75">{presenceCount} 在线</span> : null}
           </Badge>
+
+          {onOpenInvites ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  aria-label={`工作区邀请 ${inviteCount}`}
+                  className="relative size-8"
+                  onClick={onOpenInvites}
+                  size="icon"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Mail aria-hidden="true" className="size-4" />
+                  {inviteCount > 0 ? (
+                    <Badge
+                      aria-hidden="true"
+                      className="pointer-events-none absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center border-background px-1 text-[10px] leading-none"
+                      variant="default"
+                    >
+                      {inviteCount > 99 ? "99+" : inviteCount}
+                    </Badge>
+                  ) : null}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>工作区邀请</TooltipContent>
+            </Tooltip>
+          ) : null}
 
           <Tooltip>
             <TooltipTrigger asChild>

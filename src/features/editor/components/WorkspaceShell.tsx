@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import type { ReceivedWorkspaceInvite } from "@/shared/workspaceInvites";
 import { createLocalWorkspaceRepository } from "../persistence/localWorkspaceRepository";
 import { createRemoteWorkspaceRepository } from "../persistence/remoteWorkspaceRepository";
+import { workspaceInviteRepository } from "../persistence/workspaceInviteRepository";
 import type { EditorSessionUser } from "../session/sessionTypes";
 import { useWorkspaceSession } from "../session/useWorkspaceSession";
 import { EditorPage } from "./EditorPage";
+import { WorkspaceInvitationCenter } from "./invitations/WorkspaceInvitationCenter";
 import { WorkspaceManagerDialog } from "./sidebar/WorkspaceManagerDialog";
 
 interface WorkspaceShellProps {
@@ -16,13 +19,42 @@ interface WorkspaceShellProps {
 }
 
 export function WorkspaceShell({ mode, sessionUser, onSignOut }: WorkspaceShellProps) {
+  const [invites, setInvites] = useState<ReceivedWorkspaceInvite[]>([]);
+  const [isInvitationsOpen, setIsInvitationsOpen] = useState(false);
   const [isManagerOpen, setIsManagerOpen] = useState(false);
+  const inviteLoadSequence = useRef(0);
   const openedWorkspaceId = useRef("");
   const repository = useMemo(
     () => mode === "database" ? createRemoteWorkspaceRepository() : createLocalWorkspaceRepository(),
     [mode],
   );
   const session = useWorkspaceSession(repository);
+
+  const refreshInvites = useCallback(async () => {
+    const sequence = ++inviteLoadSequence.current;
+    if (mode !== "database") {
+      setInvites((current) => current.length > 0 ? [] : current);
+      return;
+    }
+
+    try {
+      const received = await workspaceInviteRepository.listReceived();
+      if (inviteLoadSequence.current === sequence) {
+        setInvites(received);
+      }
+    } catch {
+      if (inviteLoadSequence.current === sequence) {
+        setInvites([]);
+      }
+    }
+  }, [mode]);
+
+  useEffect(() => {
+    void refreshInvites();
+    return () => {
+      inviteLoadSequence.current += 1;
+    };
+  }, [refreshInvites]);
 
   useEffect(() => {
     if (isManagerOpen && openedWorkspaceId.current
@@ -51,12 +83,32 @@ export function WorkspaceShell({ mode, sessionUser, onSignOut }: WorkspaceShellP
     setIsManagerOpen(true);
   };
 
+  const acceptInvite = async (inviteId: string) => {
+    let accepted = false;
+    await session.runServerTransition(async () => {
+      const transition = await workspaceInviteRepository.acceptReceived(inviteId);
+      accepted = true;
+      return transition;
+    });
+    await refreshInvites();
+    if (accepted) {
+      setIsInvitationsOpen(false);
+    }
+  };
+
+  const declineInvite = async (inviteId: string) => {
+    await workspaceInviteRepository.declineReceived(inviteId);
+    await refreshInvites();
+  };
+
   return (
     <>
       <EditorPage
+        inviteCount={invites.length}
         key={session.snapshot.summary.id}
         membersEnabled={mode === "database"}
         onManageWorkspaces={openManager}
+        onOpenInvites={mode === "database" ? () => setIsInvitationsOpen(true) : undefined}
         onSignOut={onSignOut}
         onWorkspaceChange={session.updateContent}
         saveStatus={session.saveStatus}
@@ -65,6 +117,15 @@ export function WorkspaceShell({ mode, sessionUser, onSignOut }: WorkspaceShellP
         workspaceId={session.snapshot.summary.id}
         workspaceSummary={session.snapshot.summary}
       />
+      {mode === "database" ? (
+        <WorkspaceInvitationCenter
+          invites={invites}
+          onAccept={acceptInvite}
+          onDecline={declineInvite}
+          onOpenChange={setIsInvitationsOpen}
+          open={isInvitationsOpen}
+        />
+      ) : null}
       <WorkspaceManagerDialog
         catalog={session.catalog!}
         error={session.error}
