@@ -201,6 +201,13 @@ export class PostgresWorkspaceMemberStore {
       workspace: { id: string; name: string };
     },
   ) {
+    await client.query(
+      `SELECT id
+       FROM app_users
+       WHERE id = $1
+       FOR UPDATE`,
+      [input.userId],
+    );
     const preference = await client.query(
       `SELECT selected_workspace_id
        FROM workspace_preferences

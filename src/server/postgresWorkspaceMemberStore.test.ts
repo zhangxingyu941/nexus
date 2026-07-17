@@ -229,6 +229,29 @@ describe("PostgresWorkspaceMemberStore", () => {
     })).rejects.toMatchObject({ code: "member_self_remove_forbidden" });
   });
 
+  it("locks the affected user before reading a possibly absent workspace preference", async () => {
+    const client = await pool.connect();
+    const query = vi.spyOn(client, "query");
+    pool.connect = (() => Promise.resolve(client)) as Pool["connect"];
+
+    await store.removeMember({
+      actorUserId: "owner-1",
+      memberId: "member-1",
+      workspaceId: "workspace-1",
+    });
+
+    const statements = query.mock.calls.map(([statement]) => String(statement));
+    const userLockIndex = statements.findIndex((statement) =>
+      statement.includes("FROM app_users") && statement.includes("FOR UPDATE"));
+    const preferenceReadIndex = statements.findIndex((statement) =>
+      statement.includes("FROM workspace_preferences") && statement.includes("FOR UPDATE"));
+    const membershipDeleteIndex = statements.findIndex((statement) =>
+      statement.includes("DELETE FROM workspace_members"));
+    expect(userLockIndex).toBeGreaterThan(-1);
+    expect(preferenceReadIndex).toBeGreaterThan(userLockIndex);
+    expect(membershipDeleteIndex).toBeGreaterThan(preferenceReadIndex);
+  });
+
   it("validates the requested role, actor ownership, and target membership", async () => {
     await expect(store.updateRole({
       actorUserId: "owner-1",
