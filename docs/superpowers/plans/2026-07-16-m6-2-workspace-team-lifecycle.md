@@ -1,6 +1,6 @@
-# M6.2 Workspace Team Lifecycle Implementation Plan
+# M6.2 工作区团队生命周期实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **致智能代理工作者：** 必需子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐任务实施本计划。步骤使用复选框（`- [ ]`）语法进行跟踪。
 
 **Goal:** 交付 M6.2A 邀请闭环、M6.2B 成员生命周期和 M6.2C 工作区删除恢复，并让 REST、文件和实时协作权限在角色或生命周期变化后立即一致。
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** Next.js 15、React 18、TypeScript、PostgreSQL 16、Redis 7、Nodemailer、S3 兼容对象存储、Yjs/y-websocket、Vitest、Testing Library、Playwright、Docker Compose。
 
-**Execution constraint:** 直接在当前正常工作区和当前分支执行，不创建 Git worktree；保留现有 stash，不应用或删除。
+**执行约束：** 直接在当前正常工作区和当前分支执行，不创建 Git worktree；保留现有 stash，不应用或删除。
 
 ---
 
@@ -72,21 +72,21 @@
 - `e2e/support.ts` 和新增生命周期 E2E：完整 Compose 验收。
 - `README.md`：M6.2 能力、配置、接口和下一批范围。
 
-## Phase A：M6.2A 邀请闭环
+## 阶段A：M6.2A 邀请闭环
 
-### Task 1：共享 API 契约与客户端请求器
+### 任务1：共享 API 契约与客户端请求器
 
-**Files:**
-- Create: `src/shared/workspaceApi.ts`
-- Create: `src/shared/workspaceInvites.ts`
-- Create: `src/shared/workspaceMembers.ts`
-- Create: `src/shared/workspaceLifecycle.ts`
-- Create: `src/features/editor/persistence/apiClient.ts`
-- Create: `src/features/editor/persistence/apiClient.test.ts`
-- Modify: `src/features/editor/persistence/remoteWorkspaceRepository.ts`
-- Modify: `src/features/editor/persistence/remoteWorkspaceRepository.test.ts`
+**文件：**
+- 创建： `src/shared/workspaceApi.ts`
+- 创建： `src/shared/workspaceInvites.ts`
+- 创建： `src/shared/workspaceMembers.ts`
+- 创建： `src/shared/workspaceLifecycle.ts`
+- 创建： `src/features/editor/persistence/apiClient.ts`
+- 创建： `src/features/editor/persistence/apiClient.test.ts`
+- 修改： `src/features/editor/persistence/remoteWorkspaceRepository.ts`
+- 修改： `src/features/editor/persistence/remoteWorkspaceRepository.test.ts`
 
-- [ ] **Step 1: 写失败的 API 请求器测试**
+- [ ] **步骤1: 写失败的 API 请求器测试**
 
 ~~~ts
 import { describe, expect, it, vi } from "vitest";
@@ -109,13 +109,13 @@ describe("apiClient", () => {
 });
 ~~~
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **步骤2: 运行测试确认失败**
 
-Run: `pnpm test --run src/features/editor/persistence/apiClient.test.ts`
+运行： `pnpm test --run src/features/editor/persistence/apiClient.test.ts`
 
-Expected: FAIL，`apiClient` 模块不存在。
+预期： FAIL，`apiClient` 模块不存在。
 
-- [ ] **Step 3: 定义精确共享类型**
+- [ ] **步骤3: 定义精确共享类型**
 
 ~~~ts
 // src/shared/workspaceApi.ts
@@ -208,7 +208,7 @@ export interface DeletedWorkspaceSummary {
 }
 ~~~
 
-- [ ] **Step 4: 实现请求器并迁移远程工作区仓储**
+- [ ] **步骤4: 实现请求器并迁移远程工作区仓储**
 
 ~~~ts
 // src/features/editor/persistence/apiClient.ts
@@ -256,31 +256,31 @@ function isApiError(value: unknown): value is ApiErrorPayload {
 }
 ~~~
 
-- [ ] **Step 5: 运行请求器和远程仓储测试**
+- [ ] **步骤5: 运行请求器和远程仓储测试**
 
-Run: `pnpm test --run src/features/editor/persistence/apiClient.test.ts src/features/editor/persistence/remoteWorkspaceRepository.test.ts`
+运行： `pnpm test --run src/features/editor/persistence/apiClient.test.ts src/features/editor/persistence/remoteWorkspaceRepository.test.ts`
 
-Expected: PASS。
+预期： PASS。
 
-- [ ] **Step 6: 提交**
+- [ ] **步骤6: 提交**
 
 ~~~bash
 git add src/shared src/features/editor/persistence/apiClient.ts src/features/editor/persistence/apiClient.test.ts src/features/editor/persistence/remoteWorkspaceRepository.ts src/features/editor/persistence/remoteWorkspaceRepository.test.ts
 git commit -m "refactor: add workspace api contracts"
 ~~~
 
-### Task 2：领域错误、审计与邀请数据库迁移
+### 任务2：领域错误、审计与邀请数据库迁移
 
-**Files:**
-- Create: `src/server/workspaceErrors.ts`
-- Create: `src/server/workspaceAuditStore.ts`
-- Create: `src/server/workspaceAuditStore.test.ts`
-- Create: `src/app/api/workspaceErrorResponse.ts`
-- Create: `src/app/api/workspaceErrorResponse.test.ts`
-- Modify: `src/server/database/migrations.ts`
-- Modify: `src/server/database/migrations.test.ts`
+**文件：**
+- 创建： `src/server/workspaceErrors.ts`
+- 创建： `src/server/workspaceAuditStore.ts`
+- 创建： `src/server/workspaceAuditStore.test.ts`
+- 创建： `src/app/api/workspaceErrorResponse.ts`
+- 创建： `src/app/api/workspaceErrorResponse.test.ts`
+- 修改： `src/server/database/migrations.ts`
+- 修改： `src/server/database/migrations.test.ts`
 
-- [ ] **Step 1: 写失败的迁移和错误映射测试**
+- [ ] **步骤1: 写失败的迁移和错误映射测试**
 
 ~~~ts
 it("creates workspace invites and independent audit tables idempotently", async () => {
@@ -311,13 +311,13 @@ it("maps domain errors to code and status", async () => {
 });
 ~~~
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **步骤2: 运行测试确认失败**
 
-Run: `pnpm test --run src/server/database/migrations.test.ts src/app/api/workspaceErrorResponse.test.ts`
+运行： `pnpm test --run src/server/database/migrations.test.ts src/app/api/workspaceErrorResponse.test.ts`
 
-Expected: FAIL，表和错误模块不存在。
+预期： FAIL，表和错误模块不存在。
 
-- [ ] **Step 3: 增加迁移**
+- [ ] **步骤3: 增加迁移**
 
 在 `migrations.ts` 增加迁移 ID `2026-07-16-workspace-invitations-audit`，执行设计规格中的 `workspace_invites`、`workspace_audit_events`、部分唯一索引和查询索引。迁移在同一 migration lock 事务内记录 `schema_migrations`。
 
@@ -358,7 +358,7 @@ const WORKSPACE_INVITATIONS_AUDIT_SCHEMA = [
 ];
 ~~~
 
-- [ ] **Step 4: 实现领域错误与审计写入**
+- [ ] **步骤4: 实现领域错误与审计写入**
 
 ~~~ts
 export type WorkspaceErrorCode =
@@ -427,7 +427,7 @@ export class WorkspaceAuditStore {
 }
 ~~~
 
-- [ ] **Step 5: 实现 HTTP 映射**
+- [ ] **步骤5: 实现 HTTP 映射**
 
 `workspaceErrorResponse.ts` 使用固定 `Record` 映射状态，非 `WorkspaceDomainError` 返回 `null`：
 
@@ -471,26 +471,26 @@ export function workspaceErrorResponse(error: unknown, retryAfterSeconds?: numbe
 }
 ~~~
 
-- [ ] **Step 6: 运行测试并提交**
+- [ ] **步骤6: 运行测试并提交**
 
-Run: `pnpm test --run src/server/database/migrations.test.ts src/server/workspaceAuditStore.test.ts src/app/api/workspaceErrorResponse.test.ts`
+运行： `pnpm test --run src/server/database/migrations.test.ts src/server/workspaceAuditStore.test.ts src/app/api/workspaceErrorResponse.test.ts`
 
-Expected: PASS。
+预期： PASS。
 
 ~~~bash
 git add src/server/database src/server/workspaceErrors.ts src/server/workspaceAuditStore.ts src/server/workspaceAuditStore.test.ts src/app/api/workspaceErrorResponse.ts src/app/api/workspaceErrorResponse.test.ts
 git commit -m "feat: add workspace invitation schema and audit"
 ~~~
 
-### Task 3：邀请令牌与短期上下文 Cookie
+### 任务3：邀请令牌与短期上下文 Cookie
 
-**Files:**
-- Create: `src/server/workspaceInviteTokens.ts`
-- Create: `src/server/workspaceInviteTokens.test.ts`
-- Create: `src/app/api/workspace-invites/inviteContextCookie.ts`
-- Create: `src/app/api/workspace-invites/inviteContextCookie.test.ts`
+**文件：**
+- 创建： `src/server/workspaceInviteTokens.ts`
+- 创建： `src/server/workspaceInviteTokens.test.ts`
+- 创建： `src/app/api/workspace-invites/inviteContextCookie.ts`
+- 创建： `src/app/api/workspace-invites/inviteContextCookie.test.ts`
 
-- [ ] **Step 1: 写失败的令牌测试**
+- [ ] **步骤1: 写失败的令牌测试**
 
 ~~~ts
 it("hashes raw tokens and verifies a short invite context", async () => {
@@ -510,13 +510,13 @@ it("hashes raw tokens and verifies a short invite context", async () => {
 });
 ~~~
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **步骤2: 运行测试确认失败**
 
-Run: `pnpm test --run src/server/workspaceInviteTokens.test.ts src/app/api/workspace-invites/inviteContextCookie.test.ts`
+运行： `pnpm test --run src/server/workspaceInviteTokens.test.ts src/app/api/workspace-invites/inviteContextCookie.test.ts`
 
-Expected: FAIL，令牌和 Cookie 模块不存在。
+预期： FAIL，令牌和 Cookie 模块不存在。
 
-- [ ] **Step 3: 实现 HMAC 和 JWT**
+- [ ] **步骤3: 实现 HMAC 和 JWT**
 
 ~~~ts
 export class WorkspaceInviteTokenService {
@@ -559,29 +559,29 @@ export class WorkspaceInviteTokenService {
 }
 ~~~
 
-- [ ] **Step 4: 实现 Cookie 工具**
+- [ ] **步骤4: 实现 Cookie 工具**
 
 Cookie 名固定为 `nexus_workspace_invite_context`，Path 固定 `/api/workspace-invites`，SameSite=Lax，HttpOnly，Secure 复用 `AUTH_COOKIE_SECURE`。`set` 和 `clear` 都由该模块提供。
 
-- [ ] **Step 5: 运行测试并提交**
+- [ ] **步骤5: 运行测试并提交**
 
-Run: `pnpm test --run src/server/workspaceInviteTokens.test.ts src/app/api/workspace-invites/inviteContextCookie.test.ts`
+运行： `pnpm test --run src/server/workspaceInviteTokens.test.ts src/app/api/workspace-invites/inviteContextCookie.test.ts`
 
-Expected: PASS。
+预期： PASS。
 
 ~~~bash
 git add src/server/workspaceInviteTokens.ts src/server/workspaceInviteTokens.test.ts src/app/api/workspace-invites
 git commit -m "feat: add secure workspace invite tokens"
 ~~~
 
-### Task 4：邀请创建、列表和惰性过期
+### 任务4：邀请创建、列表和惰性过期
 
-**Files:**
-- Create: `src/server/postgresWorkspaceInviteStore.ts`
-- Create: `src/server/postgresWorkspaceInviteStore.test.ts`
-- Modify: `src/server/applicationServices.ts`
+**文件：**
+- 创建： `src/server/postgresWorkspaceInviteStore.ts`
+- 创建： `src/server/postgresWorkspaceInviteStore.test.ts`
+- 修改： `src/server/applicationServices.ts`
 
-- [ ] **Step 1: 写失败的 Store 测试**
+- [ ] **步骤1: 写失败的 Store 测试**
 
 ~~~ts
 it("creates one pending invite and expires it on the next read", async () => {
@@ -604,13 +604,13 @@ it("creates one pending invite and expires it on the next read", async () => {
 });
 ~~~
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **步骤2: 运行测试确认失败**
 
-Run: `pnpm test --run src/server/postgresWorkspaceInviteStore.test.ts`
+运行： `pnpm test --run src/server/postgresWorkspaceInviteStore.test.ts`
 
-Expected: FAIL，Store 不存在。
+预期： FAIL，Store 不存在。
 
-- [ ] **Step 3: 实现公开方法**
+- [ ] **步骤3: 实现公开方法**
 
 ~~~ts
 createInvite(input: {
@@ -633,26 +633,26 @@ listReceivedInvites(
 
 创建事务锁定活动工作区并验证 owner，规范化邮箱，拒绝已有成员和重复 pending。在所有相关操作前条件更新过期邀请并只写一次 expired 审计。owner 列表返回全部 pending 和最近 30 天终态。
 
-- [ ] **Step 4: 组装服务并运行测试**
+- [ ] **步骤4: 组装服务并运行测试**
 
-`applicationServices.ts` 返回 `workspaceInviteStore`。Run: `pnpm test --run src/server/postgresWorkspaceInviteStore.test.ts src/server/postgresWorkspaceStore.test.ts`
+`applicationServices.ts` 返回 `workspaceInviteStore`。运行： `pnpm test --run src/server/postgresWorkspaceInviteStore.test.ts src/server/postgresWorkspaceStore.test.ts`
 
-Expected: PASS。
+预期： PASS。
 
-- [ ] **Step 5: 提交**
+- [ ] **步骤5: 提交**
 
 ~~~bash
 git add src/server/postgresWorkspaceInviteStore.ts src/server/postgresWorkspaceInviteStore.test.ts src/server/applicationServices.ts
 git commit -m "feat: create and list workspace invites"
 ~~~
 
-### Task 5：邀请重发、撤销和终态
+### 任务5：邀请重发、撤销和终态
 
-**Files:**
-- Modify: `src/server/postgresWorkspaceInviteStore.ts`
-- Modify: `src/server/postgresWorkspaceInviteStore.test.ts`
+**文件：**
+- 修改： `src/server/postgresWorkspaceInviteStore.ts`
+- 修改： `src/server/postgresWorkspaceInviteStore.test.ts`
 
-- [ ] **Step 1: 写失败的状态转换测试**
+- [ ] **步骤1: 写失败的状态转换测试**
 
 ~~~ts
 it("rotates the token on resend and rejects terminal transitions", async () => {
@@ -670,38 +670,38 @@ it("rotates the token on resend and rejects terminal transitions", async () => {
 });
 ~~~
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **步骤2: 运行测试确认失败**
 
-Run: `pnpm test --run src/server/postgresWorkspaceInviteStore.test.ts`
+运行： `pnpm test --run src/server/postgresWorkspaceInviteStore.test.ts`
 
-Expected: FAIL，重发和撤销方法不存在。
+预期： FAIL，重发和撤销方法不存在。
 
-- [ ] **Step 3: 实现行锁状态转换**
+- [ ] **步骤3: 实现行锁状态转换**
 
 公开 `resendInvite`、`revokeInvite`、`resolveRawToken`、`markDeliveryResult`。每个状态改变使用 `SELECT FOR UPDATE`；重发检查 60 秒冷却，轮换 `token_hash` 并重置 24 小时；终态返回精确错误码。
 
-- [ ] **Step 4: 运行测试并提交**
+- [ ] **步骤4: 运行测试并提交**
 
-Run: `pnpm test --run src/server/postgresWorkspaceInviteStore.test.ts`
+运行： `pnpm test --run src/server/postgresWorkspaceInviteStore.test.ts`
 
-Expected: PASS。
+预期： PASS。
 
 ~~~bash
 git add src/server/postgresWorkspaceInviteStore.ts src/server/postgresWorkspaceInviteStore.test.ts
 git commit -m "feat: resend and revoke workspace invites"
 ~~~
 
-### Task 6：邀请接受、拒绝和真实 PostgreSQL 并发
+### 任务6：邀请接受、拒绝和真实 PostgreSQL 并发
 
-**Files:**
-- Modify: `src/server/postgresWorkspaceInviteStore.ts`
-- Modify: `src/server/postgresWorkspaceInviteStore.test.ts`
-- Create: `src/server/postgresWorkspaceInviteStore.postgres.test.ts`
-- Create: `src/test/postgresIntegration.ts`
-- Create: `vitest.postgres.config.ts`
-- Modify: `package.json`
+**文件：**
+- 修改： `src/server/postgresWorkspaceInviteStore.ts`
+- 修改： `src/server/postgresWorkspaceInviteStore.test.ts`
+- 创建： `src/server/postgresWorkspaceInviteStore.postgres.test.ts`
+- 创建： `src/test/postgresIntegration.ts`
+- 创建： `vitest.postgres.config.ts`
+- 修改： `package.json`
 
-- [ ] **Step 1: 写失败的接受测试**
+- [ ] **步骤1: 写失败的接受测试**
 
 ~~~ts
 it("accepts once and creates the membership in the same transaction", async () => {
@@ -721,13 +721,13 @@ it("accepts once and creates the membership in the same transaction", async () =
 });
 ~~~
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **步骤2: 运行测试确认失败**
 
-Run: `pnpm test --run src/server/postgresWorkspaceInviteStore.test.ts`
+运行： `pnpm test --run src/server/postgresWorkspaceInviteStore.test.ts`
 
-Expected: FAIL，`acceptInvite` 和 `declineInvite` 不存在。
+预期： FAIL，`acceptInvite` 和 `declineInvite` 不存在。
 
-- [ ] **Step 3: 实现事务**
+- [ ] **步骤3: 实现事务**
 
 ~~~ts
 acceptInvite(input: {
@@ -747,7 +747,7 @@ declineInvite(input: {
 
 接受事务锁邀请、处理过期、验证邮箱和当前 token hash、验证活动工作区和非成员、插入 membership、更新 accepted、写审计。拒绝使用同样的身份和状态校验。
 
-- [ ] **Step 4: 增加真实 PostgreSQL 测试工具**
+- [ ] **步骤4: 增加真实 PostgreSQL 测试工具**
 
 ~~~ts
 export async function createPostgresIntegrationContext() {
@@ -794,31 +794,31 @@ export default defineConfig({
 }
 ~~~
 
-- [ ] **Step 5: 运行测试**
+- [ ] **步骤5: 运行测试**
 
-Run: `pnpm test --run src/server/postgresWorkspaceInviteStore.test.ts`
+运行： `pnpm test --run src/server/postgresWorkspaceInviteStore.test.ts`
 
 Run in Compose: `docker compose run --rm migrate sh -lc 'TEST_DATABASE_URL="$DATABASE_URL" pnpm test:postgres'`
 
-Expected: PASS；并发接受一个成功、一个稳定冲突，成员行只有一条。
+预期： PASS；并发接受一个成功、一个稳定冲突，成员行只有一条。
 
-- [ ] **Step 6: 提交**
+- [ ] **步骤6: 提交**
 
 ~~~bash
 git add src/server/postgresWorkspaceInviteStore.ts src/server/postgresWorkspaceInviteStore.test.ts src/server/postgresWorkspaceInviteStore.postgres.test.ts src/test/postgresIntegration.ts vitest.postgres.config.ts package.json pnpm-lock.yaml
 git commit -m "feat: accept and decline workspace invites"
 ~~~
 
-### Task 7：邀请限流与邮件发送
+### 任务7：邀请限流与邮件发送
 
-**Files:**
-- Create: `src/server/workspaceInviteRateLimiter.ts`
-- Create: `src/server/workspaceInviteRateLimiter.test.ts`
-- Create: `src/server/workspaceInviteMailer.ts`
-- Create: `src/server/workspaceInviteMailer.test.ts`
-- Modify: `src/server/applicationServices.ts`
+**文件：**
+- 创建： `src/server/workspaceInviteRateLimiter.ts`
+- 创建： `src/server/workspaceInviteRateLimiter.test.ts`
+- 创建： `src/server/workspaceInviteMailer.ts`
+- 创建： `src/server/workspaceInviteMailer.test.ts`
+- 修改： `src/server/applicationServices.ts`
 
-- [ ] **Step 1: 写失败的限流和邮件测试**
+- [ ] **步骤1: 写失败的限流和邮件测试**
 
 ~~~ts
 it("limits workspace and recipient attempts independently", async () => {
@@ -849,37 +849,37 @@ it("sends a 24 hour invitation without logging the raw token", async () => {
 });
 ~~~
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **步骤2: 运行测试确认失败**
 
-Run: `pnpm test --run src/server/workspaceInviteRateLimiter.test.ts src/server/workspaceInviteMailer.test.ts`
+运行： `pnpm test --run src/server/workspaceInviteRateLimiter.test.ts src/server/workspaceInviteMailer.test.ts`
 
-Expected: FAIL，Limiter 和 Mailer 不存在。
+预期： FAIL，Limiter 和 Mailer 不存在。
 
-- [ ] **Step 3: 实现限流与 Mailer**
+- [ ] **步骤3: 实现限流与 Mailer**
 
 Redis Lua 固定窗口：工作区 20/hour，邮箱 5/hour；失败尝试同样计数。生产 Redis 不可用返回 `service_unavailable`，开发允许内存实现。Mailer 复用 `SMTP_*` 和 Nexus 邮件风格；显式 `AUTH_MAIL_CAPTURE_FILE` 时写 `{ purpose:"workspace-invite", subject, to, url, createdAt }`，不把 URL 写入日志。
 
-- [ ] **Step 4: 运行测试并提交**
+- [ ] **步骤4: 运行测试并提交**
 
-Run: `pnpm test --run src/server/workspaceInviteRateLimiter.test.ts src/server/workspaceInviteMailer.test.ts`
+运行： `pnpm test --run src/server/workspaceInviteRateLimiter.test.ts src/server/workspaceInviteMailer.test.ts`
 
-Expected: PASS。
+预期： PASS。
 
 ~~~bash
 git add src/server/workspaceInviteRateLimiter.ts src/server/workspaceInviteRateLimiter.test.ts src/server/workspaceInviteMailer.ts src/server/workspaceInviteMailer.test.ts src/server/applicationServices.ts
 git commit -m "feat: deliver rate limited workspace invites"
 ~~~
 
-### Task 8：Owner 邀请 API
+### 任务8：Owner 邀请 API
 
-**Files:**
-- Create: `src/app/api/workspaces/[workspaceId]/invites/handlers.ts`
-- Create: `src/app/api/workspaces/[workspaceId]/invites/route.ts`
-- Create: `src/app/api/workspaces/[workspaceId]/invites/route.test.ts`
-- Create: `src/app/api/workspaces/[workspaceId]/invites/[inviteId]/route.ts`
-- Create: `src/app/api/workspaces/[workspaceId]/invites/[inviteId]/resend/route.ts`
+**文件：**
+- 创建： `src/app/api/workspaces/[workspaceId]/invites/handlers.ts`
+- 创建： `src/app/api/workspaces/[workspaceId]/invites/route.ts`
+- 创建： `src/app/api/workspaces/[workspaceId]/invites/route.test.ts`
+- 创建： `src/app/api/workspaces/[workspaceId]/invites/[inviteId]/route.ts`
+- 创建： `src/app/api/workspaces/[workspaceId]/invites/[inviteId]/resend/route.ts`
 
-- [ ] **Step 1: 写失败的 handler 测试**
+- [ ] **步骤1: 写失败的 handler 测试**
 
 ~~~ts
 it("returns a delivery warning when mail fails after creation", async () => {
@@ -897,40 +897,40 @@ it("returns a delivery warning when mail fails after creation", async () => {
 });
 ~~~
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **步骤2: 运行测试确认失败**
 
-Run: `pnpm test --run src/app/api/workspaces/[workspaceId]/invites/route.test.ts`
+运行： `pnpm test --run src/app/api/workspaces/[workspaceId]/invites/route.test.ts`
 
-Expected: FAIL，路由不存在。
+预期： FAIL，路由不存在。
 
-- [ ] **Step 3: 实现 handler 和薄 route**
+- [ ] **步骤3: 实现 handler 和薄 route**
 
 handler 注入 `authStore`、`inviteStore`、`limiter`、`mailer`、`appUrl`，公开 list/create/resend/revoke。顺序为认证、精确输入、限流、Store 事务、Mailer、delivery 状态、响应。Mailer 失败返回成功状态与 warning。route 只解析 params 和组装依赖。
 
-- [ ] **Step 4: 运行测试并提交**
+- [ ] **步骤4: 运行测试并提交**
 
-Run: `pnpm test --run src/app/api/workspaces/[workspaceId]/invites/route.test.ts`
+运行： `pnpm test --run src/app/api/workspaces/[workspaceId]/invites/route.test.ts`
 
-Expected: PASS，覆盖 owner/editor/viewer、角色必选、限流、冷却、撤销和终态。
+预期： PASS，覆盖 owner/editor/viewer、角色必选、限流、冷却、撤销和终态。
 
 ~~~bash
 git add src/app/api/workspaces/[workspaceId]/invites
 git commit -m "feat: add owner workspace invite api"
 ~~~
 
-### Task 9：收件人和邮件令牌 API
+### 任务9：收件人和邮件令牌 API
 
-**Files:**
-- Create: `src/app/api/workspace-invites/handlers.ts`
-- Create: `src/app/api/workspace-invites/route.ts`
-- Create: `src/app/api/workspace-invites/route.test.ts`
-- Create: `src/app/api/workspace-invites/[inviteId]/accept/route.ts`
-- Create: `src/app/api/workspace-invites/[inviteId]/decline/route.ts`
-- Create: `src/app/api/workspace-invites/resolve/route.ts`
-- Create: `src/app/api/workspace-invites/accept/route.ts`
-- Create: `src/app/api/workspace-invites/decline/route.ts`
+**文件：**
+- 创建： `src/app/api/workspace-invites/handlers.ts`
+- 创建： `src/app/api/workspace-invites/route.ts`
+- 创建： `src/app/api/workspace-invites/route.test.ts`
+- 创建： `src/app/api/workspace-invites/[inviteId]/accept/route.ts`
+- 创建： `src/app/api/workspace-invites/[inviteId]/decline/route.ts`
+- 创建： `src/app/api/workspace-invites/resolve/route.ts`
+- 创建： `src/app/api/workspace-invites/accept/route.ts`
+- 创建： `src/app/api/workspace-invites/decline/route.ts`
 
-- [ ] **Step 1: 写失败的 resolve 与接受测试**
+- [ ] **步骤1: 写失败的 resolve 与接受测试**
 
 ~~~ts
 it("resolves a raw token without returning it", async () => {
@@ -950,41 +950,41 @@ it("accepts an in-app invite and returns catalog plus workspace", async () => {
 });
 ~~~
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **步骤2: 运行测试确认失败**
 
-Run: `pnpm test --run src/app/api/workspace-invites/route.test.ts`
+运行： `pnpm test --run src/app/api/workspace-invites/route.test.ts`
 
-Expected: FAIL，handler 不存在。
+预期： FAIL，handler 不存在。
 
-- [ ] **Step 3: 实现 handler 与路由**
+- [ ] **步骤3: 实现 handler 与路由**
 
 公开 list、resolve、acceptById、declineById、acceptByContext、declineByContext。接受成功后选择目标工作区并返回 `{ catalog, workspace }`。context 成功或终态失败清除 Cookie；无效原始令牌统一 404。
 
-- [ ] **Step 4: 运行测试并提交**
+- [ ] **步骤4: 运行测试并提交**
 
-Run: `pnpm test --run src/app/api/workspace-invites/route.test.ts src/server/workspaceInviteTokens.test.ts`
+运行： `pnpm test --run src/app/api/workspace-invites/route.test.ts src/server/workspaceInviteTokens.test.ts`
 
-Expected: PASS，覆盖未登录、邮箱不一致、过期、撤销和 Cookie 清理。
+预期： PASS，覆盖未登录、邮箱不一致、过期、撤销和 Cookie 清理。
 
 ~~~bash
 git add src/app/api/workspace-invites
 git commit -m "feat: add recipient workspace invite api"
 ~~~
 
-### Task 10：邀请接受页与认证返回
+### 任务10：邀请接受页与认证返回
 
-**Files:**
-- Create: `src/app/invitations/accept/page.tsx`
-- Create: `src/features/editor/components/invitations/InvitationAcceptScreen.tsx`
-- Create: `src/features/editor/components/invitations/InvitationAcceptScreen.test.tsx`
-- Modify: `src/app/AuthScreen.tsx`
-- Modify: `src/app/api/auth/oauth/github/oauthCookies.ts`
-- Modify: `src/app/api/auth/oauth/github/handlers.ts`
-- Modify: `src/app/api/auth/oauth/github/route.test.ts`
-- Modify: `src/app/api/auth/oauth/github/callback/handlers.ts`
-- Modify: `src/app/api/auth/oauth/github/callback/route.test.ts`
+**文件：**
+- 创建： `src/app/invitations/accept/page.tsx`
+- 创建： `src/features/editor/components/invitations/InvitationAcceptScreen.tsx`
+- 创建： `src/features/editor/components/invitations/InvitationAcceptScreen.test.tsx`
+- 修改： `src/app/AuthScreen.tsx`
+- 修改： `src/app/api/auth/oauth/github/oauthCookies.ts`
+- 修改： `src/app/api/auth/oauth/github/handlers.ts`
+- 修改： `src/app/api/auth/oauth/github/route.test.ts`
+- 修改： `src/app/api/auth/oauth/github/callback/handlers.ts`
+- 修改： `src/app/api/auth/oauth/github/callback/route.test.ts`
 
-- [ ] **Step 1: 写失败的 fragment 和 OAuth 返回测试**
+- [ ] **步骤1: 写失败的 fragment 和 OAuth 返回测试**
 
 ~~~ts
 it("exchanges the fragment once and removes it from the address bar", async () => {
@@ -1006,40 +1006,40 @@ it("redirects GitHub callback to a validated invitation path", async () => {
 });
 ~~~
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **步骤2: 运行测试确认失败**
 
-Run: `pnpm test --run src/features/editor/components/invitations/InvitationAcceptScreen.test.tsx src/app/api/auth/oauth/github/route.test.ts src/app/api/auth/oauth/github/callback/route.test.ts`
+运行： `pnpm test --run src/features/editor/components/invitations/InvitationAcceptScreen.test.tsx src/app/api/auth/oauth/github/route.test.ts src/app/api/auth/oauth/github/callback/route.test.ts`
 
-Expected: FAIL，页面和 return cookie 不存在。
+预期： FAIL，页面和 return cookie 不存在。
 
-- [ ] **Step 3: 实现页面状态机**
+- [ ] **步骤3: 实现页面状态机**
 
 状态固定为 resolving、anonymous、ready、submitting、terminal、error。首次 effect 读取 fragment，立即 `replaceState` 清除，再 resolve。anonymous 状态复用 `AuthScreen` 并传 `oauthReturnTo="/invitations/accept"`；认证成功后重新加载上下文。接受导航 `/`，拒绝显示终态。
 
-- [ ] **Step 4: 实现安全 OAuth returnTo**
+- [ ] **步骤4: 实现安全 OAuth returnTo**
 
 新增 HttpOnly Cookie `notion_editor_oauth_return_to`。start 只接受单个 `/` 开头且不含协议/主机的路径；callback 读取并清除，默认 `/`。`AuthScreen` 的 GitHub 按钮编码该路径。
 
-- [ ] **Step 5: 运行测试并提交**
+- [ ] **步骤5: 运行测试并提交**
 
-Run: `pnpm test --run src/features/editor/components/invitations/InvitationAcceptScreen.test.tsx src/app/api/auth/oauth/github/route.test.ts src/app/api/auth/oauth/github/callback/route.test.ts`
+运行： `pnpm test --run src/features/editor/components/invitations/InvitationAcceptScreen.test.tsx src/app/api/auth/oauth/github/route.test.ts src/app/api/auth/oauth/github/callback/route.test.ts`
 
-Expected: PASS。
+预期： PASS。
 
 ~~~bash
 git add src/app/invitations src/features/editor/components/invitations/InvitationAcceptScreen.tsx src/features/editor/components/invitations/InvitationAcceptScreen.test.tsx src/app/AuthScreen.tsx src/app/api/auth/oauth/github
 git commit -m "feat: add workspace invitation acceptance page"
 ~~~
 
-### Task 11：邀请客户端仓储与工作区切换桥
+### 任务11：邀请客户端仓储与工作区切换桥
 
-**Files:**
-- Create: `src/features/editor/persistence/workspaceInviteRepository.ts`
-- Create: `src/features/editor/persistence/workspaceInviteRepository.test.ts`
-- Modify: `src/features/editor/session/useWorkspaceSession.ts`
-- Modify: `src/features/editor/session/useWorkspaceSession.test.tsx`
+**文件：**
+- 创建： `src/features/editor/persistence/workspaceInviteRepository.ts`
+- 创建： `src/features/editor/persistence/workspaceInviteRepository.test.ts`
+- 修改： `src/features/editor/session/useWorkspaceSession.ts`
+- 修改： `src/features/editor/session/useWorkspaceSession.test.tsx`
 
-- [ ] **Step 1: 写失败的仓储路径和切换测试**
+- [ ] **步骤1: 写失败的仓储路径和切换测试**
 
 ~~~ts
 it("accepts a received invitation through the exact endpoint", async () => {
@@ -1060,17 +1060,17 @@ it("flushes the current save before installing a server transition", async () =>
 });
 ~~~
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **步骤2: 运行测试确认失败**
 
-Run: `pnpm test --run src/features/editor/persistence/workspaceInviteRepository.test.ts src/features/editor/session/useWorkspaceSession.test.tsx`
+运行： `pnpm test --run src/features/editor/persistence/workspaceInviteRepository.test.ts src/features/editor/session/useWorkspaceSession.test.tsx`
 
-Expected: FAIL，仓储和 `runServerTransition` 不存在。
+预期： FAIL，仓储和 `runServerTransition` 不存在。
 
-- [ ] **Step 3: 实现邀请仓储**
+- [ ] **步骤3: 实现邀请仓储**
 
 公开 `listReceived`、`listSent`、`create`、`resend`、`revoke`、`acceptReceived`、`declineReceived`。路径参数全部 `encodeURIComponent`，响应使用 Task 1 的共享类型。
 
-- [ ] **Step 4: 实现切换桥**
+- [ ] **步骤4: 实现切换桥**
 
 ~~~ts
 runServerTransition(
@@ -1080,28 +1080,28 @@ runServerTransition(
 
 方法复用 `transitionRef` 和 `isTransitioning`，先 `flushSave`，再执行 operation，最后用返回的 catalog 和 workspace 调用 `installSnapshot`。
 
-- [ ] **Step 5: 运行测试并提交**
+- [ ] **步骤5: 运行测试并提交**
 
-Run: `pnpm test --run src/features/editor/persistence/workspaceInviteRepository.test.ts src/features/editor/session/useWorkspaceSession.test.tsx`
+运行： `pnpm test --run src/features/editor/persistence/workspaceInviteRepository.test.ts src/features/editor/session/useWorkspaceSession.test.tsx`
 
-Expected: PASS。
+预期： PASS。
 
 ~~~bash
 git add src/features/editor/persistence/workspaceInviteRepository.ts src/features/editor/persistence/workspaceInviteRepository.test.ts src/features/editor/session/useWorkspaceSession.ts src/features/editor/session/useWorkspaceSession.test.tsx
 git commit -m "feat: bridge invitation acceptance into workspace session"
 ~~~
 
-### Task 12：全局邀请中心
+### 任务12：全局邀请中心
 
-**Files:**
-- Create: `src/features/editor/components/invitations/WorkspaceInvitationCenter.tsx`
-- Create: `src/features/editor/components/invitations/WorkspaceInvitationCenter.test.tsx`
-- Modify: `src/features/editor/components/WorkspaceShell.tsx`
-- Modify: `src/features/editor/components/WorkspaceShell.test.tsx`
-- Modify: `src/features/editor/components/EditorPage.tsx`
-- Modify: `src/features/editor/components/document/DocumentTopbar.tsx`
+**文件：**
+- 创建： `src/features/editor/components/invitations/WorkspaceInvitationCenter.tsx`
+- 创建： `src/features/editor/components/invitations/WorkspaceInvitationCenter.test.tsx`
+- 修改： `src/features/editor/components/WorkspaceShell.tsx`
+- 修改： `src/features/editor/components/WorkspaceShell.test.tsx`
+- 修改： `src/features/editor/components/EditorPage.tsx`
+- 修改： `src/features/editor/components/document/DocumentTopbar.tsx`
 
-- [ ] **Step 1: 写失败的邀请中心测试**
+- [ ] **步骤1: 写失败的邀请中心测试**
 
 ~~~ts
 it("shows the pending count and locks only the selected item", async () => {
@@ -1119,45 +1119,45 @@ it("shows the pending count and locks only the selected item", async () => {
 });
 ~~~
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **步骤2: 运行测试确认失败**
 
-Run: `pnpm test --run src/features/editor/components/invitations/WorkspaceInvitationCenter.test.tsx src/features/editor/components/WorkspaceShell.test.tsx`
+运行： `pnpm test --run src/features/editor/components/invitations/WorkspaceInvitationCenter.test.tsx src/features/editor/components/WorkspaceShell.test.tsx`
 
-Expected: FAIL，组件和 topbar props 不存在。
+预期： FAIL，组件和 topbar props 不存在。
 
-- [ ] **Step 3: 实现 Sheet 和工具栏入口**
+- [ ] **步骤3: 实现 Sheet 和工具栏入口**
 
 使用现有 `Sheet`、`Button`、`Badge` 和 lucide `Mail` 图标。桌面右侧约 420px，移动端全宽。`DocumentTopbar` 增加 `inviteCount` 和 `onOpenInvites`，按钮固定尺寸，徽标不改变工具栏布局。
 
-- [ ] **Step 4: 在 WorkspaceShell 编排**
+- [ ] **步骤4: 在 WorkspaceShell 编排**
 
 数据库模式加载 `listReceived`。接受调用 `session.runServerTransition`；拒绝需要二次确认。成功后重新加载邀请列表，异步时只锁定当前邀请。
 
-- [ ] **Step 5: 运行测试并提交**
+- [ ] **步骤5: 运行测试并提交**
 
-Run: `pnpm test --run src/features/editor/components/invitations/WorkspaceInvitationCenter.test.tsx src/features/editor/components/WorkspaceShell.test.tsx src/features/editor/components/EditorPage.test.tsx`
+运行： `pnpm test --run src/features/editor/components/invitations/WorkspaceInvitationCenter.test.tsx src/features/editor/components/WorkspaceShell.test.tsx src/features/editor/components/EditorPage.test.tsx`
 
-Expected: PASS。
+预期： PASS。
 
 ~~~bash
 git add src/features/editor/components/invitations/WorkspaceInvitationCenter.tsx src/features/editor/components/invitations/WorkspaceInvitationCenter.test.tsx src/features/editor/components/WorkspaceShell.tsx src/features/editor/components/WorkspaceShell.test.tsx src/features/editor/components/EditorPage.tsx src/features/editor/components/document/DocumentTopbar.tsx
 git commit -m "feat: add global workspace invitation center"
 ~~~
 
-### Task 13：Owner 邀请管理页签
+### 任务13：Owner 邀请管理页签
 
-**Files:**
-- Create: `src/features/editor/components/sidebar/workspace-manager/WorkspaceInvitesTab.tsx`
-- Create: `src/features/editor/components/sidebar/workspace-manager/WorkspaceInvitesTab.test.tsx`
-- Create: `src/features/editor/components/sidebar/workspace-manager/WorkspaceMembersTab.tsx`
-- Modify: `src/features/editor/components/sidebar/WorkspaceManagerDialog.tsx`
-- Modify: `src/features/editor/components/sidebar/WorkspaceManagerDialog.test.tsx`
-- Modify: `src/features/editor/components/document/MembersPopover.tsx`
-- Modify: `src/features/editor/components/document/MembersPopover.test.tsx`
-- Modify: `src/features/editor/components/EditorPage.tsx`
-- Modify: `src/features/editor/components/EditorPage.test.tsx`
+**文件：**
+- 创建： `src/features/editor/components/sidebar/workspace-manager/WorkspaceInvitesTab.tsx`
+- 创建： `src/features/editor/components/sidebar/workspace-manager/WorkspaceInvitesTab.test.tsx`
+- 创建： `src/features/editor/components/sidebar/workspace-manager/WorkspaceMembersTab.tsx`
+- 修改： `src/features/editor/components/sidebar/WorkspaceManagerDialog.tsx`
+- 修改： `src/features/editor/components/sidebar/WorkspaceManagerDialog.test.tsx`
+- 修改： `src/features/editor/components/document/MembersPopover.tsx`
+- 修改： `src/features/editor/components/document/MembersPopover.test.tsx`
+- 修改： `src/features/editor/components/EditorPage.tsx`
+- 修改： `src/features/editor/components/EditorPage.test.tsx`
 
-- [ ] **Step 1: 写失败的 owner 邀请 UI 测试**
+- [ ] **步骤1: 写失败的 owner 邀请 UI 测试**
 
 ~~~ts
 it("requires an explicit role and exposes resend and revoke", async () => {
@@ -1170,42 +1170,42 @@ it("requires an explicit role and exposes resend and revoke", async () => {
 });
 ~~~
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **步骤2: 运行测试确认失败**
 
-Run: `pnpm test --run src/features/editor/components/sidebar/workspace-manager/WorkspaceInvitesTab.test.tsx src/features/editor/components/sidebar/WorkspaceManagerDialog.test.tsx`
+运行： `pnpm test --run src/features/editor/components/sidebar/workspace-manager/WorkspaceInvitesTab.test.tsx src/features/editor/components/sidebar/WorkspaceManagerDialog.test.tsx`
 
-Expected: FAIL，详情视图和页签不存在。
+预期： FAIL，详情视图和页签不存在。
 
-- [ ] **Step 3: 扩展管理器导航**
+- [ ] **步骤3: 扩展管理器导航**
 
 列表 owner 行增加“管理”按钮。详情 view 保存 workspace 和 tab，顶部返回按钮，下方使用 `Tabs`。M6.2A 先提供只读成员页和完整邀请页；editor/viewer 不显示管理入口。
 
-- [ ] **Step 4: 实现邀请页**
+- [ ] **步骤4: 实现邀请页**
 
 邮箱输入、无默认角色 `Select`、发送按钮、pending/failed/terminal 行、60 秒倒计时、重发、撤销、重新邀请文案和 30 天历史。移动端每行纵向排列。
 
-- [ ] **Step 5: 删除旧的直接添加成员入口**
+- [ ] **步骤5: 删除旧的直接添加成员入口**
 
 `MembersPopover` 只显示在线状态和成员列表，删除邮箱表单、`onInviteMember` prop 和“添加已有身份”文案。`EditorPage` 删除 `addWorkspaceMember` import、`handleInviteMember` 和对应 prop；owner 通过工作区管理器邀请。
 
-- [ ] **Step 6: 运行测试并提交**
+- [ ] **步骤6: 运行测试并提交**
 
-Run: `pnpm test --run src/features/editor/components/sidebar/workspace-manager/WorkspaceInvitesTab.test.tsx src/features/editor/components/sidebar/WorkspaceManagerDialog.test.tsx src/features/editor/components/document/MembersPopover.test.tsx src/features/editor/components/EditorPage.test.tsx`
+运行： `pnpm test --run src/features/editor/components/sidebar/workspace-manager/WorkspaceInvitesTab.test.tsx src/features/editor/components/sidebar/WorkspaceManagerDialog.test.tsx src/features/editor/components/document/MembersPopover.test.tsx src/features/editor/components/EditorPage.test.tsx`
 
-Expected: PASS。
+预期： PASS。
 
 ~~~bash
 git add src/features/editor/components/sidebar/workspace-manager src/features/editor/components/sidebar/WorkspaceManagerDialog.tsx src/features/editor/components/sidebar/WorkspaceManagerDialog.test.tsx src/features/editor/components/document/MembersPopover.tsx src/features/editor/components/document/MembersPopover.test.tsx src/features/editor/components/EditorPage.tsx src/features/editor/components/EditorPage.test.tsx
 git commit -m "feat: manage sent workspace invitations"
 ~~~
 
-### Task 14：M6.2A 阶段验收
+### 任务14：M6.2A 阶段验收
 
-**Files:**
-- Modify: `e2e/support.ts`
-- Create: `e2e/workspace-invitations.spec.ts`
+**文件：**
+- 修改： `e2e/support.ts`
+- 创建： `e2e/workspace-invitations.spec.ts`
 
-- [ ] **Step 1: 扩展邮件捕获读取**
+- [ ] **步骤1: 扩展邮件捕获读取**
 
 ~~~ts
 export async function waitForCapturedInvite(email: string) {
@@ -1220,43 +1220,43 @@ export async function waitForCapturedInvite(email: string) {
 }
 ~~~
 
-- [ ] **Step 2: 写邀请 E2E**
+- [ ] **步骤2: 写邀请 E2E**
 
 覆盖未注册邮箱注册后接受、已注册用户站内接受、拒绝后 owner 看到 declined、重发旧链接失效、撤销和过期不可接受。
 
-- [ ] **Step 3: 运行 A 阶段验证**
+- [ ] **步骤3: 运行 A 阶段验证**
 
-Run: `pnpm test --run`
+运行： `pnpm test --run`
 
-Run: `pnpm build`
+运行： `pnpm build`
 
-Run: `docker compose up -d --build`
+运行： `docker compose up -d --build`
 
-Run: `pnpm test:e2e -- e2e/workspace-invitations.spec.ts`
+运行： `pnpm test:e2e -- e2e/workspace-invitations.spec.ts`
 
-Expected: 单元、构建、健康检查和邀请 E2E 全部 PASS。
+预期： 单元、构建、健康检查和邀请 E2E 全部 PASS。
 
-- [ ] **Step 4: 提交**
+- [ ] **步骤4: 提交**
 
 ~~~bash
 git add e2e/support.ts e2e/workspace-invitations.spec.ts
 git commit -m "test: cover workspace invitation lifecycle"
 ~~~
 
-## Phase B：M6.2B 成员生命周期
+## 阶段B：M6.2B 成员生命周期
 
-### Task 15：成员 Store 拆分与角色修改
+### 任务15：成员 Store 拆分与角色修改
 
-**Files:**
-- Create: `src/server/postgresWorkspaceMemberStore.ts`
-- Create: `src/server/postgresWorkspaceMemberStore.test.ts`
-- Modify: `src/server/postgresWorkspaceStore.ts`
-- Modify: `src/server/postgresWorkspaceStore.test.ts`
-- Modify: `src/server/applicationServices.ts`
-- Modify: `src/app/api/workspaces/[workspaceId]/members/handlers.ts`
-- Modify: `src/app/api/workspaces/[workspaceId]/members/route.test.ts`
+**文件：**
+- 创建： `src/server/postgresWorkspaceMemberStore.ts`
+- 创建： `src/server/postgresWorkspaceMemberStore.test.ts`
+- 修改： `src/server/postgresWorkspaceStore.ts`
+- 修改： `src/server/postgresWorkspaceStore.test.ts`
+- 修改： `src/server/applicationServices.ts`
+- 修改： `src/app/api/workspaces/[workspaceId]/members/handlers.ts`
+- 修改： `src/app/api/workspaces/[workspaceId]/members/route.test.ts`
 
-- [ ] **Step 1: 写失败的角色测试**
+- [ ] **步骤1: 写失败的角色测试**
 
 ~~~ts
 it("changes a member role and protects the last owner", async () => {
@@ -1275,38 +1275,38 @@ it("changes a member role and protects the last owner", async () => {
 });
 ~~~
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **步骤2: 运行测试确认失败**
 
-Run: `pnpm test --run src/server/postgresWorkspaceMemberStore.test.ts src/app/api/workspaces/[workspaceId]/members/route.test.ts`
+运行： `pnpm test --run src/server/postgresWorkspaceMemberStore.test.ts src/app/api/workspaces/[workspaceId]/members/route.test.ts`
 
-Expected: FAIL，新 Store 不存在。
+预期： FAIL，新 Store 不存在。
 
-- [ ] **Step 3: 抽取列表并实现 updateRole**
+- [ ] **步骤3: 抽取列表并实现 updateRole**
 
 新 Store 公开 `listMembers` 和 `updateRole`。角色事务先锁活动工作区，再验证 actor owner、目标成员和 owner count，写角色审计。从 `PostgresWorkspaceStore` 删除 `addMember/listMembers`，更新旧测试 fixture，不保留兼容包装。
 
-- [ ] **Step 4: 停用直接 POST**
+- [ ] **步骤4: 停用直接 POST**
 
 members 根 route 只保留 GET；新增成员只能由邀请接受事务完成。
 
-- [ ] **Step 5: 运行测试并提交**
+- [ ] **步骤5: 运行测试并提交**
 
-Run: `pnpm test --run src/server/postgresWorkspaceMemberStore.test.ts src/server/postgresWorkspaceStore.test.ts src/app/api/workspaces/[workspaceId]/members/route.test.ts`
+运行： `pnpm test --run src/server/postgresWorkspaceMemberStore.test.ts src/server/postgresWorkspaceStore.test.ts src/app/api/workspaces/[workspaceId]/members/route.test.ts`
 
-Expected: PASS。
+预期： PASS。
 
 ~~~bash
 git add src/server/postgresWorkspaceMemberStore.ts src/server/postgresWorkspaceMemberStore.test.ts src/server/postgresWorkspaceStore.ts src/server/postgresWorkspaceStore.test.ts src/server/applicationServices.ts src/app/api/workspaces/[workspaceId]/members
 git commit -m "refactor: split workspace member store"
 ~~~
 
-### Task 16：成员移除、退出和偏好回退
+### 任务16：成员移除、退出和偏好回退
 
-**Files:**
-- Modify: `src/server/postgresWorkspaceMemberStore.ts`
-- Modify: `src/server/postgresWorkspaceMemberStore.test.ts`
+**文件：**
+- 修改： `src/server/postgresWorkspaceMemberStore.ts`
+- 修改： `src/server/postgresWorkspaceMemberStore.test.ts`
 
-- [ ] **Step 1: 写失败的移除测试**
+- [ ] **步骤1: 写失败的移除测试**
 
 ~~~ts
 it("removes membership, document preferences, and selects a fallback", async () => {
@@ -1330,13 +1330,13 @@ it("removes membership, document preferences, and selects a fallback", async () 
 });
 ~~~
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **步骤2: 运行测试确认失败**
 
-Run: `pnpm test --run src/server/postgresWorkspaceMemberStore.test.ts`
+运行： `pnpm test --run src/server/postgresWorkspaceMemberStore.test.ts`
 
-Expected: FAIL，移除和退出方法不存在。
+预期： FAIL，移除和退出方法不存在。
 
-- [ ] **Step 3: 实现事务**
+- [ ] **步骤3: 实现事务**
 
 ~~~ts
 removeMember(input: {
@@ -1354,25 +1354,25 @@ leaveWorkspace(input: {
 
 事务删除 `workspace_document_preferences` 和 membership。当前选择指向离开空间时选最早其他活动空间；没有时在同一事务复用 `ensurePersonalWorkspace` 创建个人空间。写 removed 或 left 审计，并保护最后 owner。
 
-- [ ] **Step 4: 运行测试并提交**
+- [ ] **步骤4: 运行测试并提交**
 
-Run: `pnpm test --run src/server/postgresWorkspaceMemberStore.test.ts`
+运行： `pnpm test --run src/server/postgresWorkspaceMemberStore.test.ts`
 
-Expected: PASS。
+预期： PASS。
 
 ~~~bash
 git add src/server/postgresWorkspaceMemberStore.ts src/server/postgresWorkspaceMemberStore.test.ts
 git commit -m "feat: remove and leave workspace memberships"
 ~~~
 
-### Task 17：所有权转让与真实并发
+### 任务17：所有权转让与真实并发
 
-**Files:**
-- Modify: `src/server/postgresWorkspaceMemberStore.ts`
-- Modify: `src/server/postgresWorkspaceMemberStore.test.ts`
-- Create: `src/server/postgresWorkspaceMemberStore.postgres.test.ts`
+**文件：**
+- 修改： `src/server/postgresWorkspaceMemberStore.ts`
+- 修改： `src/server/postgresWorkspaceMemberStore.test.ts`
+- 创建： `src/server/postgresWorkspaceMemberStore.postgres.test.ts`
 
-- [ ] **Step 1: 写失败的转让测试**
+- [ ] **步骤1: 写失败的转让测试**
 
 ~~~ts
 it("promotes the target and optionally demotes the actor", async () => {
@@ -1392,45 +1392,45 @@ it("promotes the target and optionally demotes the actor", async () => {
 });
 ~~~
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **步骤2: 运行测试确认失败**
 
-Run: `pnpm test --run src/server/postgresWorkspaceMemberStore.test.ts`
+运行： `pnpm test --run src/server/postgresWorkspaceMemberStore.test.ts`
 
-Expected: FAIL，`transferOwnership` 不存在。
+预期： FAIL，`transferOwnership` 不存在。
 
-- [ ] **Step 3: 实现转让**
+- [ ] **步骤3: 实现转让**
 
 目标必须是当前非 owner 成员。工作区锁内提升目标，再按 `retainOwnerRole` 保留 actor owner 或降为 editor，写转让审计。
 
-- [ ] **Step 4: 增加真实 PostgreSQL 并发测试**
+- [ ] **步骤4: 增加真实 PostgreSQL 并发测试**
 
 并发执行转让与移除/降级，断言结果始终至少一名 owner，失败方返回稳定冲突。
 
-- [ ] **Step 5: 运行测试并提交**
+- [ ] **步骤5: 运行测试并提交**
 
-Run: `pnpm test --run src/server/postgresWorkspaceMemberStore.test.ts`
+运行： `pnpm test --run src/server/postgresWorkspaceMemberStore.test.ts`
 
 Run in Compose: `docker compose run --rm migrate sh -lc 'TEST_DATABASE_URL="$DATABASE_URL" pnpm test:postgres'`
 
-Expected: PASS。
+预期： PASS。
 
 ~~~bash
 git add src/server/postgresWorkspaceMemberStore.ts src/server/postgresWorkspaceMemberStore.test.ts src/server/postgresWorkspaceMemberStore.postgres.test.ts
 git commit -m "feat: transfer workspace ownership"
 ~~~
 
-### Task 18：成员 API 与客户端仓储
+### 任务18：成员 API 与客户端仓储
 
-**Files:**
-- Create: `src/app/api/workspaces/[workspaceId]/members/[memberId]/route.ts`
-- Create: `src/app/api/workspaces/[workspaceId]/leave/route.ts`
-- Create: `src/app/api/workspaces/[workspaceId]/ownership-transfer/route.ts`
-- Modify: `src/app/api/workspaces/[workspaceId]/members/handlers.ts`
-- Modify: `src/app/api/workspaces/[workspaceId]/members/route.test.ts`
-- Modify: `src/features/editor/persistence/workspaceMemberRepository.ts`
-- Modify: `src/features/editor/persistence/workspaceMemberRepository.test.ts`
+**文件：**
+- 创建： `src/app/api/workspaces/[workspaceId]/members/[memberId]/route.ts`
+- 创建： `src/app/api/workspaces/[workspaceId]/leave/route.ts`
+- 创建： `src/app/api/workspaces/[workspaceId]/ownership-transfer/route.ts`
+- 修改： `src/app/api/workspaces/[workspaceId]/members/handlers.ts`
+- 修改： `src/app/api/workspaces/[workspaceId]/members/route.test.ts`
+- 修改： `src/features/editor/persistence/workspaceMemberRepository.ts`
+- 修改： `src/features/editor/persistence/workspaceMemberRepository.test.ts`
 
-- [ ] **Step 1: 写失败的路径测试**
+- [ ] **步骤1: 写失败的路径测试**
 
 ~~~ts
 it("uses PATCH, DELETE, and the dedicated leave route", async () => {
@@ -1455,38 +1455,38 @@ it("uses PATCH, DELETE, and the dedicated leave route", async () => {
 });
 ~~~
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **步骤2: 运行测试确认失败**
 
-Run: `pnpm test --run src/app/api/workspaces/[workspaceId]/members/route.test.ts src/features/editor/persistence/workspaceMemberRepository.test.ts`
+运行： `pnpm test --run src/app/api/workspaces/[workspaceId]/members/route.test.ts src/features/editor/persistence/workspaceMemberRepository.test.ts`
 
-Expected: FAIL，新方法和路由不存在。
+预期： FAIL，新方法和路由不存在。
 
-- [ ] **Step 3: 实现 handler、route 和仓储**
+- [ ] **步骤3: 实现 handler、route 和仓储**
 
 handler 公开 list/updateRole/remove/leave/transfer。leave 获取 session user displayName，返回 `{ catalog, workspace }`。客户端仓储返回精确 `{ members }` 或 `WorkspaceTransitionResponse`，删除 `addWorkspaceMember`。
 
-- [ ] **Step 4: 运行测试并提交**
+- [ ] **步骤4: 运行测试并提交**
 
-Run: `pnpm test --run src/app/api/workspaces/[workspaceId]/members/route.test.ts src/features/editor/persistence/workspaceMemberRepository.test.ts`
+运行： `pnpm test --run src/app/api/workspaces/[workspaceId]/members/route.test.ts src/features/editor/persistence/workspaceMemberRepository.test.ts`
 
-Expected: PASS。
+预期： PASS。
 
 ~~~bash
 git add src/app/api/workspaces/[workspaceId] src/features/editor/persistence/workspaceMemberRepository.ts src/features/editor/persistence/workspaceMemberRepository.test.ts
 git commit -m "feat: add workspace member lifecycle api"
 ~~~
 
-### Task 19：事务性权限失效与 WebSocket 关闭
+### 任务19：事务性权限失效与 WebSocket 关闭
 
-**Files:**
-- Create: `src/server/workspaceAccessNotifications.ts`
-- Create: `src/server/workspaceAccessNotifications.test.ts`
-- Modify: `src/server/postgresWorkspaceMemberStore.ts`
-- Modify: `src/server/collaborationServer.ts`
-- Modify: `src/server/collaborationServer.test.ts`
-- Modify: `scripts/collaboration-server.ts`
+**文件：**
+- 创建： `src/server/workspaceAccessNotifications.ts`
+- 创建： `src/server/workspaceAccessNotifications.test.ts`
+- 修改： `src/server/postgresWorkspaceMemberStore.ts`
+- 修改： `src/server/collaborationServer.ts`
+- 修改： `src/server/collaborationServer.test.ts`
+- 修改： `scripts/collaboration-server.ts`
 
-- [ ] **Step 1: 写失败的连接关闭测试**
+- [ ] **步骤1: 写失败的连接关闭测试**
 
 ~~~ts
 it("closes only the invalidated user sockets", async () => {
@@ -1506,13 +1506,13 @@ it("closes only the invalidated user sockets", async () => {
 });
 ~~~
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **步骤2: 运行测试确认失败**
 
-Run: `pnpm test --run src/server/workspaceAccessNotifications.test.ts src/server/collaborationServer.test.ts`
+运行： `pnpm test --run src/server/workspaceAccessNotifications.test.ts src/server/collaborationServer.test.ts`
 
-Expected: FAIL，通知源和连接注册不存在。
+预期： FAIL，通知源和连接注册不存在。
 
-- [ ] **Step 3: 实现 pg_notify 和 listener**
+- [ ] **步骤3: 实现 pg_notify 和 listener**
 
 ~~~ts
 export interface WorkspaceAccessInvalidation {
@@ -1533,34 +1533,34 @@ export function notifyWorkspaceAccessInvalidation(
 
 实现独占连接的 `PostgresWorkspaceAccessListener`。成员角色、移除、退出、转让和以后删除事务在 COMMIT 前调用 notify；PostgreSQL 在提交后投递，回滚不投递。
 
-- [ ] **Step 4: 实现连接注册**
+- [ ] **步骤4: 实现连接注册**
 
 授权成功后记录 socket 对应 userId/workspaceId/documentId。workspace 级事件关闭全部连接；user 级事件只关闭目标成员，关闭码 4403。socket close 时清理 Map。
 
-- [ ] **Step 5: 运行测试并提交**
+- [ ] **步骤5: 运行测试并提交**
 
-Run: `pnpm test --run src/server/workspaceAccessNotifications.test.ts src/server/collaborationServer.test.ts`
+运行： `pnpm test --run src/server/workspaceAccessNotifications.test.ts src/server/collaborationServer.test.ts`
 
 Run in Compose: `docker compose run --rm migrate sh -lc 'TEST_DATABASE_URL="$DATABASE_URL" pnpm test:postgres'`
 
-Expected: PASS，包含提交/回滚通知边界。
+预期： PASS，包含提交/回滚通知边界。
 
 ~~~bash
 git add src/server/workspaceAccessNotifications.ts src/server/workspaceAccessNotifications.test.ts src/server/postgresWorkspaceMemberStore.ts src/server/collaborationServer.ts src/server/collaborationServer.test.ts scripts/collaboration-server.ts
 git commit -m "feat: revoke live workspace access transactionally"
 ~~~
 
-### Task 20：成员管理界面
+### 任务20：成员管理界面
 
-**Files:**
-- Modify: `src/features/editor/components/sidebar/workspace-manager/WorkspaceMembersTab.tsx`
-- Create: `src/features/editor/components/sidebar/workspace-manager/WorkspaceMembersTab.test.tsx`
-- Create: `src/features/editor/components/sidebar/workspace-manager/WorkspaceMemberConfirmations.tsx`
-- Modify: `src/features/editor/components/sidebar/WorkspaceManagerDialog.tsx`
-- Modify: `src/features/editor/components/sidebar/WorkspaceManagerDialog.test.tsx`
-- Modify: `src/features/editor/components/WorkspaceShell.tsx`
+**文件：**
+- 修改： `src/features/editor/components/sidebar/workspace-manager/WorkspaceMembersTab.tsx`
+- 创建： `src/features/editor/components/sidebar/workspace-manager/WorkspaceMembersTab.test.tsx`
+- 创建： `src/features/editor/components/sidebar/workspace-manager/WorkspaceMemberConfirmations.tsx`
+- 修改： `src/features/editor/components/sidebar/WorkspaceManagerDialog.tsx`
+- 修改： `src/features/editor/components/sidebar/WorkspaceManagerDialog.test.tsx`
+- 修改： `src/features/editor/components/WorkspaceShell.tsx`
 
-- [ ] **Step 1: 写失败的成员操作测试**
+- [ ] **步骤1: 写失败的成员操作测试**
 
 ~~~ts
 it("protects the final owner and defaults transfer retention on", async () => {
@@ -1578,77 +1578,77 @@ it("protects the final owner and defaults transfer retention on", async () => {
 });
 ~~~
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **步骤2: 运行测试确认失败**
 
-Run: `pnpm test --run src/features/editor/components/sidebar/workspace-manager/WorkspaceMembersTab.test.tsx`
+运行： `pnpm test --run src/features/editor/components/sidebar/workspace-manager/WorkspaceMembersTab.test.tsx`
 
-Expected: FAIL，成员操作不存在。
+预期： FAIL，成员操作不存在。
 
-- [ ] **Step 3: 实现成员行和确认对话框**
+- [ ] **步骤3: 实现成员行和确认对话框**
 
 owner 看见角色 Select、操作菜单、移除和转让；普通成员只见自己的退出。owner 降级、owner 移除、退出、转让均二次确认。请求期间只禁用当前 memberId。
 
-- [ ] **Step 4: 编排切换并运行测试**
+- [ ] **步骤4: 编排切换并运行测试**
 
 leave 使用 `session.runServerTransition`；其他成员操作刷新 members。当前用户角色改变后 reload 当前目录和快照。
 
-Run: `pnpm test --run src/features/editor/components/sidebar/workspace-manager/WorkspaceMembersTab.test.tsx src/features/editor/components/sidebar/WorkspaceManagerDialog.test.tsx src/features/editor/components/WorkspaceShell.test.tsx`
+运行： `pnpm test --run src/features/editor/components/sidebar/workspace-manager/WorkspaceMembersTab.test.tsx src/features/editor/components/sidebar/WorkspaceManagerDialog.test.tsx src/features/editor/components/WorkspaceShell.test.tsx`
 
-Expected: PASS，包含移动端纵向布局和长邮箱不溢出。
+预期： PASS，包含移动端纵向布局和长邮箱不溢出。
 
-- [ ] **Step 5: 提交**
+- [ ] **步骤5: 提交**
 
 ~~~bash
 git add src/features/editor/components/sidebar/workspace-manager src/features/editor/components/sidebar/WorkspaceManagerDialog.tsx src/features/editor/components/sidebar/WorkspaceManagerDialog.test.tsx src/features/editor/components/WorkspaceShell.tsx
 git commit -m "feat: manage workspace member lifecycle"
 ~~~
 
-### Task 21：M6.2B 阶段验收
+### 任务21：M6.2B 阶段验收
 
-**Files:**
-- Create: `e2e/workspace-members.spec.ts`
-- Modify: `e2e/support.ts`
+**文件：**
+- 创建： `e2e/workspace-members.spec.ts`
+- 修改： `e2e/support.ts`
 
-- [ ] **Step 1: 写多用户 E2E**
+- [ ] **步骤1: 写多用户 E2E**
 
 用 `browser.newContext` 创建 owner、editor、viewer 三个会话，覆盖角色调整、转让保留开关、移除、退出、最后 owner 保护和回退工作区。
 
-- [ ] **Step 2: 增加跨服务权限断言**
+- [ ] **步骤2: 增加跨服务权限断言**
 
 owner 把在线 editor 降为 viewer 或移除，断言目标 WebSocket 关闭、文件返回 403、REST 被拒绝，其他成员连接保持。
 
-- [ ] **Step 3: 运行验证并提交**
+- [ ] **步骤3: 运行验证并提交**
 
-Run: `pnpm test --run`
+运行： `pnpm test --run`
 
-Run: `docker compose run --rm migrate sh -lc 'TEST_DATABASE_URL="$DATABASE_URL" pnpm test:postgres'`
+运行： `docker compose run --rm migrate sh -lc 'TEST_DATABASE_URL="$DATABASE_URL" pnpm test:postgres'`
 
-Run: `pnpm test:e2e -- e2e/workspace-members.spec.ts`
+运行： `pnpm test:e2e -- e2e/workspace-members.spec.ts`
 
-Expected: 全部 PASS。
+预期： 全部 PASS。
 
 ~~~bash
 git add e2e/workspace-members.spec.ts e2e/support.ts
 git commit -m "test: cover workspace member lifecycle"
 ~~~
 
-## Phase C：M6.2C 删除、回收站与永久清理
+## 阶段C：M6.2C 删除、回收站与永久清理
 
-### Task 22：软删除迁移与活动工作区过滤
+### 任务22：软删除迁移与活动工作区过滤
 
-**Files:**
-- Modify: `src/server/database/migrations.ts`
-- Modify: `src/server/database/migrations.test.ts`
-- Modify: `src/server/postgresWorkspaceStore.ts`
-- Modify: `src/server/postgresWorkspaceStore.test.ts`
-- Modify: `src/app/api/workspaces/handlers.ts`
-- Modify: `src/app/api/workspaces/[workspaceId]/route.test.ts`
-- Modify: `src/server/collaborationAuthorization.ts`
-- Modify: `src/server/collaborationAuthorization.test.ts`
-- Modify: `src/app/api/files/handlers.ts`
-- Modify: `src/app/api/files/handlers.test.ts`
+**文件：**
+- 修改： `src/server/database/migrations.ts`
+- 修改： `src/server/database/migrations.test.ts`
+- 修改： `src/server/postgresWorkspaceStore.ts`
+- 修改： `src/server/postgresWorkspaceStore.test.ts`
+- 修改： `src/app/api/workspaces/handlers.ts`
+- 修改： `src/app/api/workspaces/[workspaceId]/route.test.ts`
+- 修改： `src/server/collaborationAuthorization.ts`
+- 修改： `src/server/collaborationAuthorization.test.ts`
+- 修改： `src/app/api/files/handlers.ts`
+- 修改： `src/app/api/files/handlers.test.ts`
 
-- [ ] **Step 1: 写失败的 tombstone 测试**
+- [ ] **步骤1: 写失败的 tombstone 测试**
 
 ~~~ts
 it("adds constrained tombstone fields", async () => {
@@ -1664,7 +1664,7 @@ it("adds constrained tombstone fields", async () => {
 });
 ~~~
 
-- [ ] **Step 2: 写失败的访问过滤测试**
+- [ ] **步骤2: 写失败的访问过滤测试**
 
 ~~~ts
 it("excludes deleted workspaces from catalog and access", async () => {
@@ -1684,39 +1684,39 @@ it("returns deleted only to a retained member and hides it from strangers", asyn
 });
 ~~~
 
-- [ ] **Step 3: 运行测试确认失败**
+- [ ] **步骤3: 运行测试确认失败**
 
-Run: `pnpm test --run src/server/database/migrations.test.ts src/server/postgresWorkspaceStore.test.ts src/server/collaborationAuthorization.test.ts src/app/api/files/handlers.test.ts`
+运行： `pnpm test --run src/server/database/migrations.test.ts src/server/postgresWorkspaceStore.test.ts src/server/collaborationAuthorization.test.ts src/app/api/files/handlers.test.ts`
 
-Expected: FAIL，字段和过滤不存在。
+预期： FAIL，字段和过滤不存在。
 
-- [ ] **Step 4: 实现迁移和过滤**
+- [ ] **步骤4: 实现迁移和过滤**
 
 迁移 ID `2026-07-16-workspace-soft-deletion`，增加三个字段、七天 CHECK 和 purge 部分索引。所有目录、内容、历史、文件、协作、邀请接受和成员访问查询要求 `deleted_at IS NULL`。新增内部 access-state 查询：保留 membership 且 workspace 已删除时抛 `workspace_deleted`，没有 membership 时抛 `workspace_not_found`。文件和 REST 使用统一错误响应；协作升级对两种情况都拒绝，但不向无关用户泄露名称。目录偏好无效时回退或创建个人空间。
 
-- [ ] **Step 5: 运行测试并提交**
+- [ ] **步骤5: 运行测试并提交**
 
-Run: `pnpm test --run src/server/database/migrations.test.ts src/server/postgresWorkspaceStore.test.ts src/server/collaborationAuthorization.test.ts src/app/api/files/handlers.test.ts`
+运行： `pnpm test --run src/server/database/migrations.test.ts src/server/postgresWorkspaceStore.test.ts src/server/collaborationAuthorization.test.ts src/app/api/files/handlers.test.ts`
 
-Expected: PASS。
+预期： PASS。
 
 ~~~bash
 git add src/server/database src/server/postgresWorkspaceStore.ts src/server/postgresWorkspaceStore.test.ts src/app/api/workspaces/handlers.ts src/app/api/workspaces/[workspaceId]/route.test.ts src/server/collaborationAuthorization.ts src/server/collaborationAuthorization.test.ts src/app/api/files/handlers.ts src/app/api/files/handlers.test.ts
 git commit -m "feat: add workspace soft deletion boundary"
 ~~~
 
-### Task 23：删除摘要与软删除事务
+### 任务23：删除摘要与软删除事务
 
-**Files:**
-- Create: `src/server/postgresWorkspaceLifecycleStore.ts`
-- Create: `src/server/postgresWorkspaceLifecycleStore.test.ts`
-- Modify: `src/server/applicationServices.ts`
-- Create: `src/app/api/workspaces/lifecycleHandlers.ts`
-- Create: `src/app/api/workspaces/[workspaceId]/deletion-summary/route.ts`
-- Modify: `src/app/api/workspaces/[workspaceId]/route.ts`
-- Modify: `src/app/api/workspaces/[workspaceId]/route.test.ts`
+**文件：**
+- 创建： `src/server/postgresWorkspaceLifecycleStore.ts`
+- 创建： `src/server/postgresWorkspaceLifecycleStore.test.ts`
+- 修改： `src/server/applicationServices.ts`
+- 创建： `src/app/api/workspaces/lifecycleHandlers.ts`
+- 创建： `src/app/api/workspaces/[workspaceId]/deletion-summary/route.ts`
+- 修改： `src/app/api/workspaces/[workspaceId]/route.ts`
+- 修改： `src/app/api/workspaces/[workspaceId]/route.test.ts`
 
-- [ ] **Step 1: 写失败的摘要和删除测试**
+- [ ] **步骤1: 写失败的摘要和删除测试**
 
 ~~~ts
 it("returns counts and revokes pending invites on deletion", async () => {
@@ -1738,37 +1738,37 @@ it("returns counts and revokes pending invites on deletion", async () => {
 });
 ~~~
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **步骤2: 运行测试确认失败**
 
-Run: `pnpm test --run src/server/postgresWorkspaceLifecycleStore.test.ts src/app/api/workspaces/[workspaceId]/route.test.ts`
+运行： `pnpm test --run src/server/postgresWorkspaceLifecycleStore.test.ts src/app/api/workspaces/[workspaceId]/route.test.ts`
 
-Expected: FAIL，Lifecycle Store 和 DELETE 不存在。
+预期： FAIL，Lifecycle Store 和 DELETE 不存在。
 
-- [ ] **Step 3: 实现 Store 与 API**
+- [ ] **步骤3: 实现 Store 与 API**
 
 摘要只允许 owner，文件数统计 image/file 块。删除事务锁工作区、精确比较不 trim 的名称、写 tombstone、撤销 pending 邀请及审计、写 deleted 审计、发送 workspace 级 invalidation。DELETE 返回 `{ catalog, workspace, deletedWorkspace }`。
 
-- [ ] **Step 4: 运行测试并提交**
+- [ ] **步骤4: 运行测试并提交**
 
-Run: `pnpm test --run src/server/postgresWorkspaceLifecycleStore.test.ts src/app/api/workspaces/[workspaceId]/route.test.ts`
+运行： `pnpm test --run src/server/postgresWorkspaceLifecycleStore.test.ts src/app/api/workspaces/[workspaceId]/route.test.ts`
 
-Expected: PASS。
+预期： PASS。
 
 ~~~bash
 git add src/server/postgresWorkspaceLifecycleStore.ts src/server/postgresWorkspaceLifecycleStore.test.ts src/server/applicationServices.ts src/app/api/workspaces/lifecycleHandlers.ts src/app/api/workspaces/[workspaceId]
 git commit -m "feat: soft delete workspaces"
 ~~~
 
-### Task 24：回收站与恢复事务
+### 任务24：回收站与恢复事务
 
-**Files:**
-- Modify: `src/server/postgresWorkspaceLifecycleStore.ts`
-- Modify: `src/server/postgresWorkspaceLifecycleStore.test.ts`
-- Create: `src/app/api/workspaces/trash/route.ts`
-- Create: `src/app/api/workspaces/trash/route.test.ts`
-- Create: `src/app/api/workspaces/[workspaceId]/restore/route.ts`
+**文件：**
+- 修改： `src/server/postgresWorkspaceLifecycleStore.ts`
+- 修改： `src/server/postgresWorkspaceLifecycleStore.test.ts`
+- 创建： `src/app/api/workspaces/trash/route.ts`
+- 创建： `src/app/api/workspaces/trash/route.test.ts`
+- 创建： `src/app/api/workspaces/[workspaceId]/restore/route.ts`
 
-- [ ] **Step 1: 写失败的恢复测试**
+- [ ] **步骤1: 写失败的恢复测试**
 
 ~~~ts
 it("lists only owner tombstones and restores into selection", async () => {
@@ -1779,34 +1779,34 @@ it("lists only owner tombstones and restores into selection", async () => {
 });
 ~~~
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **步骤2: 运行测试确认失败**
 
-Run: `pnpm test --run src/server/postgresWorkspaceLifecycleStore.test.ts src/app/api/workspaces/trash/route.test.ts`
+运行： `pnpm test --run src/server/postgresWorkspaceLifecycleStore.test.ts src/app/api/workspaces/trash/route.test.ts`
 
-Expected: FAIL，回收站和恢复方法不存在。
+预期： FAIL，回收站和恢复方法不存在。
 
-- [ ] **Step 3: 实现 Store 与 API**
+- [ ] **步骤3: 实现 Store 与 API**
 
 回收站只列 role owner 且 `purge_after > now`。恢复锁行，要求 `now < purge_after` 和保留 owner membership，清空 tombstone、写审计、选择目标。trash 返回 `{ workspaces }`，restore 返回 `{ catalog, workspace }`。
 
-- [ ] **Step 4: 运行测试并提交**
+- [ ] **步骤4: 运行测试并提交**
 
-Run: `pnpm test --run src/server/postgresWorkspaceLifecycleStore.test.ts src/app/api/workspaces/trash/route.test.ts`
+运行： `pnpm test --run src/server/postgresWorkspaceLifecycleStore.test.ts src/app/api/workspaces/trash/route.test.ts`
 
-Expected: PASS。
+预期： PASS。
 
 ~~~bash
 git add src/server/postgresWorkspaceLifecycleStore.ts src/server/postgresWorkspaceLifecycleStore.test.ts src/app/api/workspaces/trash src/app/api/workspaces/[workspaceId]/restore
 git commit -m "feat: restore workspaces from trash"
 ~~~
 
-### Task 25：对象存储前缀删除
+### 任务25：对象存储前缀删除
 
-**Files:**
-- Modify: `src/server/objectStorage.ts`
-- Modify: `src/server/objectStorage.test.ts`
+**文件：**
+- 修改： `src/server/objectStorage.ts`
+- 修改： `src/server/objectStorage.test.ts`
 
-- [ ] **Step 1: 写失败的 deletePrefix 测试**
+- [ ] **步骤1: 写失败的 deletePrefix 测试**
 
 ~~~ts
 it("deletes one workspace prefix without touching another", async () => {
@@ -1821,40 +1821,40 @@ it("deletes one workspace prefix without touching another", async () => {
 });
 ~~~
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **步骤2: 运行测试确认失败**
 
-Run: `pnpm test --run src/server/objectStorage.test.ts`
+运行： `pnpm test --run src/server/objectStorage.test.ts`
 
-Expected: FAIL，`deletePrefix` 不存在。
+预期： FAIL，`deletePrefix` 不存在。
 
-- [ ] **Step 3: 实现本地和 S3 删除**
+- [ ] **步骤3: 实现本地和 S3 删除**
 
 接口增加 `deletePrefix(prefix)`。本地验证安全 workspace 目录后递归删除。S3 用 `ListObjectsV2Command` 分页和每批不超过 1000 个 `DeleteObjectsCommand`；空前缀成功，任何部分 Errors 抛出。
 
-- [ ] **Step 4: 运行测试并提交**
+- [ ] **步骤4: 运行测试并提交**
 
-Run: `pnpm test --run src/server/objectStorage.test.ts`
+运行： `pnpm test --run src/server/objectStorage.test.ts`
 
-Expected: PASS，包含两页列表、批量删除和部分失败 fake 测试。
+预期： PASS，包含两页列表、批量删除和部分失败 fake 测试。
 
 ~~~bash
 git add src/server/objectStorage.ts src/server/objectStorage.test.ts
 git commit -m "feat: delete workspace object prefixes"
 ~~~
 
-### Task 26：请求触发的永久清理
+### 任务26：请求触发的永久清理
 
-**Files:**
-- Create: `src/server/workspacePurgeService.ts`
-- Create: `src/server/workspacePurgeService.test.ts`
-- Create: `src/server/workspacePurgeService.postgres.test.ts`
-- Create: `src/app/api/workspaces/purgeScheduler.ts`
-- Create: `src/app/api/workspaces/purgeScheduler.test.ts`
-- Modify: `src/server/applicationServices.ts`
-- Modify: `src/app/api/workspaces/route.ts`
-- Modify: `src/app/api/workspaces/trash/route.ts`
+**文件：**
+- 创建： `src/server/workspacePurgeService.ts`
+- 创建： `src/server/workspacePurgeService.test.ts`
+- 创建： `src/server/workspacePurgeService.postgres.test.ts`
+- 创建： `src/app/api/workspaces/purgeScheduler.ts`
+- 创建： `src/app/api/workspaces/purgeScheduler.test.ts`
+- 修改： `src/server/applicationServices.ts`
+- 修改： `src/app/api/workspaces/route.ts`
+- 修改： `src/app/api/workspaces/trash/route.ts`
 
-- [ ] **Step 1: 写失败的顺序和失败保留测试**
+- [ ] **步骤1: 写失败的顺序和失败保留测试**
 
 ~~~ts
 it("deletes objects before the database row", async () => {
@@ -1876,17 +1876,17 @@ it("retains the tombstone when object deletion fails", async () => {
 });
 ~~~
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **步骤2: 运行测试确认失败**
 
-Run: `pnpm test --run src/server/workspacePurgeService.test.ts src/app/api/workspaces/purgeScheduler.test.ts`
+运行： `pnpm test --run src/server/workspacePurgeService.test.ts src/app/api/workspaces/purgeScheduler.test.ts`
 
-Expected: FAIL，Service 和 scheduler 不存在。
+预期： FAIL，Service 和 scheduler 不存在。
 
-- [ ] **Step 3: 实现 PurgeService**
+- [ ] **步骤3: 实现 PurgeService**
 
 Lifecycle Store 增加候选查询、session advisory lock、到期重查、数据库删除和 unlock。Service 每次最多 3 个候选，先 `deletePrefix`，再事务写 `workspace_purged` 审计并 DELETE workspace；失败记录结构化日志并保留 tombstone。
 
-- [ ] **Step 4: 实现 after 调度**
+- [ ] **步骤4: 实现 after 调度**
 
 ~~~ts
 export function scheduleWorkspacePurge(
@@ -1901,35 +1901,35 @@ export function scheduleWorkspacePurge(
 
 workspaces GET 和 trash GET 在正常响应后调度 `purgeExpired(3)`。
 
-- [ ] **Step 5: 运行单元和真实 PostgreSQL 测试**
+- [ ] **步骤5: 运行单元和真实 PostgreSQL 测试**
 
-Run: `pnpm test --run src/server/workspacePurgeService.test.ts src/app/api/workspaces/purgeScheduler.test.ts`
+运行： `pnpm test --run src/server/workspacePurgeService.test.ts src/app/api/workspaces/purgeScheduler.test.ts`
 
 Run in Compose: `docker compose run --rm migrate sh -lc 'TEST_DATABASE_URL="$DATABASE_URL" pnpm test:postgres'`
 
-Expected: PASS；并发清理同一 tombstone 只执行一次，失败后重试成功。
+预期： PASS；并发清理同一 tombstone 只执行一次，失败后重试成功。
 
-- [ ] **Step 6: 提交**
+- [ ] **步骤6: 提交**
 
 ~~~bash
 git add src/server/workspacePurgeService.ts src/server/workspacePurgeService.test.ts src/server/workspacePurgeService.postgres.test.ts src/server/applicationServices.ts src/app/api/workspaces/purgeScheduler.ts src/app/api/workspaces/purgeScheduler.test.ts src/app/api/workspaces/route.ts src/app/api/workspaces/trash/route.ts
 git commit -m "feat: purge expired workspaces on requests"
 ~~~
 
-### Task 27：删除、回收站和恢复界面
+### 任务27：删除、回收站和恢复界面
 
-**Files:**
-- Create: `src/features/editor/persistence/workspaceLifecycleRepository.ts`
-- Create: `src/features/editor/persistence/workspaceLifecycleRepository.test.ts`
-- Create: `src/features/editor/components/sidebar/workspace-manager/WorkspaceDangerZone.tsx`
-- Create: `src/features/editor/components/sidebar/workspace-manager/WorkspaceDangerZone.test.tsx`
-- Create: `src/features/editor/components/sidebar/workspace-manager/WorkspaceTrashView.tsx`
-- Create: `src/features/editor/components/sidebar/workspace-manager/WorkspaceTrashView.test.tsx`
-- Modify: `src/features/editor/components/sidebar/WorkspaceManagerDialog.tsx`
-- Modify: `src/features/editor/components/sidebar/WorkspaceManagerDialog.test.tsx`
-- Modify: `src/features/editor/components/WorkspaceShell.tsx`
+**文件：**
+- 创建： `src/features/editor/persistence/workspaceLifecycleRepository.ts`
+- 创建： `src/features/editor/persistence/workspaceLifecycleRepository.test.ts`
+- 创建： `src/features/editor/components/sidebar/workspace-manager/WorkspaceDangerZone.tsx`
+- 创建： `src/features/editor/components/sidebar/workspace-manager/WorkspaceDangerZone.test.tsx`
+- 创建： `src/features/editor/components/sidebar/workspace-manager/WorkspaceTrashView.tsx`
+- 创建： `src/features/editor/components/sidebar/workspace-manager/WorkspaceTrashView.test.tsx`
+- 修改： `src/features/editor/components/sidebar/WorkspaceManagerDialog.tsx`
+- 修改： `src/features/editor/components/sidebar/WorkspaceManagerDialog.test.tsx`
+- 修改： `src/features/editor/components/WorkspaceShell.tsx`
 
-- [ ] **Step 1: 写失败的界面测试**
+- [ ] **步骤1: 写失败的界面测试**
 
 ~~~ts
 it("enables deletion only for an exact workspace name", async () => {
@@ -1950,108 +1950,108 @@ it("restores and enters the selected trash item", async () => {
 });
 ~~~
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **步骤2: 运行测试确认失败**
 
-Run: `pnpm test --run src/features/editor/components/sidebar/workspace-manager/WorkspaceDangerZone.test.tsx src/features/editor/components/sidebar/workspace-manager/WorkspaceTrashView.test.tsx`
+运行： `pnpm test --run src/features/editor/components/sidebar/workspace-manager/WorkspaceDangerZone.test.tsx src/features/editor/components/sidebar/workspace-manager/WorkspaceTrashView.test.tsx`
 
-Expected: FAIL，组件和仓储不存在。
+预期： FAIL，组件和仓储不存在。
 
-- [ ] **Step 3: 实现仓储和界面**
+- [ ] **步骤3: 实现仓储和界面**
 
 仓储公开 summary/delete/listTrash/restore。危险区域展示文档、成员、文件计数和精确名称输入。管理器列表头增加回收站图标。回收站显示删除时间、删除者、剩余时间和移动端全宽恢复按钮。
 
-- [ ] **Step 4: 编排切换并运行测试**
+- [ ] **步骤4: 编排切换并运行测试**
 
 delete 和 restore 都通过 `session.runServerTransition`，成功后进入返回的工作区。
 
-Run: `pnpm test --run src/features/editor/persistence/workspaceLifecycleRepository.test.ts src/features/editor/components/sidebar/workspace-manager/WorkspaceDangerZone.test.tsx src/features/editor/components/sidebar/workspace-manager/WorkspaceTrashView.test.tsx src/features/editor/components/sidebar/WorkspaceManagerDialog.test.tsx src/features/editor/components/WorkspaceShell.test.tsx`
+运行： `pnpm test --run src/features/editor/persistence/workspaceLifecycleRepository.test.ts src/features/editor/components/sidebar/workspace-manager/WorkspaceDangerZone.test.tsx src/features/editor/components/sidebar/workspace-manager/WorkspaceTrashView.test.tsx src/features/editor/components/sidebar/WorkspaceManagerDialog.test.tsx src/features/editor/components/WorkspaceShell.test.tsx`
 
-Expected: PASS。
+预期： PASS。
 
-- [ ] **Step 5: 提交**
+- [ ] **步骤5: 提交**
 
 ~~~bash
 git add src/features/editor/persistence/workspaceLifecycleRepository.ts src/features/editor/persistence/workspaceLifecycleRepository.test.ts src/features/editor/components/sidebar/workspace-manager src/features/editor/components/sidebar/WorkspaceManagerDialog.tsx src/features/editor/components/sidebar/WorkspaceManagerDialog.test.tsx src/features/editor/components/WorkspaceShell.tsx
 git commit -m "feat: add workspace trash interface"
 ~~~
 
-### Task 28：M6.2C 和完整端到端验收
+### 任务28：M6.2C 和完整端到端验收
 
-**Files:**
-- Create: `e2e/workspace-deletion.spec.ts`
-- Modify: `e2e/support.ts`
+**文件：**
+- 创建： `e2e/workspace-deletion.spec.ts`
+- 修改： `e2e/support.ts`
 
-- [ ] **Step 1: 增加 SQL 和对象目录帮助器**
+- [ ] **步骤1: 增加 SQL 和对象目录帮助器**
 
 `e2e/support.ts` 增加 `runSql`、`queryScalar`、`setWorkspacePurgeAfter`、`setUploadsDirectoryMode`。Docker 调用继续使用 `execFileSync` 参数数组，用户数据不拼入 shell。
 
-- [ ] **Step 2: 写删除恢复 E2E**
+- [ ] **步骤2: 写删除恢复 E2E**
 
 覆盖精确名称删除、所有成员目录回退、REST/文件/WS 失效、owner 回收站、恢复并进入、内容与文件保留、邀请保持 revoked。
 
-- [ ] **Step 3: 写过期和失败重试 E2E**
+- [ ] **步骤3: 写过期和失败重试 E2E**
 
 测试 SQL 把 `purge_after` 调到过去。先让对象目录不可删除，触发目录请求并确认 tombstone 保留；恢复权限后再次触发，确认 workspace 行删除且审计仍存在。过期恢复返回 `workspace_purge_expired`。
 
-- [ ] **Step 4: 运行完整 E2E 并提交**
+- [ ] **步骤4: 运行完整 E2E 并提交**
 
-Run: `docker compose up -d --build`
+运行： `docker compose up -d --build`
 
-Run: `pnpm test:e2e -- e2e/workspace-invitations.spec.ts e2e/workspace-members.spec.ts e2e/workspace-deletion.spec.ts`
+运行： `pnpm test:e2e -- e2e/workspace-invitations.spec.ts e2e/workspace-members.spec.ts e2e/workspace-deletion.spec.ts`
 
-Expected: PASS。
+预期： PASS。
 
 ~~~bash
 git add e2e/support.ts e2e/workspace-deletion.spec.ts
 git commit -m "test: cover workspace deletion and recovery"
 ~~~
 
-### Task 29：README、回归和最终提交
+### 任务29：README、回归和最终提交
 
-**Files:**
-- Modify: `README.md`
-- Modify: `docs/prd.md` if present
-- Modify: `docs/superpowers/plans/2026-07-16-m6-2-workspace-team-lifecycle.md`
+**文件：**
+- 修改： `README.md`
+- 修改： `docs/prd.md` if present
+- 修改： `docs/superpowers/plans/2026-07-16-m6-2-workspace-team-lifecycle.md`
 
-- [ ] **Step 1: 更新 README 和项目进度**
+- [ ] **步骤1: 更新 README 和项目进度**
 
 记录 A 的邀请与 SMTP/Redis、B 的多 owner 与权限失效、C 的 7 天回收站与对象优先清理、新 API 和验证命令。明确账号设置与 M7 真实分享权限仍在下一批。所有验证通过后才勾选本计划完成项。
 
-- [ ] **Step 2: 运行单元、构建和真实 PostgreSQL**
+- [ ] **步骤2: 运行单元、构建和真实 PostgreSQL**
 
-Run: `pnpm test --run`
+运行： `pnpm test --run`
 
-Run: `pnpm build`
+运行： `pnpm build`
 
-Run: `docker compose run --rm migrate sh -lc 'TEST_DATABASE_URL="$DATABASE_URL" pnpm test:postgres'`
+运行： `docker compose run --rm migrate sh -lc 'TEST_DATABASE_URL="$DATABASE_URL" pnpm test:postgres'`
 
-Expected: 全部 PASS。
+预期： 全部 PASS。
 
-- [ ] **Step 3: 运行容器和完整 E2E**
+- [ ] **步骤3: 运行容器和完整 E2E**
 
-Run: `docker compose config`
+运行： `docker compose config`
 
-Run: `docker compose up -d --build`
+运行： `docker compose up -d --build`
 
-Run: `docker compose ps`
+运行： `docker compose ps`
 
-Run: `pnpm test:e2e`
+运行： `pnpm test:e2e`
 
-Expected: 配置有效，postgres/redis/web/collaboration healthy，migrate exited 0，所有 Playwright PASS。
+预期： 配置有效，postgres/redis/web/collaboration healthy，migrate exited 0，所有 Playwright PASS。
 
-- [ ] **Step 4: 检查敏感信息和工作区**
+- [ ] **步骤4: 检查敏感信息和工作区**
 
-Run: `rg -n "raw-token|token_hash|nexus_workspace_invite_context" .next/server src e2e --glob '!*.test.*'`
+运行： `rg -n "raw-token|token_hash|nexus_workspace_invite_context" .next/server src e2e --glob '!*.test.*'`
 
-Expected: 只出现必要符号，不存在原始令牌日志、API 响应或浏览器存储写入。
+预期： 只出现必要符号，不存在原始令牌日志、API 响应或浏览器存储写入。
 
-Run: `git diff --check`
+运行： `git diff --check`
 
-Run: `git status --short`
+运行： `git status --short`
 
-Expected: 无空白错误，只包含本次 M6.2 与文档变更。
+预期： 无空白错误，只包含本次 M6.2 与文档变更。
 
-- [ ] **Step 5: 提交文档**
+- [ ] **步骤5: 提交文档**
 
 ~~~bash
 git add README.md docs/prd.md docs/superpowers/plans/2026-07-16-m6-2-workspace-team-lifecycle.md

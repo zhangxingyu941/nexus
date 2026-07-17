@@ -1,6 +1,6 @@
-# M6 Multi-Workspace Foundation Implementation Plan
+# M6 多工作区基础实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **致智能代理工作者：** 必需子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐任务实施本计划。步骤使用复选框（`- [ ]`）语法进行跟踪。
 
 **Goal:** 在数据库模式和浏览器本地模式中交付可创建、搜索、切换和 owner 重命名的多工作区基础，并让内容、成员、历史、文件和协同请求显式绑定 `workspaceId`。
 
@@ -69,15 +69,15 @@
 - `src/features/editor/persistence/editorRepository.test.ts`
 - `src/server/workspaceStore.ts`
 
-## Task 1：共享工作区契约与名称规则
+## 任务1：共享工作区契约与名称规则
 
-**Files:**
-- Create: `src/shared/workspace.ts`
-- Create: `src/shared/workspace.test.ts`
-- Create: `src/features/editor/persistence/workspaceRepository.ts`
-- Modify: `src/features/editor/session/sessionTypes.ts`
+**文件：**
+- 创建： `src/shared/workspace.ts`
+- 创建： `src/shared/workspace.test.ts`
+- 创建： `src/features/editor/persistence/workspaceRepository.ts`
+- 修改： `src/features/editor/session/sessionTypes.ts`
 
-- [ ] **Step 1: 写失败的共享契约测试**
+- [ ] **步骤1: 写失败的共享契约测试**
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -104,13 +104,13 @@ describe("workspace contract", () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [ ] **步骤2: 运行测试确认失败**
 
-Run: `pnpm test --run src/shared/workspace.test.ts`
+运行： `pnpm test --run src/shared/workspace.test.ts`
 
-Expected: FAIL，模块 `src/shared/workspace.ts` 不存在。
+预期： FAIL，模块 `src/shared/workspace.ts` 不存在。
 
-- [ ] **Step 3: 创建共享类型与严格名称校验**
+- [ ] **步骤3: 创建共享类型与严格名称校验**
 
 ```ts
 import type { EditorWorkspace } from "../features/editor/model/block";
@@ -179,30 +179,30 @@ export interface WorkspaceRepository {
 
 把 `sessionTypes.ts` 中的角色类型改为导入 `WorkspaceRole`，不保留第二份字符串联合类型。
 
-- [ ] **Step 4: 运行测试和类型检查**
+- [ ] **步骤4: 运行测试和类型检查**
 
-Run: `pnpm test --run src/shared/workspace.test.ts && pnpm exec tsc --noEmit`
+运行： `pnpm test --run src/shared/workspace.test.ts && pnpm exec tsc --noEmit`
 
-Expected: PASS，无重复角色类型错误。
+预期： PASS，无重复角色类型错误。
 
-- [ ] **Step 5: 提交共享契约**
+- [ ] **步骤5: 提交共享契约**
 
 ```bash
 git add src/shared/workspace.ts src/shared/workspace.test.ts src/features/editor/persistence/workspaceRepository.ts src/features/editor/session/sessionTypes.ts
 git commit -m "feat: add multi-workspace contracts"
 ```
 
-## Task 2：PostgreSQL M6 迁移
+## 任务2：PostgreSQL M6 迁移
 
-**Files:**
-- Modify: `src/server/database/migrations.ts`
-- Modify: `src/server/database/migrations.test.ts`
-- Modify: `src/server/postgresWorkspaceStore.ts`
-- Modify: `src/server/postgresWorkspaceStore.test.ts`
-- Modify: `src/server/yjsPersistence.test.ts`
-- Modify: `src/server/collaborationPubSub.test.ts`
+**文件：**
+- 修改： `src/server/database/migrations.ts`
+- 修改： `src/server/database/migrations.test.ts`
+- 修改： `src/server/postgresWorkspaceStore.ts`
+- 修改： `src/server/postgresWorkspaceStore.test.ts`
+- 修改： `src/server/yjsPersistence.test.ts`
+- 修改： `src/server/collaborationPubSub.test.ts`
 
-- [ ] **Step 1: 写旧 schema 回填失败测试**
+- [ ] **步骤1: 写旧 schema 回填失败测试**
 
 在 `migrations.test.ts` 创建迁移前工作区：两名成员、一个活动文档、当前选择，并把已有迁移 ID 标记为完成。然后调用 `migrateDatabase(pool)` 两次，断言：
 
@@ -224,13 +224,13 @@ expect(preferences.rows).toEqual([
 
 再删除 `document-1`，断言只清空 `active_document_id`，`workspace_id` 和偏好行仍存在。
 
-- [ ] **Step 2: 运行迁移测试确认失败**
+- [ ] **步骤2: 运行迁移测试确认失败**
 
-Run: `pnpm test --run src/server/database/migrations.test.ts`
+运行： `pnpm test --run src/server/database/migrations.test.ts`
 
-Expected: FAIL，`workspace_document_preferences` 不存在，旧列仍存在。
+预期： FAIL，`workspace_document_preferences` 不存在，旧列仍存在。
 
-- [ ] **Step 3: 添加单次 M6 迁移**
+- [ ] **步骤3: 添加单次 M6 迁移**
 
 在 `migrations.ts` 增加 `2026-07-15-multi-workspace-foundation`，严格按以下顺序执行：
 
@@ -274,33 +274,33 @@ CREATE INDEX workspace_document_preferences_workspace_idx
 - `addMember` 删除修改被添加用户 `workspace_preferences` 的语句。
 - Yjs/PubSub 测试 fixture 插入工作区时只使用迁移后仍存在的列。
 
-- [ ] **Step 4: 运行迁移测试**
+- [ ] **步骤4: 运行迁移测试**
 
-Run: `pnpm test --run src/server/database/migrations.test.ts src/server/postgresWorkspaceStore.test.ts src/server/yjsPersistence.test.ts src/server/collaborationPubSub.test.ts src/server/postgresAuthStore.test.ts`
+运行： `pnpm test --run src/server/database/migrations.test.ts src/server/postgresWorkspaceStore.test.ts src/server/yjsPersistence.test.ts src/server/collaborationPubSub.test.ts src/server/postgresAuthStore.test.ts`
 
-Expected: PASS，重复迁移不报错，偏好回填正确。
+预期： PASS，重复迁移不报错，偏好回填正确。
 
-- [ ] **Step 5: 运行真实 PostgreSQL schema 冒烟**
+- [ ] **步骤5: 运行真实 PostgreSQL schema 冒烟**
 
-Run: `pnpm db:migrate && pnpm db:smoke`
+运行： `pnpm db:migrate && pnpm db:smoke`
 
-Expected: 两条命令退出码为 0；`schema_migrations` 含 M6 ID。
+预期： 两条命令退出码为 0；`schema_migrations` 含 M6 ID。
 
-- [ ] **Step 6: 提交迁移**
+- [ ] **步骤6: 提交迁移**
 
 ```bash
 git add src/server/database/migrations.ts src/server/database/migrations.test.ts src/server/postgresWorkspaceStore.ts src/server/postgresWorkspaceStore.test.ts src/server/yjsPersistence.test.ts src/server/collaborationPubSub.test.ts
 git commit -m "feat: migrate multi-workspace preferences"
 ```
 
-## Task 3：PostgreSQL 显式工作区目录与内容访问
+## 任务3：PostgreSQL 显式工作区目录与内容访问
 
-**Files:**
-- Modify: `src/server/postgresWorkspaceStore.ts`
-- Modify: `src/server/postgresWorkspaceStore.test.ts`
-- Modify: `src/server/applicationServices.ts`
+**文件：**
+- 修改： `src/server/postgresWorkspaceStore.ts`
+- 修改： `src/server/postgresWorkspaceStore.test.ts`
+- 修改： `src/server/applicationServices.ts`
 
-- [ ] **Step 1: 写目录、创建、选择和角色失败测试**
+- [ ] **步骤1: 写目录、创建、选择和角色失败测试**
 
 测试必须覆盖：
 
@@ -325,13 +325,13 @@ await expect(store.loadWorkspace("user-owner", "workspace-foreign"))
 
 再为同一工作区两名用户保存不同 `activeDocumentId`，断言各自加载自己的活动文档。
 
-- [ ] **Step 2: 运行 store 测试确认失败**
+- [ ] **步骤2: 运行 store 测试确认失败**
 
-Run: `pnpm test --run src/server/postgresWorkspaceStore.test.ts`
+运行： `pnpm test --run src/server/postgresWorkspaceStore.test.ts`
 
-Expected: FAIL，目录和显式方法不存在。
+预期： FAIL，目录和显式方法不存在。
 
-- [ ] **Step 3: 实现显式 store API**
+- [ ] **步骤3: 实现显式 store API**
 
 增加：
 
@@ -367,39 +367,39 @@ class PostgresWorkspaceStore {
 
 为保持后续调用方逐步迁移，本任务可临时保留旧签名 overload；Task 10 必须删除 optional/implicit 分支。
 
-- [ ] **Step 4: 运行 store 和成员回归测试**
+- [ ] **步骤4: 运行 store 和成员回归测试**
 
-Run: `pnpm test --run src/server/postgresWorkspaceStore.test.ts src/app/api/workspace/members/route.test.ts`
+运行： `pnpm test --run src/server/postgresWorkspaceStore.test.ts src/app/api/workspace/members/route.test.ts`
 
-Expected: PASS，新增成员的当前工作区不变化。
+预期： PASS，新增成员的当前工作区不变化。
 
-- [ ] **Step 5: 运行类型检查**
+- [ ] **步骤5: 运行类型检查**
 
-Run: `pnpm exec tsc --noEmit`
+运行： `pnpm exec tsc --noEmit`
 
-Expected: PASS；临时 overload 只用于尚未迁移的旧调用方。
+预期： PASS；临时 overload 只用于尚未迁移的旧调用方。
 
-- [ ] **Step 6: 提交 store**
+- [ ] **步骤6: 提交 store**
 
 ```bash
 git add src/server/postgresWorkspaceStore.ts src/server/postgresWorkspaceStore.test.ts src/server/applicationServices.ts
 git commit -m "feat: add scoped postgres workspaces"
 ```
 
-## Task 4：工作区 REST API 与远端仓储
+## 任务4：工作区 REST API 与远端仓储
 
-**Files:**
-- Create: `src/app/api/workspaces/handlers.ts`
-- Create: `src/app/api/workspaces/route.ts`
-- Create: `src/app/api/workspaces/route.test.ts`
-- Create: `src/app/api/workspaces/[workspaceId]/route.ts`
-- Create: `src/app/api/workspaces/[workspaceId]/route.test.ts`
-- Create: `src/app/api/workspaces/[workspaceId]/select/route.ts`
-- Create: `src/app/api/workspaces/[workspaceId]/select/route.test.ts`
-- Create: `src/features/editor/persistence/remoteWorkspaceRepository.ts`
-- Create: `src/features/editor/persistence/remoteWorkspaceRepository.test.ts`
+**文件：**
+- 创建： `src/app/api/workspaces/handlers.ts`
+- 创建： `src/app/api/workspaces/route.ts`
+- 创建： `src/app/api/workspaces/route.test.ts`
+- 创建： `src/app/api/workspaces/[workspaceId]/route.ts`
+- 创建： `src/app/api/workspaces/[workspaceId]/route.test.ts`
+- 创建： `src/app/api/workspaces/[workspaceId]/select/route.ts`
+- 创建： `src/app/api/workspaces/[workspaceId]/select/route.test.ts`
+- 创建： `src/features/editor/persistence/remoteWorkspaceRepository.ts`
+- 创建： `src/features/editor/persistence/remoteWorkspaceRepository.test.ts`
 
-- [ ] **Step 1: 写 handler 和客户端失败测试**
+- [ ] **步骤1: 写 handler 和客户端失败测试**
 
 路由测试覆盖 `401/400/403/404/201`；远端仓储测试断言精确请求：
 
@@ -420,13 +420,13 @@ expect(fetchSpy).toHaveBeenCalledWith(
 );
 ```
 
-- [ ] **Step 2: 运行聚焦测试确认失败**
+- [ ] **步骤2: 运行聚焦测试确认失败**
 
-Run: `pnpm test --run src/app/api/workspaces src/features/editor/persistence/remoteWorkspaceRepository.test.ts`
+运行： `pnpm test --run src/app/api/workspaces src/features/editor/persistence/remoteWorkspaceRepository.test.ts`
 
-Expected: FAIL，新路由和仓储不存在。
+预期： FAIL，新路由和仓储不存在。
 
-- [ ] **Step 3: 实现统一 JSON/error 解析和 REST 仓储**
+- [ ] **步骤3: 实现统一 JSON/error 解析和 REST 仓储**
 
 `remoteWorkspaceRepository.ts` 必须只实现设计契约：
 
@@ -455,7 +455,7 @@ export function createRemoteWorkspaceRepository(): WorkspaceRepository {
 
 错误响应读取 `{ error }` 并抛出该文案；非法 JSON 使用稳定的“工作区服务返回无效响应”。
 
-- [ ] **Step 4: 实现数据库路由**
+- [ ] **步骤4: 实现数据库路由**
 
 `handlers.ts` 注入 `authStore` 和 `workspaceStore`。映射：
 
@@ -467,27 +467,27 @@ if (error instanceof WorkspacePermissionError) return jsonError(error.message, 4
 
 动态路由使用 Next.js 15 的 `params: Promise<{ workspaceId: string }>`；无 PostgreSQL 配置统一返回 `503`，本地客户端不会调用这些路由。
 
-- [ ] **Step 5: 运行路由、仓储和类型测试**
+- [ ] **步骤5: 运行路由、仓储和类型测试**
 
-Run: `pnpm test --run src/app/api/workspaces src/features/editor/persistence/remoteWorkspaceRepository.test.ts && pnpm exec tsc --noEmit`
+运行： `pnpm test --run src/app/api/workspaces src/features/editor/persistence/remoteWorkspaceRepository.test.ts && pnpm exec tsc --noEmit`
 
-Expected: PASS，所有路径包含显式工作区 ID。
+预期： PASS，所有路径包含显式工作区 ID。
 
-- [ ] **Step 6: 提交 REST 层**
+- [ ] **步骤6: 提交 REST 层**
 
 ```bash
 git add src/app/api/workspaces src/features/editor/persistence/remoteWorkspaceRepository.ts src/features/editor/persistence/remoteWorkspaceRepository.test.ts
 git commit -m "feat: add workspace REST resources"
 ```
 
-## Task 5：IndexedDB v2 多工作区仓储
+## 任务5：IndexedDB v2 多工作区仓储
 
-**Files:**
-- Create: `src/features/editor/persistence/localWorkspaceRepository.ts`
-- Create: `src/features/editor/persistence/localWorkspaceRepository.test.ts`
-- Read: `src/features/editor/persistence/editorRepository.ts`
+**文件：**
+- 创建： `src/features/editor/persistence/localWorkspaceRepository.ts`
+- 创建： `src/features/editor/persistence/localWorkspaceRepository.test.ts`
+- 读取： `src/features/editor/persistence/editorRepository.ts`
 
-- [ ] **Step 1: 写 v1 迁移和隔离失败测试**
+- [ ] **步骤1: 写 v1 迁移和隔离失败测试**
 
 使用 `fake-indexeddb` 先创建版本 1 的 `documents` Store，并分别测试旧 `workspace`、旧 `default` 文档和无旧数据。核心断言：
 
@@ -506,13 +506,13 @@ expect((await repository.load("local-default")).content).toEqual(normalizeWorksp
 
 重复创建 repository 后断言只存在一个 `local-default`。
 
-- [ ] **Step 2: 运行本地仓储测试确认失败**
+- [ ] **步骤2: 运行本地仓储测试确认失败**
 
-Run: `pnpm test --run src/features/editor/persistence/localWorkspaceRepository.test.ts`
+运行： `pnpm test --run src/features/editor/persistence/localWorkspaceRepository.test.ts`
 
-Expected: FAIL，本地多工作区仓储不存在。
+预期： FAIL，本地多工作区仓储不存在。
 
-- [ ] **Step 3: 创建 v2 Store 和幂等迁移**
+- [ ] **步骤3: 创建 v2 Store 和幂等迁移**
 
 定义：
 
@@ -529,7 +529,7 @@ const DEFAULT_WORKSPACE_ID = "local-default";
 
 升级回调只创建缺失 Store。首次 `list()` 调用在一个包含四个 Store 的 read-write transaction 中完成读取旧键、规范化、写目录/内容/偏好、删除旧键和写迁移标记。事务失败时不得写完成标记。
 
-- [ ] **Step 4: 实现完整本地仓储契约**
+- [ ] **步骤4: 实现完整本地仓储契约**
 
 `createLocalWorkspaceRepository` 接受可注入 `idFactory`、`now` 和 `databaseName`。实现规则：
 
@@ -544,26 +544,26 @@ load(id) // 返回 role = owner 的 WorkspaceSnapshot
 
 每个写事务必须 `await transaction.done` 后返回。
 
-- [ ] **Step 5: 运行本地仓储与旧仓储回归测试**
+- [ ] **步骤5: 运行本地仓储与旧仓储回归测试**
 
-Run: `pnpm test --run src/features/editor/persistence/localWorkspaceRepository.test.ts src/features/editor/persistence/editorRepository.test.ts`
+运行： `pnpm test --run src/features/editor/persistence/localWorkspaceRepository.test.ts src/features/editor/persistence/editorRepository.test.ts`
 
-Expected: PASS；旧仓储仍只作为尚未迁移 UI 的临时回归基线。
+预期： PASS；旧仓储仍只作为尚未迁移 UI 的临时回归基线。
 
-- [ ] **Step 6: 提交本地仓储**
+- [ ] **步骤6: 提交本地仓储**
 
 ```bash
 git add src/features/editor/persistence/localWorkspaceRepository.ts src/features/editor/persistence/localWorkspaceRepository.test.ts
 git commit -m "feat: add local multi-workspace storage"
 ```
 
-## Task 6：Workspace Session 保存屏障与竞态控制
+## 任务6：Workspace Session 保存屏障与竞态控制
 
-**Files:**
-- Create: `src/features/editor/session/useWorkspaceSession.ts`
-- Create: `src/features/editor/session/useWorkspaceSession.test.tsx`
+**文件：**
+- 创建： `src/features/editor/session/useWorkspaceSession.ts`
+- 创建： `src/features/editor/session/useWorkspaceSession.test.tsx`
 
-- [ ] **Step 1: 写切换时序失败测试**
+- [ ] **步骤1: 写切换时序失败测试**
 
 使用 deferred Promise 证明：
 
@@ -582,13 +582,13 @@ expect(result.current.snapshot?.summary.id).toBe("workspace-b");
 
 另测保存拒绝时 `select` 不调用、快照不替换；旧保存延迟完成时不得把新工作区状态改为 `remote/local`。
 
-- [ ] **Step 2: 运行 hook 测试确认失败**
+- [ ] **步骤2: 运行 hook 测试确认失败**
 
-Run: `pnpm test --run src/features/editor/session/useWorkspaceSession.test.tsx`
+运行： `pnpm test --run src/features/editor/session/useWorkspaceSession.test.tsx`
 
-Expected: FAIL，hook 不存在。
+预期： FAIL，hook 不存在。
 
-- [ ] **Step 3: 实现 session 状态与初始加载**
+- [ ] **步骤3: 实现 session 状态与初始加载**
 
 公开：
 
@@ -613,7 +613,7 @@ interface WorkspaceSessionController {
 
 初始加载调用 `list()` 后 `load(currentWorkspaceId)`。失败保留错误，不创建伪空白工作区。
 
-- [ ] **Step 4: 实现 revision 绑定保存**
+- [ ] **步骤4: 实现 revision 绑定保存**
 
 使用 refs 保存当前 `{ workspaceId, content, revision, savedRevision }`。`updateContent` 递增 revision 并启动 250ms timer。每次保存捕获不可变参数：
 
@@ -628,7 +628,7 @@ if (currentRef.current.workspaceId === request.workspaceId
 
 `flushSave` 清 timer，等待已有 in-flight save；如等待期间又产生 revision，再保存最新快照。
 
-- [ ] **Step 5: 实现切换、创建和重命名**
+- [ ] **步骤5: 实现切换、创建和重命名**
 
 - `switchWorkspace`：锁定 → `flushSave` → `repository.select` → 原子安装目录/快照。
 - `createWorkspace`：锁定 → `flushSave` → `repository.create` → 把新摘要置顶并安装快照。
@@ -636,36 +636,36 @@ if (currentRef.current.workspaceId === request.workspaceId
 - 任一错误只设置 `error`，切换/创建失败保留旧快照。
 - viewer 的 `updateContent` 无写入，`flushSave` 直接完成。
 
-- [ ] **Step 6: 运行 hook 测试和类型检查**
+- [ ] **步骤6: 运行 hook 测试和类型检查**
 
-Run: `pnpm test --run src/features/editor/session/useWorkspaceSession.test.tsx && pnpm exec tsc --noEmit`
+运行： `pnpm test --run src/features/editor/session/useWorkspaceSession.test.tsx && pnpm exec tsc --noEmit`
 
-Expected: PASS，无未处理 Promise 警告。
+预期： PASS，无未处理 Promise 警告。
 
-- [ ] **Step 7: 提交 session hook**
+- [ ] **步骤7: 提交 session hook**
 
 ```bash
 git add src/features/editor/session/useWorkspaceSession.ts src/features/editor/session/useWorkspaceSession.test.tsx
 git commit -m "feat: coordinate workspace transitions"
 ```
 
-## Task 7：Workspace Shell、B 方案管理 Dialog 与受控 EditorPage
+## 任务7：Workspace Shell、B 方案管理 Dialog 与受控 EditorPage
 
-**Files:**
-- Create: `src/features/editor/components/WorkspaceShell.tsx`
-- Create: `src/features/editor/components/WorkspaceShell.test.tsx`
-- Create: `src/features/editor/components/sidebar/WorkspaceSwitcher.tsx`
-- Create: `src/features/editor/components/sidebar/WorkspaceManagerDialog.tsx`
-- Create: `src/features/editor/components/sidebar/WorkspaceManagerDialog.test.tsx`
-- Modify: `src/app/EditorApp.tsx`
-- Modify: `src/app/EditorApp.test.tsx`
-- Modify: `src/features/editor/components/EditorPage.tsx`
-- Modify: `src/features/editor/components/EditorPage.test.tsx`
-- Modify: `src/features/editor/components/EditorPageCollaboration.test.tsx`
-- Modify: `src/features/editor/components/WorkspaceSidebar.tsx`
-- Modify: `src/features/editor/components/DocumentEditor.tsx`
+**文件：**
+- 创建： `src/features/editor/components/WorkspaceShell.tsx`
+- 创建： `src/features/editor/components/WorkspaceShell.test.tsx`
+- 创建： `src/features/editor/components/sidebar/WorkspaceSwitcher.tsx`
+- 创建： `src/features/editor/components/sidebar/WorkspaceManagerDialog.tsx`
+- 创建： `src/features/editor/components/sidebar/WorkspaceManagerDialog.test.tsx`
+- 修改： `src/app/EditorApp.tsx`
+- 修改： `src/app/EditorApp.test.tsx`
+- 修改： `src/features/editor/components/EditorPage.tsx`
+- 修改： `src/features/editor/components/EditorPage.test.tsx`
+- 修改： `src/features/editor/components/EditorPageCollaboration.test.tsx`
+- 修改： `src/features/editor/components/WorkspaceSidebar.tsx`
+- 修改： `src/features/editor/components/DocumentEditor.tsx`
 
-- [ ] **Step 1: 写管理 Dialog 失败测试**
+- [ ] **步骤1: 写管理 Dialog 失败测试**
 
 覆盖：
 
@@ -683,13 +683,13 @@ expect(onSwitch).toHaveBeenCalledWith("workspace-b");
 
 创建/重命名必须在同一 Dialog 内切换表单视图，不能渲染第二个 dialog。
 
-- [ ] **Step 2: 运行组件测试确认失败**
+- [ ] **步骤2: 运行组件测试确认失败**
 
-Run: `pnpm test --run src/features/editor/components/sidebar/WorkspaceManagerDialog.test.tsx src/features/editor/components/WorkspaceShell.test.tsx`
+运行： `pnpm test --run src/features/editor/components/sidebar/WorkspaceManagerDialog.test.tsx src/features/editor/components/WorkspaceShell.test.tsx`
 
-Expected: FAIL，组件不存在。
+预期： FAIL，组件不存在。
 
-- [ ] **Step 3: 实现 WorkspaceSwitcher 和管理 Dialog**
+- [ ] **步骤3: 实现 WorkspaceSwitcher 和管理 Dialog**
 
 - `WorkspaceSwitcher` 显示首字、截断名称、角色和 ChevronDown，使用完整 aria-label。
 - `WorkspaceManagerDialog` 使用现有 `Dialog`、`Input`、`Button` 和 lucide `Search/Plus/Pencil`。
@@ -697,7 +697,7 @@ Expected: FAIL，组件不存在。
 - `isTransitioning` 时禁用切换和创建；单个重命名请求只禁用对应提交。
 - 移动端 Dialog 使用现有响应式宽度，不嵌套卡片。
 
-- [ ] **Step 4: 实现 WorkspaceShell**
+- [ ] **步骤4: 实现 WorkspaceShell**
 
 ```tsx
 interface WorkspaceShellProps {
@@ -761,7 +761,7 @@ export function WorkspaceShell({ mode, sessionUser, onSignOut }: WorkspaceShellP
 
 Shell 持有 Dialog；移动端触发管理时先通知 Sidebar 关闭。
 
-- [ ] **Step 5: 把 EditorPage 改为受控视图**
+- [ ] **步骤5: 把 EditorPage 改为受控视图**
 
 删除 `loadSyncedWorkspace` 的首次加载 effect 和 `saveSyncedWorkspace` 的防抖 effect。新 props：
 
@@ -783,7 +783,7 @@ interface EditorPageProps {
 
 `DocumentEditor` 从 session hook 导入 `WorkspaceSaveStatus`，继续使用既有 `local/remote/saving/unsaved/failed/readonly` 文案，不引入第二套保存状态。
 
-- [ ] **Step 6: 让 EditorApp 显式选择模式**
+- [ ] **步骤6: 让 EditorApp 显式选择模式**
 
 ```tsx
 if (session.status === "local") {
@@ -800,42 +800,42 @@ return (
 
 数据库 Shell 错误不得渲染本地 repository。
 
-- [ ] **Step 7: 更新现有组件测试**
+- [ ] **步骤7: 更新现有组件测试**
 
 用受控 wrapper 提供 workspace state；断言编辑回调而不是旧仓储 fetch。`EditorApp.test.tsx` 保留认证流程，但登录成功后的工作区请求改为 `/api/workspaces` 和显式快照请求。
 
-- [ ] **Step 8: 运行 UI 聚焦测试**
+- [ ] **步骤8: 运行 UI 聚焦测试**
 
-Run: `pnpm test --run src/app/EditorApp.test.tsx src/features/editor/components/WorkspaceShell.test.tsx src/features/editor/components/EditorPage.test.tsx src/features/editor/components/EditorPageCollaboration.test.tsx src/features/editor/components/sidebar/WorkspaceManagerDialog.test.tsx`
+运行： `pnpm test --run src/app/EditorApp.test.tsx src/features/editor/components/WorkspaceShell.test.tsx src/features/editor/components/EditorPage.test.tsx src/features/editor/components/EditorPageCollaboration.test.tsx src/features/editor/components/sidebar/WorkspaceManagerDialog.test.tsx`
 
-Expected: PASS；无嵌套 dialog、无 act warning。
+预期： PASS；无嵌套 dialog、无 act warning。
 
-- [ ] **Step 9: 提交前端 Shell**
+- [ ] **步骤9: 提交前端 Shell**
 
 ```bash
 git add src/app/EditorApp.tsx src/app/EditorApp.test.tsx src/features/editor/components src/features/editor/session
 git commit -m "feat: add workspace management shell"
 ```
 
-## Task 8：成员与历史的显式工作区作用域
+## 任务8：成员与历史的显式工作区作用域
 
-**Files:**
-- Create: `src/app/api/workspaces/[workspaceId]/members/route.ts`
-- Create: `src/app/api/workspaces/[workspaceId]/members/route.test.ts`
-- Create: `src/app/api/workspaces/[workspaceId]/members/handlers.ts`
-- Create: `src/app/api/workspaces/[workspaceId]/history/[documentId]/route.ts`
-- Create: `src/app/api/workspaces/[workspaceId]/history/[documentId]/route.test.ts`
-- Create: `src/app/api/workspaces/[workspaceId]/history/[documentId]/handlers.ts`
-- Create: `src/features/editor/persistence/workspaceMemberRepository.ts`
-- Create: `src/features/editor/persistence/workspaceMemberRepository.test.ts`
-- Modify: `src/features/editor/persistence/documentHistoryRepository.ts`
-- Modify: `src/features/editor/persistence/documentHistoryRepository.test.ts`
-- Modify: `src/features/editor/components/EditorPage.tsx`
-- Modify: `src/features/editor/components/document/HistoryPanel.tsx`
-- Modify: `src/features/editor/components/document/HistoryPanel.test.tsx`
-- Modify: `src/features/editor/components/document/MembersPopover.test.tsx`
+**文件：**
+- 创建： `src/app/api/workspaces/[workspaceId]/members/route.ts`
+- 创建： `src/app/api/workspaces/[workspaceId]/members/route.test.ts`
+- 创建： `src/app/api/workspaces/[workspaceId]/members/handlers.ts`
+- 创建： `src/app/api/workspaces/[workspaceId]/history/[documentId]/route.ts`
+- 创建： `src/app/api/workspaces/[workspaceId]/history/[documentId]/route.test.ts`
+- 创建： `src/app/api/workspaces/[workspaceId]/history/[documentId]/handlers.ts`
+- 创建： `src/features/editor/persistence/workspaceMemberRepository.ts`
+- 创建： `src/features/editor/persistence/workspaceMemberRepository.test.ts`
+- 修改： `src/features/editor/persistence/documentHistoryRepository.ts`
+- 修改： `src/features/editor/persistence/documentHistoryRepository.test.ts`
+- 修改： `src/features/editor/components/EditorPage.tsx`
+- 修改： `src/features/editor/components/document/HistoryPanel.tsx`
+- 修改： `src/features/editor/components/document/HistoryPanel.test.tsx`
+- 修改： `src/features/editor/components/document/MembersPopover.test.tsx`
 
-- [ ] **Step 1: 写跨工作区拒绝和客户端路径失败测试**
+- [ ] **步骤1: 写跨工作区拒绝和客户端路径失败测试**
 
 ```ts
 await expect(workspaceStore.listMembers("user-a", "workspace-b")).rejects.toThrow("工作区不存在");
@@ -848,13 +848,13 @@ expect(fetchSpy).toHaveBeenCalledWith(
 
 路由测试必须证明：用户对 workspace A 有权限，但把 A 的 documentId 与 workspace B 组合时返回 `404`。
 
-- [ ] **Step 2: 运行聚焦测试确认失败**
+- [ ] **步骤2: 运行聚焦测试确认失败**
 
-Run: `pnpm test --run src/app/api/workspaces src/features/editor/persistence/workspaceMemberRepository.test.ts src/features/editor/persistence/documentHistoryRepository.test.ts`
+运行： `pnpm test --run src/app/api/workspaces src/features/editor/persistence/workspaceMemberRepository.test.ts src/features/editor/persistence/documentHistoryRepository.test.ts`
 
-Expected: FAIL，新路由和显式参数不存在。
+预期： FAIL，新路由和显式参数不存在。
 
-- [ ] **Step 3: 修改 store 和 handler 签名**
+- [ ] **步骤3: 修改 store 和 handler 签名**
 
 最终签名：
 
@@ -867,44 +867,44 @@ restoreDocumentVersion(userId: string, workspaceId: string, documentId: string, 
 
 每条 SQL 同时过滤 `workspace_id` 和资源 ID。成员添加只 upsert `workspace_members`，不更新受邀用户的选择偏好。
 
-- [ ] **Step 4: 创建显式动态路由并更新客户端**
+- [ ] **步骤4: 创建显式动态路由并更新客户端**
 
 `HistoryPanel` 增加 `workspaceId` prop；`loadDocumentVersions` 和 `restoreDocumentVersion` 的第一个参数为 workspace ID。`workspaceMemberRepository.ts` 导出 `loadWorkspaceMembers(workspaceId)` 和 `addWorkspaceMember(workspaceId, email, role)`，只调用 `/api/workspaces/:id/members`。本地模式不提供成员管理回调，避免无数据库 UI 发出成员请求。
 
-- [ ] **Step 5: 运行成员、历史和 UI 测试**
+- [ ] **步骤5: 运行成员、历史和 UI 测试**
 
-Run: `pnpm test --run src/app/api/workspaces src/features/editor/persistence/documentHistoryRepository.test.ts src/features/editor/components/document/HistoryPanel.test.tsx src/features/editor/components/document/MembersPopover.test.tsx`
+运行： `pnpm test --run src/app/api/workspaces src/features/editor/persistence/documentHistoryRepository.test.ts src/features/editor/components/document/HistoryPanel.test.tsx src/features/editor/components/document/MembersPopover.test.tsx`
 
-Expected: PASS，非当前但已授权工作区也能被精确访问。
+预期： PASS，非当前但已授权工作区也能被精确访问。
 
-- [ ] **Step 6: 提交成员与历史作用域**
+- [ ] **步骤6: 提交成员与历史作用域**
 
 ```bash
 git add src/app/api/workspaces src/features/editor
 git commit -m "feat: scope members and history by workspace"
 ```
 
-## Task 9：文件与 Yjs 的显式工作区作用域
+## 任务9：文件与 Yjs 的显式工作区作用域
 
-**Files:**
-- Modify: `src/app/api/files/handlers.ts`
-- Modify: `src/app/api/files/handlers.test.ts`
-- Modify: `src/features/editor/persistence/attachmentRepository.ts`
-- Modify: `src/features/editor/persistence/attachmentRepository.test.ts`
-- Modify: `src/features/editor/components/blocks/AttachmentBlockEditor.tsx`
-- Modify: `src/features/editor/components/blocks/AttachmentBlockEditor.test.tsx`
-- Modify: `src/features/editor/components/BlockRow.tsx`
-- Modify: `src/features/editor/components/BlockList.tsx`
-- Modify: `src/features/editor/components/DocumentEditor.tsx`
-- Modify: `src/features/editor/components/EditorPage.tsx`
-- Modify: `src/server/collaborationAuthorization.ts`
-- Modify: `src/server/collaborationAuthorization.test.ts`
-- Modify: `src/server/collaborationServer.ts`
-- Modify: `src/server/collaborationServer.test.ts`
-- Modify: `src/features/editor/collaboration/useDocumentCollaboration.ts`
-- Modify: `src/features/editor/collaboration/useDocumentCollaboration.test.tsx`
+**文件：**
+- 修改： `src/app/api/files/handlers.ts`
+- 修改： `src/app/api/files/handlers.test.ts`
+- 修改： `src/features/editor/persistence/attachmentRepository.ts`
+- 修改： `src/features/editor/persistence/attachmentRepository.test.ts`
+- 修改： `src/features/editor/components/blocks/AttachmentBlockEditor.tsx`
+- 修改： `src/features/editor/components/blocks/AttachmentBlockEditor.test.tsx`
+- 修改： `src/features/editor/components/BlockRow.tsx`
+- 修改： `src/features/editor/components/BlockList.tsx`
+- 修改： `src/features/editor/components/DocumentEditor.tsx`
+- 修改： `src/features/editor/components/EditorPage.tsx`
+- 修改： `src/server/collaborationAuthorization.ts`
+- 修改： `src/server/collaborationAuthorization.test.ts`
+- 修改： `src/server/collaborationServer.ts`
+- 修改： `src/server/collaborationServer.test.ts`
+- 修改： `src/features/editor/collaboration/useDocumentCollaboration.ts`
+- 修改： `src/features/editor/collaboration/useDocumentCollaboration.test.tsx`
 
-- [ ] **Step 1: 写文件精确作用域失败测试**
+- [ ] **步骤1: 写文件精确作用域失败测试**
 
 上传表单必须含：
 
@@ -914,7 +914,7 @@ formData.set("workspaceId", "workspace-a");
 
 测试用户当前选择 B 但对 A 有 editor 权限时可上传到 `workspace-a/...`；只有 B 权限时对 A 返回 `403`。GET 从 key 第一段解析 A 并检查 A，不读取当前偏好。
 
-- [ ] **Step 2: 写协作房间失败测试**
+- [ ] **步骤2: 写协作房间失败测试**
 
 ```ts
 const request = new Request("ws://localhost/workspace%3Aworkspace-a%3Adocument%3Adocument-1", {
@@ -929,13 +929,13 @@ expect(workspaceStore.getDocumentAccess).toHaveBeenCalledWith(
 
 覆盖 malformed room、workspace/document 不匹配、viewer 和无成员关系。
 
-- [ ] **Step 3: 运行文件和协作测试确认失败**
+- [ ] **步骤3: 运行文件和协作测试确认失败**
 
-Run: `pnpm test --run src/app/api/files/handlers.test.ts src/features/editor/persistence/attachmentRepository.test.ts src/server/collaborationAuthorization.test.ts src/server/collaborationServer.test.ts src/features/editor/collaboration/useDocumentCollaboration.test.tsx`
+运行： `pnpm test --run src/app/api/files/handlers.test.ts src/features/editor/persistence/attachmentRepository.test.ts src/server/collaborationAuthorization.test.ts src/server/collaborationServer.test.ts src/features/editor/collaboration/useDocumentCollaboration.test.tsx`
 
-Expected: FAIL，调用仍依赖当前工作区或 `document:` 房间。
+预期： FAIL，调用仍依赖当前工作区或 `document:` 房间。
 
-- [ ] **Step 4: 实现文件作用域**
+- [ ] **步骤4: 实现文件作用域**
 
 `uploadAttachment(workspaceId, file, kind)` 把 ID 写入 FormData。数据库 handler 调用：
 
@@ -947,7 +947,7 @@ const access = await workspaceStore.getWorkspaceAccess(user.id, workspaceId);
 
 沿 `EditorPage → DocumentEditor → BlockList → BlockRow → AttachmentBlockEditor` 传递 `workspaceId`，不从全局读取。
 
-- [ ] **Step 5: 实现规范 Yjs 房间**
+- [ ] **步骤5: 实现规范 Yjs 房间**
 
 `useDocumentCollaboration` 增加必需 `workspaceId`：
 
@@ -959,44 +959,44 @@ const roomName = document
 
 服务端严格解析同一格式，调用 `getDocumentAccess(userId, workspaceId, documentId)`；授权结果中的 ID 必须与房间一致。持久化和 Redis Pub/Sub 继续使用规范房间名，无需二次改写。
 
-- [ ] **Step 6: 运行文件、协作和类型测试**
+- [ ] **步骤6: 运行文件、协作和类型测试**
 
-Run: `pnpm test --run src/app/api/files/handlers.test.ts src/features/editor/persistence/attachmentRepository.test.ts src/features/editor/components/blocks/AttachmentBlockEditor.test.tsx src/server/collaborationAuthorization.test.ts src/server/collaborationServer.test.ts src/features/editor/collaboration/useDocumentCollaboration.test.tsx src/server/yjsPersistence.test.ts src/server/collaborationPubSub.test.ts && pnpm exec tsc --noEmit`
+运行： `pnpm test --run src/app/api/files/handlers.test.ts src/features/editor/persistence/attachmentRepository.test.ts src/features/editor/components/blocks/AttachmentBlockEditor.test.tsx src/server/collaborationAuthorization.test.ts src/server/collaborationServer.test.ts src/features/editor/collaboration/useDocumentCollaboration.test.tsx src/server/yjsPersistence.test.ts src/server/collaborationPubSub.test.ts && pnpm exec tsc --noEmit`
 
-Expected: PASS，房间名均为 `workspace:{workspaceId}:document:{documentId}`。
+预期： PASS，房间名均为 `workspace:{workspaceId}:document:{documentId}`。
 
-- [ ] **Step 7: 提交文件和协同作用域**
+- [ ] **步骤7: 提交文件和协同作用域**
 
 ```bash
 git add src/app/api/files src/features/editor src/server/collaborationAuthorization.ts src/server/collaborationAuthorization.test.ts src/server/collaborationServer.ts src/server/collaborationServer.test.ts
 git commit -m "feat: scope files and collaboration by workspace"
 ```
 
-## Task 10：删除隐式工作区路径和临时兼容代码
+## 任务10：删除隐式工作区路径和临时兼容代码
 
-**Files:**
-- Create: `src/server/workspacePayload.ts`
-- Modify: `src/server/workspaceImport.ts`
-- Modify: `src/server/workspaceImport.test.ts`
-- Modify: `src/server/postgresWorkspaceStore.ts`
-- Delete: `src/server/workspaceStore.ts`
-- Delete: `src/app/api/workspace/route.ts`
-- Delete: `src/app/api/workspace/route.test.ts`
-- Delete: `src/app/api/workspace/handlers.ts`
-- Delete: `src/app/api/workspace/members/route.ts`
-- Delete: `src/app/api/workspace/members/route.test.ts`
-- Delete: `src/app/api/workspace/members/handlers.ts`
-- Delete: `src/app/api/history/[documentId]/route.ts`
-- Delete: `src/app/api/history/[documentId]/handlers.ts`
-- Delete: `src/app/api/history/[documentId]/handlers.test.ts`
-- Delete: `src/features/editor/persistence/workspaceSyncRepository.ts`
-- Delete: `src/features/editor/persistence/workspaceSyncRepository.test.ts`
-- Delete: `src/features/editor/persistence/editorRepository.ts`
-- Delete: `src/features/editor/persistence/editorRepository.test.ts`
+**文件：**
+- 创建： `src/server/workspacePayload.ts`
+- 修改： `src/server/workspaceImport.ts`
+- 修改： `src/server/workspaceImport.test.ts`
+- 修改： `src/server/postgresWorkspaceStore.ts`
+- 删除： `src/server/workspaceStore.ts`
+- 删除： `src/app/api/workspace/route.ts`
+- 删除： `src/app/api/workspace/route.test.ts`
+- 删除： `src/app/api/workspace/handlers.ts`
+- 删除： `src/app/api/workspace/members/route.ts`
+- 删除： `src/app/api/workspace/members/route.test.ts`
+- 删除： `src/app/api/workspace/members/handlers.ts`
+- 删除： `src/app/api/history/[documentId]/route.ts`
+- 删除： `src/app/api/history/[documentId]/handlers.ts`
+- 删除： `src/app/api/history/[documentId]/handlers.test.ts`
+- 删除： `src/features/editor/persistence/workspaceSyncRepository.ts`
+- 删除： `src/features/editor/persistence/workspaceSyncRepository.test.ts`
+- 删除： `src/features/editor/persistence/editorRepository.ts`
+- 删除： `src/features/editor/persistence/editorRepository.test.ts`
 
-- [ ] **Step 1: 先添加隐式路径扫描验证**
+- [ ] **步骤1: 先添加隐式路径扫描验证**
 
-Run:
+运行：
 
 ```powershell
 rg -n -P '/api/workspace(?!s)' src e2e
@@ -1004,17 +1004,17 @@ rg -n -P '(?:"|localhost)/api/history/' src e2e
 rg -n 'workspaceSyncRepository|createFileWorkspaceStore' src scripts
 ```
 
-Expected: 当前命令列出旧路由、旧仓储和旧调用方，证明清理尚未完成。
+预期： 当前命令列出旧路由、旧仓储和旧调用方，证明清理尚未完成。
 
-- [ ] **Step 2: 拆出仅供导入使用的载荷校验**
+- [ ] **步骤2: 拆出仅供导入使用的载荷校验**
 
 把 `isWorkspacePayload` 及其私有结构校验移动到 `src/server/workspacePayload.ts`，更新 `workspaceImport.ts`。不移动文件读写 Store。
 
-- [ ] **Step 3: 删除旧路由与客户端仓储**
+- [ ] **步骤3: 删除旧路由与客户端仓储**
 
 删除文件清单中的旧目录。更新残余测试 import，所有生产调用只能使用新 repository 和 `/api/workspaces/:id/...`。
 
-- [ ] **Step 4: 删除 Postgres 临时 overload**
+- [ ] **步骤4: 删除 Postgres 临时 overload**
 
 最终方法全部要求显式 ID：
 
@@ -1027,9 +1027,9 @@ getDocumentAccess(userId: string, workspaceId: string, documentId: string)
 
 删除 optional `workspaceId`、`findSelectedAccess` 公共入口和任何从 `workspace_preferences` 推断写入目标的代码。偏好只用于目录初始选择。
 
-- [ ] **Step 5: 再次运行扫描、测试和类型检查**
+- [ ] **步骤5: 再次运行扫描、测试和类型检查**
 
-Run:
+运行：
 
 ```powershell
 rg -n -P '/api/workspace(?!s)' src e2e
@@ -1042,26 +1042,26 @@ pnpm test --run src/server/workspaceImport.test.ts src/server/postgresWorkspaceS
 pnpm exec tsc --noEmit
 ```
 
-Expected: 三个 `rg` 均无匹配；测试和类型检查 PASS。
+预期： 三个 `rg` 均无匹配；测试和类型检查 PASS。
 
-- [ ] **Step 6: 提交清理**
+- [ ] **步骤6: 提交清理**
 
 ```bash
 git add -A src/server src/app/api src/features/editor/persistence src/features/editor/components
 git commit -m "refactor: remove implicit workspace access"
 ```
 
-## Task 11：端到端验收、README 和 PRD
+## 任务11：端到端验收、README 和 PRD
 
-**Files:**
-- Create: `e2e/workspaces.spec.ts`
-- Modify: `e2e/support.ts`
-- Modify: `e2e/auth.spec.ts`
-- Modify: `e2e/collaboration.spec.ts`
-- Modify: `README.md`
-- Modify: `docs/prd.md`
+**文件：**
+- 创建： `e2e/workspaces.spec.ts`
+- 修改： `e2e/support.ts`
+- 修改： `e2e/auth.spec.ts`
+- 修改： `e2e/collaboration.spec.ts`
+- 修改： `README.md`
+- 修改： `docs/prd.md`
 
-- [ ] **Step 1: 写数据库多工作区 E2E**
+- [ ] **步骤1: 写数据库多工作区 E2E**
 
 测试流程：
 
@@ -1083,26 +1083,26 @@ await expect(page.getByRole("button", { name: /当前工作区 研发中心/ }))
 
 再覆盖 owner 重命名和当前文档按用户恢复。
 
-- [ ] **Step 2: 写本地迁移 E2E**
+- [ ] **步骤2: 写本地迁移 E2E**
 
 在 page 初始化脚本中创建 v1 IndexedDB `documents/workspace`，启动无数据库模式，断言“Nexus 工作区”和旧内容；创建第二工作区、切换、刷新后再次验证隔离。
 
-- [ ] **Step 3: 更新协作和认证 E2E helper**
+- [ ] **步骤3: 更新协作和认证 E2E helper**
 
 所有协作断言使用规范房间 `workspace:{workspaceId}:document:{documentId}`。登录/注册后等待 `/api/workspaces`，不等待已删除的 `/api/workspace`。保留 JWE 请求体无明文断言。
 
-- [ ] **Step 4: 运行 Compose E2E**
+- [ ] **步骤4: 运行 Compose E2E**
 
-Run:
+运行：
 
 ```bash
 docker compose up -d
 pnpm test:e2e
 ```
 
-Expected: 数据库、本地迁移、认证和双窗口协作全部 PASS；失败时保留 trace/screenshot。
+预期： 数据库、本地迁移、认证和双窗口协作全部 PASS；失败时保留 trace/screenshot。
 
-- [ ] **Step 5: 更新 README**
+- [ ] **步骤5: 更新 README**
 
 README 必须新增或更新：
 
@@ -1114,53 +1114,53 @@ README 必须新增或更新：
 - M6 第二批：删除、邮件邀请、成员生命周期、所有权转让、账号设置。
 - M7：真实分享和页面权限。
 
-- [ ] **Step 6: 更新 PRD**
+- [ ] **步骤6: 更新 PRD**
 
 把当前阶段更新为“M6 第一批多工作区基础已完成，第二批规划”；在当前实现状态中列出本批验收结果，但不把第二批或 M7 标为已实现。
 
-- [ ] **Step 7: 运行文档和差异检查**
+- [ ] **步骤7: 运行文档和差异检查**
 
-Run:
+运行：
 
 ```bash
 git diff --check
 rg -n "M6 第二批|workspace_document_preferences|/api/workspaces" README.md docs/prd.md
 ```
 
-Expected: 无空白错误；README 和 PRD 都含三类关键信息。
+预期： 无空白错误；README 和 PRD 都含三类关键信息。
 
-- [ ] **Step 8: 提交 E2E 和文档**
+- [ ] **步骤8: 提交 E2E 和文档**
 
 ```bash
 git add e2e README.md docs/prd.md
 git commit -m "docs: document multi-workspace foundation"
 ```
 
-## Task 12：最终验证与审查
+## 任务12：最终验证与审查
 
-**Files:**
-- Review: all files changed since plan start
+**文件：**
+- 审查：计划开始以来的所有变更文件
 
-- [ ] **Step 1: 运行完整单元和组件测试**
+- [ ] **步骤1: 运行完整单元和组件测试**
 
-Run: `pnpm test --run`
+运行： `pnpm test --run`
 
-Expected: 全部测试文件和测试用例 PASS，0 failures。
+预期： 全部测试文件和测试用例 PASS，0 failures。
 
-- [ ] **Step 2: 运行类型检查和生产构建**
+- [ ] **步骤2: 运行类型检查和生产构建**
 
-Run:
+运行：
 
 ```bash
 pnpm exec tsc --noEmit
 pnpm build
 ```
 
-Expected: 两条命令退出码为 0；Next.js 完成全部页面和 API route 构建。
+预期： 两条命令退出码为 0；Next.js 完成全部页面和 API route 构建。
 
-- [ ] **Step 3: 运行数据库和 Compose 冒烟**
+- [ ] **步骤3: 运行数据库和 Compose 冒烟**
 
-Run:
+运行：
 
 ```bash
 pnpm db:migrate
@@ -1169,17 +1169,17 @@ docker compose ps
 pnpm healthcheck http://localhost:3000/api/health
 ```
 
-Expected: 迁移幂等、数据库连接成功、Compose 服务 healthy、健康检查返回成功。
+预期： 迁移幂等、数据库连接成功、Compose 服务 healthy、健康检查返回成功。
 
-- [ ] **Step 4: 运行完整 Playwright**
+- [ ] **步骤4: 运行完整 Playwright**
 
-Run: `pnpm test:e2e`
+运行： `pnpm test:e2e`
 
-Expected: 认证、多工作区、本地迁移和协作套件全部 PASS。
+预期： 认证、多工作区、本地迁移和协作套件全部 PASS。
 
-- [ ] **Step 5: 执行租户和敏感信息审查**
+- [ ] **步骤5: 执行租户和敏感信息审查**
 
-Run:
+运行：
 
 ```powershell
 rg -n -P '/api/workspace(?!s)' src e2e README.md
@@ -1188,12 +1188,12 @@ git diff --check
 git status --short
 ```
 
-Expected: 无旧隐式路径、无被跟踪的真实 Secret、无空白错误；工作区只包含计划内修改。
+预期： 无旧隐式路径、无被跟踪的真实 Secret、无空白错误；工作区只包含计划内修改。
 
-- [ ] **Step 6: 对照设计逐条复核**
+- [ ] **步骤6: 对照设计逐条复核**
 
 核对 `docs/superpowers/specs/2026-07-15-m6-multi-workspace-foundation-design.md` 第 12 节每条验收标准。任何未满足条目必须恢复为未完成状态并补测试，不能只更新文档声明。
 
-- [ ] **Step 7: 处理最终验证发现的问题**
+- [ ] **步骤7: 处理最终验证发现的问题**
 
 如果最终验证发现问题，把负责该文件的 Task 恢复为未完成，按该 Task 的精确测试和 `git add` 清单完成修正及提交，然后从 Task 12 Step 1 重新运行全部验证。如果没有问题，不创建空提交。

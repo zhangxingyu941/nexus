@@ -1,23 +1,23 @@
-# Nexus Logo and Favicon Implementation Plan
+# Nexus Logo 与 Favicon 实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **致自动化代理：** 必需子技能：请使用 `superpowers:subagent-driven-development`（推荐）或 `superpowers:executing-plans` 逐任务实施本计划。步骤使用复选框（`- [ ]`）语法进行跟踪。
 
-**Goal:** Turn the existing black rounded `N` badge into one shared SVG logo used by all five in-app brand surfaces and the browser tab.
+**目标：** 将现有的黑色圆角 `N` 徽标转换为一个共享的 SVG Logo，供应用内所有五个品牌展示面和浏览器标签页使用。
 
-**Architecture:** Add one static SVG in `public` and a small decorative `BrandMark` component that references it. Existing screens keep their current dimensions through per-call Tailwind size classes, while Next.js metadata points the browser favicon to the same asset.
+**架构：** 在 `public` 中添加一个静态 SVG 和一个引用它的装饰性 `BrandMark` 组件。现有屏幕通过每次调用的 Tailwind 尺寸类保持当前尺寸，同时 Next.js metadata 将浏览器 favicon 指向同一资源。
 
-**Tech Stack:** Next.js 15 App Router metadata, React, TypeScript, SVG, Tailwind CSS, Vitest, Testing Library
+**技术栈：** Next.js 15 App Router metadata、React、TypeScript、SVG、Tailwind CSS、Vitest、Testing Library
 
 ---
 
-### Task 1: Add a failing brand-resource contract test
+### 任务 1：添加失败的品牌资源契约测试
 
-**Files:**
-- Create: `src/components/BrandMark.test.ts`
+**文件：**
+- 创建：`src/components/BrandMark.test.ts`
 
-- [ ] **Step 1: Write the failing static contract test**
+- [ ] **步骤 1：编写失败的静态契约测试**
 
-Create `src/components/BrandMark.test.ts`:
+创建 `src/components/BrandMark.test.ts`：
 
 ```ts
 import { existsSync, readFileSync } from "node:fs";
@@ -58,25 +58,25 @@ describe("Nexus brand mark", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and verify it fails for the missing shared resource**
+- [ ] **步骤 2：运行测试并验证因缺少共享资源而失败**
 
-Run:
+运行：
 
 ```powershell
 pnpm exec vitest run src/components/BrandMark.test.ts
 ```
 
-Expected: FAIL because `public/nexus-logo.svg`, metadata configuration, and five `BrandMark` usages do not exist yet.
+预期结果：FAIL，因为 `public/nexus-logo.svg`、metadata 配置和五个 `BrandMark` 用法尚不存在。
 
-### Task 2: Create the shared SVG and React brand component
+### 任务 2：创建共享 SVG 和 React 品牌组件
 
-**Files:**
-- Create: `public/nexus-logo.svg`
-- Create: `src/components/BrandMark.tsx`
+**文件：**
+- 创建：`public/nexus-logo.svg`
+- 创建：`src/components/BrandMark.tsx`
 
-- [ ] **Step 1: Create the geometric SVG asset**
+- [ ] **步骤 1：创建几何 SVG 资源**
 
-Create `public/nexus-logo.svg`:
+创建 `public/nexus-logo.svg`：
 
 ```svg
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" shape-rendering="geometricPrecision">
@@ -85,9 +85,9 @@ Create `public/nexus-logo.svg`:
 </svg>
 ```
 
-- [ ] **Step 2: Create the decorative shared component**
+- [ ] **步骤 2：创建装饰性共享组件**
 
-Create `src/components/BrandMark.tsx`:
+创建 `src/components/BrandMark.tsx`：
 
 ```tsx
 import { cn } from "@/lib/utils";
@@ -110,64 +110,64 @@ export function BrandMark({ className }: BrandMarkProps) {
 }
 ```
 
-### Task 3: Replace all in-app letter badges and configure the favicon
+### 任务 3：替换所有应用内字母徽标并配置 Favicon
 
-**Files:**
-- Modify: `src/app/AuthScreen.tsx:15`
-- Modify: `src/app/AuthScreen.tsx:228`
-- Modify: `src/app/AuthScreen.tsx:423`
-- Modify: `src/app/EditorApp.tsx:8`
-- Modify: `src/app/EditorApp.tsx:84`
-- Modify: `src/app/EditorApp.tsx:104`
-- Modify: `src/features/editor/components/WorkspaceSidebar.tsx:10`
-- Modify: `src/features/editor/components/WorkspaceSidebar.tsx:165`
-- Modify: `src/app/layout.tsx:5`
+**文件：**
+- 修改：`src/app/AuthScreen.tsx:15`
+- 修改：`src/app/AuthScreen.tsx:228`
+- 修改：`src/app/AuthScreen.tsx:423`
+- 修改：`src/app/EditorApp.tsx:8`
+- 修改：`src/app/EditorApp.tsx:84`
+- 修改：`src/app/EditorApp.tsx:104`
+- 修改：`src/features/editor/components/WorkspaceSidebar.tsx:10`
+- 修改：`src/features/editor/components/WorkspaceSidebar.tsx:165`
+- 修改：`src/app/layout.tsx:5`
 
-- [ ] **Step 1: Replace the login-page marks**
+- [ ] **步骤 1：替换登录页面的标记**
 
-Import the component in `src/app/AuthScreen.tsx`:
+在 `src/app/AuthScreen.tsx` 中导入组件：
 
 ```ts
 import { BrandMark } from "@/components/BrandMark";
 ```
 
-Replace the mobile mark with:
+将移动端标记替换为：
 
 ```tsx
 <BrandMark className="size-9" />
 ```
 
-Replace the desktop brand-panel mark with:
+将桌面端品牌面板标记替换为：
 
 ```tsx
 <BrandMark className="size-10 shadow-sm" />
 ```
 
-- [ ] **Step 2: Replace the loading and error-state marks**
+- [ ] **步骤 2：替换加载和错误状态标记**
 
-Import `BrandMark` in `src/app/EditorApp.tsx`, then replace the loading mark with:
+在 `src/app/EditorApp.tsx` 中导入 `BrandMark`，然后将加载标记替换为：
 
 ```tsx
 <BrandMark className="size-10 shadow-sm" />
 ```
 
-Replace the error-state mark with:
+将错误状态标记替换为：
 
 ```tsx
 <BrandMark className="size-10" />
 ```
 
-- [ ] **Step 3: Replace the workspace-sidebar mark**
+- [ ] **步骤 3：替换工作区侧边栏标记**
 
-Import `BrandMark` in `src/features/editor/components/WorkspaceSidebar.tsx`, then replace the existing three-line `N` div with:
+在 `src/features/editor/components/WorkspaceSidebar.tsx` 中导入 `BrandMark`，然后将现有的三行 `N` div 替换为：
 
 ```tsx
 <BrandMark className="size-8 shadow-sm" />
 ```
 
-- [ ] **Step 4: Point Next.js metadata to the shared SVG**
+- [ ] **步骤 4：将 Next.js metadata 指向共享 SVG**
 
-Update `src/app/layout.tsx`:
+更新 `src/app/layout.tsx`：
 
 ```ts
 export const metadata: Metadata = {
@@ -179,64 +179,64 @@ export const metadata: Metadata = {
 };
 ```
 
-- [ ] **Step 5: Run the contract test and verify it passes**
+- [ ] **步骤 5：运行契约测试并验证通过**
 
-Run:
+运行：
 
 ```powershell
 pnpm exec vitest run src/components/BrandMark.test.ts
 ```
 
-Expected: PASS with 2 tests.
+预期结果：PASS，包含 2 个测试。
 
-### Task 4: Run regression and visual verification
+### 任务 4：运行回归和视觉验证
 
-**Files:**
-- Test: `src/app/EditorApp.test.tsx`
-- Test: `src/features/editor/components/EditorPage.test.tsx`
+**文件：**
+- 测试：`src/app/EditorApp.test.tsx`
+- 测试：`src/features/editor/components/EditorPage.test.tsx`
 
-- [ ] **Step 1: Run focused component regressions**
+- [ ] **步骤 1：运行聚焦组件回归测试**
 
-Run:
+运行：
 
 ```powershell
 pnpm exec vitest run src/components/BrandMark.test.ts src/app/EditorApp.test.tsx src/features/editor/components/EditorPage.test.tsx
 ```
 
-Expected: all selected tests PASS with no warnings caused by `BrandMark`.
+预期结果：所有选定测试均 PASS，且无由 `BrandMark` 引起的警告。
 
-- [ ] **Step 2: Run TypeScript validation**
+- [ ] **步骤 2：运行 TypeScript 验证**
 
-Run:
+运行：
 
 ```powershell
 pnpm exec tsc --noEmit
 ```
 
-Expected: exit code `0` with no TypeScript errors.
+预期结果：退出码为 `0`，无 TypeScript 错误。
 
-- [ ] **Step 3: Start the development server and verify in the browser**
+- [ ] **步骤 3：启动开发服务器并在浏览器中验证**
 
-Run `pnpm dev` on an available port. Use the in-app browser to inspect a desktop viewport and a mobile viewport. Confirm:
+在可用端口上运行 `pnpm dev`。使用应用内浏览器检查桌面视口和移动视口。确认：
 
-- `/nexus-logo.svg` renders a nonblank 32px black rounded square with a white geometric `N`.
-- the login-page desktop and mobile marks use the same asset without stretching or overlap.
-- an authenticated/local workspace sidebar uses the 32px mark without changing header alignment.
-- the document head includes an icon link resolving to `/nexus-logo.svg`.
+- `/nexus-logo.svg` 渲染一个非空白的 32px 黑色圆角方形，内含白色几何 `N`。
+- 登录页面的桌面和移动端标记使用相同资源，无拉伸或重叠。
+- 已认证/本地工作区侧边栏使用 32px 标记，不改变头部对齐。
+- 文档头部包含指向 `/nexus-logo.svg` 的图标链接。
 
-- [ ] **Step 4: Run the full test suite**
+- [ ] **步骤 4：运行完整测试套件**
 
-Run:
+运行：
 
 ```powershell
 pnpm exec vitest run
 ```
 
-Expected: all test files PASS.
+预期结果：所有测试文件 PASS。
 
-- [ ] **Step 5: Inspect and commit only Logo implementation files**
+- [ ] **步骤 5：检查并仅提交 Logo 实现文件**
 
-Run:
+运行：
 
 ```powershell
 git diff --check
@@ -244,4 +244,4 @@ git add public/nexus-logo.svg src/components/BrandMark.tsx src/components/BrandM
 git commit -m "feat: add shared Nexus logo and favicon"
 ```
 
-Expected: the commit excludes the existing PRD, credential-key, package, lockfile, `.gitignore`, and `src/shared` changes.
+预期结果：提交排除了现有的 PRD、credential-key、package、lockfile、`.gitignore` 和 `src/shared` 更改。

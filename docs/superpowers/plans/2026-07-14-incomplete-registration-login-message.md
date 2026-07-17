@@ -1,25 +1,25 @@
-# Incomplete Registration Login Message Implementation Plan
+# 未完成注册登录消息实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **致自动化代理：** 必需子技能：请使用 `superpowers:subagent-driven-development`（推荐）或 `superpowers:executing-plans` 逐任务实施本计划。步骤使用复选框（`- [ ]`）语法进行跟踪。
 
-**Goal:** Replace the unactionable password-login message for an unverified account with “该邮箱尚未完成注册，请先完成注册再登录” while preserving the existing error code, HTTP status, and authentication flow.
+**目标：** 将未验证账号的不可操作密码登录消息替换为"该邮箱尚未完成注册，请先完成注册再登录"，同时保留现有的错误码、HTTP 状态和认证流程。
 
-**Architecture:** Keep `email_not_verified` as the storage-layer domain state and retain its existing API mapping to HTTP `403`. Change only the centralized user-visible message, with storage integration tests proving both new-registration and upgraded-legacy-account paths return the new copy.
+**架构：** 保留 `email_not_verified` 作为存储层领域状态，并保留其现有的 HTTP `403` API 映射。仅更改集中化的用户可见消息，并通过存储集成测试证明新注册和遗留账号升级路径均返回新文案。
 
-**Tech Stack:** TypeScript, Vitest, pg-mem, Next.js authentication routes
+**技术栈：** TypeScript、Vitest、pg-mem、Next.js 认证路由
 
 ---
 
-### Task 1: Update the incomplete-registration login message
+### 任务 1：更新未完成注册登录消息
 
-**Files:**
-- Modify: `src/server/postgresAuthStore.test.ts:204`
-- Modify: `src/server/postgresAuthStore.test.ts:413`
-- Modify: `src/server/authErrors.ts:30`
+**文件：**
+- 修改：`src/server/postgresAuthStore.test.ts:204`
+- 修改：`src/server/postgresAuthStore.test.ts:413`
+- 修改：`src/server/authErrors.ts:30`
 
-- [ ] **Step 1: Change the two integration-test expectations to the approved message**
+- [ ] **步骤 1：将两个集成测试期望更改为已批准的消息**
 
-In `src/server/postgresAuthStore.test.ts`, replace both existing unverified-login assertions with:
+在 `src/server/postgresAuthStore.test.ts` 中，将现有的两个未验证登录断言替换为：
 
 ```ts
 await expect(authStore.loginWithPassword({
@@ -28,7 +28,7 @@ await expect(authStore.loginWithPassword({
 })).rejects.toThrow("该邮箱尚未完成注册，请先完成注册再登录");
 ```
 
-and:
+以及：
 
 ```ts
 await expect(authStore.loginWithPassword({
@@ -37,59 +37,59 @@ await expect(authStore.loginWithPassword({
 })).rejects.toThrow("该邮箱尚未完成注册，请先完成注册再登录");
 ```
 
-- [ ] **Step 2: Run the focused tests and verify the new expectations fail**
+- [ ] **步骤 2：运行聚焦测试并验证新期望失败**
 
-Run:
+运行：
 
 ```powershell
 pnpm exec vitest run src/server/postgresAuthStore.test.ts -t "upgrades a credentialless legacy account|verifies email once"
 ```
 
-Expected: FAIL in both selected tests because the implementation still returns `邮箱尚未验证，请先输入邮件中的验证码`.
+预期结果：两个选定测试均 FAIL，因为实现仍然返回 `邮箱尚未验证，请先输入邮件中的验证码`。
 
-- [ ] **Step 3: Make the minimal centralized message change**
+- [ ] **步骤 3：进行最小化的集中消息更改**
 
-In `src/server/authErrors.ts`, change only the `email_not_verified` value:
+在 `src/server/authErrors.ts` 中，仅更改 `email_not_verified` 的值：
 
 ```ts
 email_not_verified: "该邮箱尚未完成注册，请先完成注册再登录",
 ```
 
-Do not change `AuthErrorCode`, `AUTH_ERROR_STATUS`, `loginWithPassword`, or the frontend request handling.
+不要更改 `AuthErrorCode`、`AUTH_ERROR_STATUS`、`loginWithPassword` 或前端请求处理。
 
-- [ ] **Step 4: Run the focused tests and verify they pass**
+- [ ] **步骤 4：运行聚焦测试并验证通过**
 
-Run:
+运行：
 
 ```powershell
 pnpm exec vitest run src/server/postgresAuthStore.test.ts -t "upgrades a credentialless legacy account|verifies email once"
 ```
 
-Expected: PASS for both selected tests.
+预期结果：两个选定测试均 PASS。
 
-- [ ] **Step 5: Run authentication regression tests**
+- [ ] **步骤 5：运行认证回归测试**
 
-Run:
+运行：
 
 ```powershell
 pnpm exec vitest run src/server/postgresAuthStore.test.ts src/app/api/auth/session/route.test.ts src/app/EditorApp.test.tsx
 ```
 
-Expected: all tests PASS. This confirms missing emails still use `email_not_registered`, existing session-route behavior remains intact, and the frontend still renders server business errors. The unchanged `src/app/api/auth/authErrorResponse.ts` mapping continues to return HTTP `403` for `email_not_verified`.
+预期结果：所有测试 PASS。这确认了缺失邮箱仍然使用 `email_not_registered`，现有会话路由行为保持不变，且前端仍然渲染服务器业务错误。未更改的 `src/app/api/auth/authErrorResponse.ts` 映射继续为 `email_not_verified` 返回 HTTP `403`。
 
-- [ ] **Step 6: Run the TypeScript check**
+- [ ] **步骤 6：运行 TypeScript 检查**
 
-Run:
+运行：
 
 ```powershell
 pnpm exec tsc --noEmit
 ```
 
-Expected: exit code `0` with no TypeScript errors.
+预期结果：退出码为 `0`，无 TypeScript 错误。
 
-- [ ] **Step 7: Check and commit only the implementation files**
+- [ ] **步骤 7：检查并仅提交实现文件**
 
-Run:
+运行：
 
 ```powershell
 git diff --check
@@ -97,4 +97,4 @@ git add src/server/authErrors.ts src/server/postgresAuthStore.test.ts
 git commit -m "fix: clarify incomplete registration login message"
 ```
 
-Expected: `git diff --check` produces no output, and the commit contains only the centralized message and its two test expectations. Leave the existing `docs/prd.md` worktree change untouched.
+预期结果：`git diff --check` 不产生输出，且提交仅包含集中消息及其两个测试期望。不触碰现有的 `docs/prd.md` 工作树更改。
