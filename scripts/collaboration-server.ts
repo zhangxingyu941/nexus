@@ -9,6 +9,7 @@ import {
 } from "../src/server/collaborationPubSub";
 import { createCollaborationServer } from "../src/server/collaborationServer";
 import { createDatabasePool } from "../src/server/database/pool";
+import { PostgresWorkspaceAccessListener } from "../src/server/workspaceAccessNotifications";
 import { PostgresYjsPersistence } from "../src/server/yjsPersistence";
 import type { Awareness } from "y-protocols/awareness";
 
@@ -46,6 +47,8 @@ if (!Number.isInteger(port) || port <= 0 || port > 65535) {
 const pool = createDatabasePool();
 const { authStore, workspaceStore } = createPostgresServices(pool);
 const collaborationPubSub = createRedisCollaborationPubSub();
+const accessInvalidations = new PostgresWorkspaceAccessListener(pool);
+await accessInvalidations.start();
 const yjsPersistence = new PostgresYjsPersistence(pool, {
   compactionByteThreshold: Number(process.env.COLLAB_YJS_COMPACTION_BYTES ?? 1024 * 1024),
   compactionUpdateThreshold: Number(process.env.COLLAB_YJS_COMPACTION_UPDATES ?? 100),
@@ -57,6 +60,7 @@ setPersistence({
   writeState: (roomName, document) => yjsPersistence.writeState(roomName, document),
 });
 const collaborationServer = createCollaborationServer({
+  accessInvalidations,
   allowedOrigins,
   authStore,
   flushRooms: () => yjsPersistence.flushAll(),
@@ -76,6 +80,7 @@ async function shutdown() {
   }
   shuttingDown = true;
   await collaborationServer.close();
+  await accessInvalidations.stop();
   await collaborationPubSub?.close();
   await pool.end();
 }

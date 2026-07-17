@@ -76,4 +76,8 @@ const DialogDescription = forwardRef<
   return <DialogPrimitive.Description className={cn("text-sm text-muted-foreground", className)} ref={ref} {...props} />;
 });
 
-export { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger };
+function DialogFooter({ className, ...props }: ComponentProps<"div">) {
+  return <div className={cn("flex flex-col-reverse sm:flex-row sm:justify-end sm:gap-2", className)} {...props} />;
+}
+
+export { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger };

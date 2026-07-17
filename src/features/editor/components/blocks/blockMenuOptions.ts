@@ -1,22 +1,7 @@
-import { Columns3, Code2, FileText, Heading1, ImageIcon, ListTodo, Quote, Table2, Type } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
-import type { BlockStatus, BlockType } from "../../model/block";
+import { EDITOR_COMMANDS } from "../../commands/editorCommands";
+import type { BlockStatus } from "../../model/block";
 
-export const SLASH_COMMANDS: Array<{
-  icon: LucideIcon;
-  label: string;
-  type: BlockType;
-}> = [
-  { icon: Type, label: "段落", type: "paragraph" },
-  { icon: Heading1, label: "标题", type: "heading" },
-  { icon: ListTodo, label: "待办", type: "todo" },
-  { icon: Quote, label: "引用", type: "quote" },
-  { icon: Code2, label: "代码", type: "code" },
-  { icon: ImageIcon, label: "图片", type: "image" },
-  { icon: FileText, label: "文件", type: "file" },
-  { icon: Table2, label: "表格", type: "table" },
-  { icon: Columns3, label: "看板", type: "kanban" },
-];
+export const SLASH_COMMANDS = EDITOR_COMMANDS;
 
 export const STATUS_OPTIONS: Array<{ label: string; value: BlockStatus }> = [
   { label: "未设置", value: "unset" },

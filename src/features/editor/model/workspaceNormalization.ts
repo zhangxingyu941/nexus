@@ -1,4 +1,4 @@
-import type { Block, BlockComment, BlockData, BlockType, EditorDocument, EditorWorkspace } from "./block";
+import type { Block, BlockComment, BlockData, BlockType, EditorDocument, EditorWorkspace, HeadingLevel } from "./block";
 import { createDefaultBlockData, createDefaultDocument } from "./documentOperations";
 import { createDefaultWorkspace } from "./workspaceDocuments";
 import type { StoredBlock, StoredBlockComment, StoredDocument, StoredWorkspace } from "./workspaceTypes";
@@ -10,6 +10,10 @@ function isBlockType(type: unknown): type is Block["type"] {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizeHeadingLevel(value: unknown): HeadingLevel {
+  return value === 2 || value === 3 || value === 4 || value === 5 || value === 6 ? value : 1;
 }
 
 function normalizeBlockData(type: BlockType, data: unknown): BlockData | null {
@@ -88,6 +92,7 @@ function normalizeBlock(block: StoredBlock, fallbackNow: number, fallbackIndex: 
   return {
     id: block.id ?? `block-${fallbackNow}-${fallbackIndex}`,
     type,
+    headingLevel: normalizeHeadingLevel(block.headingLevel),
     content: block.content ?? "",
     data: normalizeBlockData(type, block.data),
     checked: block.checked ?? false,

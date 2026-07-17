@@ -5,6 +5,7 @@ import type {
   BlockComment,
   EditorDocument,
   EditorWorkspace,
+  HeadingLevel,
 } from "../features/editor/model/block";
 import { createDefaultWorkspace } from "../features/editor/model/workspaceOperations";
 import {
@@ -333,7 +334,7 @@ export class PostgresWorkspaceStore {
     }
 
     const blockResult = await this.pool.query(
-      `SELECT blocks.id, blocks.document_id, blocks.type, blocks.content, blocks.data, blocks.checked,
+      `SELECT blocks.id, blocks.document_id, blocks.type, blocks.heading_level, blocks.content, blocks.data, blocks.checked,
               blocks.assignee, blocks.due_date, blocks.status, blocks.parent_id,
               blocks.created_at, blocks.updated_at
        FROM editor_blocks blocks
@@ -419,6 +420,7 @@ export class PostgresWorkspaceStore {
             ? (row.data as Block["data"])
             : null,
         dueDate: String(row.due_date),
+        headingLevel: Number(row.heading_level) as HeadingLevel,
         id: blockId,
         parentId: row.parent_id === null ? null : String(row.parent_id),
         status: row.status as Block["status"],
@@ -735,14 +737,15 @@ export class PostgresWorkspaceStore {
     for (const [blockPosition, block] of document.blocks.entries()) {
       await client.query(
         `INSERT INTO editor_blocks
-         (workspace_id, id, document_id, type, content, data, checked, assignee, due_date, status,
-          parent_id, position, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13, $14)`,
+         (workspace_id, id, document_id, type, heading_level, content, data, checked, assignee, due_date,
+          status, parent_id, position, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15)`,
         [
           workspaceId,
           block.id,
           document.id,
           block.type,
+          block.headingLevel,
           block.content,
           block.data ? JSON.stringify(block.data) : null,
           block.checked,

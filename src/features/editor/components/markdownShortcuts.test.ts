@@ -3,10 +3,12 @@ import { isSlashCommandTrigger, resolveMarkdownShortcut } from "./markdownShortc
 
 describe("markdown shortcuts", () => {
   it("resolves complete markdown triggers only after the trailing space", () => {
-    expect(resolveMarkdownShortcut("# ")).toBe("heading");
-    expect(resolveMarkdownShortcut("> ")).toBe("quote");
-    expect(resolveMarkdownShortcut("[] ")).toBe("todo");
-    expect(resolveMarkdownShortcut("``` ")).toBe("code");
+    expect(resolveMarkdownShortcut("# ")).toEqual({ headingLevel: 1, type: "heading" });
+    expect(resolveMarkdownShortcut("## ")).toEqual({ headingLevel: 2, type: "heading" });
+    expect(resolveMarkdownShortcut("###### ")).toEqual({ headingLevel: 6, type: "heading" });
+    expect(resolveMarkdownShortcut("> ")).toEqual({ type: "quote" });
+    expect(resolveMarkdownShortcut("[] ")).toEqual({ type: "todo" });
+    expect(resolveMarkdownShortcut("``` ")).toEqual({ type: "code" });
     expect(resolveMarkdownShortcut("#")).toBeNull();
   });
 

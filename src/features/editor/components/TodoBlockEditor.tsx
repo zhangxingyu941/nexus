@@ -1,8 +1,12 @@
-import { useLayoutEffect, useRef } from "react";
+import type { CollaborationDocument } from "../collaboration/collaborationTypes";
+import type { BlockType, HeadingLevel } from "../model/block";
+import type { EditorPopoverAnchor } from "./commands/EditorCommandPopover";
+import { RichTextBlockEditor } from "./RichTextBlockEditor";
 
 interface TodoBlockEditorProps {
   blockId: string;
   checked: boolean;
+  collaborationDocument: CollaborationDocument | null;
   content: string;
   focusRequest: boolean;
   isReadOnly: boolean;
@@ -10,12 +14,14 @@ interface TodoBlockEditorProps {
   onChange: (content: string) => void;
   onEnter: () => void;
   onFocused: () => void;
-  onOpenCommandMenu: () => void;
+  onMarkdownShortcut: (type: BlockType, headingLevel?: HeadingLevel) => void;
+  onOpenCommandMenu: (anchor: EditorPopoverAnchor) => void;
 }
 
 export function TodoBlockEditor({
   blockId,
   checked,
+  collaborationDocument,
   content,
   focusRequest,
   isReadOnly,
@@ -23,19 +29,9 @@ export function TodoBlockEditor({
   onChange,
   onEnter,
   onFocused,
+  onMarkdownShortcut,
   onOpenCommandMenu,
 }: TodoBlockEditorProps) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
-
-  useLayoutEffect(() => {
-    if (!focusRequest || isReadOnly) {
-      return;
-    }
-
-    inputRef.current?.focus();
-    onFocused();
-  }, [focusRequest, isReadOnly, onFocused]);
-
   return (
     <div className="todo-editor">
       <input
@@ -46,25 +42,19 @@ export function TodoBlockEditor({
         onChange={onToggle}
         type="checkbox"
       />
-      <input
-        aria-label="待办内容"
-        className="todo-input"
-        data-testid={`block-editor-${blockId}`}
-        disabled={isReadOnly}
-        onChange={(event) => onChange(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "/") {
-            event.preventDefault();
-            onOpenCommandMenu();
-          }
-
-          if (event.key === "Enter") {
-            event.preventDefault();
-            onEnter();
-          }
-        }}
-        ref={inputRef}
-        value={content}
+      <RichTextBlockEditor
+        ariaLabel="待办内容"
+        blockId={blockId}
+        collaborationDocument={collaborationDocument}
+        content={content}
+        focusRequest={focusRequest}
+        isReadOnly={isReadOnly}
+        onChange={onChange}
+        onEnter={onEnter}
+        onFocused={onFocused}
+        onMarkdownShortcut={onMarkdownShortcut}
+        onOpenCommandMenu={onOpenCommandMenu}
+        variant="todo"
       />
     </div>
   );

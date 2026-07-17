@@ -147,6 +147,7 @@ function hasSameBlockStructure(left: DocumentStructureBlock, right: DocumentStru
     left.createdAt === right.createdAt &&
     JSON.stringify(left.data) === JSON.stringify(right.data) &&
     left.dueDate === right.dueDate &&
+    left.headingLevel === right.headingLevel &&
     left.id === right.id &&
     left.parentId === right.parentId &&
     left.status === right.status &&

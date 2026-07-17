@@ -2,7 +2,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { RefObject } from "react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CollaborationDocument } from "../collaboration/collaborationTypes";
-import type { Block, BlockData, BlockStatus, BlockType } from "../model/block";
+import type { Block, BlockData, BlockStatus, BlockType, HeadingLevel } from "../model/block";
 import { BlockRow } from "./BlockRow";
 
 interface BlockListProps {
@@ -17,7 +17,7 @@ interface BlockListProps {
   onChangeBlockStatus: (blockId: string, status: BlockStatus) => void;
   onChangeBlockData: (blockId: string, data: BlockData | null) => void;
   onChangeContent: (blockId: string, content: string) => void;
-  onChangeType: (blockId: string, type: BlockType) => void;
+  onChangeType: (blockId: string, type: BlockType, headingLevel?: HeadingLevel) => void;
   onDelete: (blockId: string) => void;
   onFocusedBlock: () => void;
   onIndent: (blockId: string) => void;

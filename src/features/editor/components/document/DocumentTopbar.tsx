@@ -1,4 +1,4 @@
-import { History, LogOut, Mail, Menu, MessageSquare, PanelRight, Share2 } from "lucide-react";
+import { History, Keyboard, LogOut, Mail, Menu, MessageSquare, PanelRight, Share2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -15,6 +15,7 @@ interface DocumentTopbarProps {
   isHistoryOpen: boolean;
   isMembersOpen: boolean;
   isShareOpen: boolean;
+  isShortcutsOpen: boolean;
   isWorkspaceNavigationOpen: boolean;
   inviteCount: number;
   onOpenInvites?: () => void;
@@ -29,6 +30,7 @@ interface DocumentTopbarProps {
   onToggleHistory: () => void;
   onToggleMembers: () => void;
   onToggleShare: () => void;
+  onToggleShortcuts: () => void;
   onToggleWorkspaceNavigation: () => void;
 }
 
@@ -40,6 +42,7 @@ export function DocumentTopbar({
   isHistoryOpen,
   isMembersOpen,
   isShareOpen,
+  isShortcutsOpen,
   isWorkspaceNavigationOpen,
   inviteCount,
   onOpenInvites,
@@ -54,6 +57,7 @@ export function DocumentTopbar({
   onToggleHistory,
   onToggleMembers,
   onToggleShare,
+  onToggleShortcuts,
   onToggleWorkspaceNavigation,
 }: DocumentTopbarProps) {
   const collaborationVariant = collaborationState === "connected"
@@ -118,6 +122,23 @@ export function DocumentTopbar({
               <TooltipContent>工作区邀请</TooltipContent>
             </Tooltip>
           ) : null}
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                aria-expanded={isShortcutsOpen}
+                aria-label="快捷键"
+                className="hidden size-8 sm:inline-flex"
+                onClick={onToggleShortcuts}
+                size="icon"
+                type="button"
+                variant={isShortcutsOpen ? "secondary" : "ghost"}
+              >
+                <Keyboard aria-hidden="true" className="size-[17px]" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>快捷键</TooltipContent>
+          </Tooltip>
 
           <Tooltip>
             <TooltipTrigger asChild>

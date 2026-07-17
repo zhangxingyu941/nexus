@@ -1,5 +1,6 @@
 import type { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { changeBlockType } from "../features/editor/model/documentOperations";
 import { createDefaultWorkspace, createWorkspaceDocument } from "../features/editor/model/workspaceOperations";
 import { createPgMemPool } from "../test/pgMemDatabase";
 import { migrateDatabase } from "./database/migrations";
@@ -45,6 +46,30 @@ describe("PostgresWorkspaceStore", () => {
     });
     expect(await countRows(pool, "editor_documents")).toBe(1);
     expect(await countRows(pool, "editor_blocks")).toBe(1);
+  });
+
+  it("round-trips heading levels through PostgreSQL", async () => {
+    await seedUser(pool, "owner-1", "owner@example.com", "林夏");
+    await store.ensurePersonalWorkspace("owner-1", "林夏的工作区");
+    const workspace = createDefaultWorkspace(1000);
+    const document = workspace.documents[0];
+    const headingDocument = changeBlockType(document, document.blocks[0].id, "heading", 2000, 4);
+
+    await store.saveWorkspace("owner-1", "workspace-test", {
+      ...workspace,
+      documents: [headingDocument],
+      updatedAt: 2000,
+    });
+
+    await expect(store.loadWorkspace("owner-1", "workspace-test")).resolves.toMatchObject({
+      content: {
+        documents: [
+          {
+            blocks: [expect.objectContaining({ headingLevel: 4, type: "heading" })],
+          },
+        ],
+      },
+    });
   });
 
   it("lists every accessible workspace with the selected workspace first", async () => {

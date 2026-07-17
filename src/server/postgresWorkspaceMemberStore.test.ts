@@ -110,6 +110,76 @@ describe("PostgresWorkspaceMemberStore", () => {
     )).resolves.toMatchObject({ rows: [{ role: "viewer" }] });
   });
 
+  it("transfers ownership and optionally demotes the actor", async () => {
+    await expect(store.transferOwnership({
+      actorUserId: "owner-1",
+      retainOwnerRole: false,
+      targetUserId: "editor-1",
+      workspaceId: "workspace-1",
+    })).resolves.toBeUndefined();
+
+    await expect(pool.query(
+      `SELECT user_id, role
+       FROM workspace_members
+       WHERE workspace_id = $1 AND user_id IN ($2, $3)
+       ORDER BY user_id`,
+      ["workspace-1", "editor-1", "owner-1"],
+    )).resolves.toMatchObject({
+      rows: [
+        { role: "owner", user_id: "editor-1" },
+        { role: "editor", user_id: "owner-1" },
+      ],
+    });
+    await expect(pool.query(
+      `SELECT actor_user_id, event_type, metadata, target_id, target_type
+       FROM workspace_audit_events
+       WHERE workspace_id = $1`,
+      ["workspace-1"],
+    )).resolves.toMatchObject({
+      rows: [{
+        actor_user_id: "owner-1",
+        event_type: "workspace_ownership_transferred",
+        metadata: { previousRole: "editor", retainOwnerRole: false },
+        target_id: "editor-1",
+        target_type: "workspace_member",
+      }],
+    });
+
+    await expect(store.transferOwnership({
+      actorUserId: "editor-1",
+      retainOwnerRole: true,
+      targetUserId: "member-1",
+      workspaceId: "workspace-1",
+    })).resolves.toBeUndefined();
+    await expect(pool.query(
+      `SELECT user_id, role
+       FROM workspace_members
+       WHERE workspace_id = $1 AND user_id IN ($2, $3)
+       ORDER BY user_id`,
+      ["workspace-1", "editor-1", "member-1"],
+    )).resolves.toMatchObject({
+      rows: [
+        { role: "owner", user_id: "editor-1" },
+        { role: "owner", user_id: "member-1" },
+      ],
+    });
+  });
+
+  it("rejects ownership transfer targets that are missing or already owners", async () => {
+    await expect(store.transferOwnership({
+      actorUserId: "owner-1",
+      retainOwnerRole: true,
+      targetUserId: "missing-member",
+      workspaceId: "workspace-1",
+    })).rejects.toMatchObject({ code: "ownership_target_invalid" });
+    await expect(store.transferOwnership({
+      actorUserId: "owner-1",
+      retainOwnerRole: true,
+      targetUserId: "owner-1",
+      workspaceId: "workspace-1",
+    })).rejects.toMatchObject({ code: "ownership_target_invalid" });
+  });
+
   it("removes membership, document preferences, and selects the earliest fallback", async () => {
     await seedWorkspace(pool, "workspace-2", "Later", "outsider-1", 3000);
     await seedMembership(pool, "workspace-2", "member-1", "viewer", 3100);

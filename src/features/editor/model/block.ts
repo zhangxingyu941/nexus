@@ -9,6 +9,8 @@ export type BlockType =
   | "table"
   | "kanban";
 
+export type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
+
 export type BlockStatus = "unset" | "todo" | "in-progress" | "review" | "done";
 
 export interface BlockComment {
@@ -50,6 +52,7 @@ export type BlockData = AttachmentBlockData | TableBlockData | KanbanBlockData;
 export interface Block {
   id: string;
   type: BlockType;
+  headingLevel: HeadingLevel;
   content: string;
   data: BlockData | null;
   checked: boolean;

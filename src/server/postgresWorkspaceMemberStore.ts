@@ -160,6 +160,59 @@ export class PostgresWorkspaceMemberStore {
     }
   }
 
+  async transferOwnership(input: {
+    actorUserId: string;
+    retainOwnerRole: boolean;
+    targetUserId: string;
+    workspaceId: string;
+  }): Promise<void> {
+    const client = await this.pool.connect();
+
+    try {
+      await client.query("BEGIN");
+      const workspace = await this.lockWorkspace(client, input.workspaceId);
+      await this.requireOwner(client, input.actorUserId, workspace.id);
+      const targetRole = await this.requireTransferTarget(
+        client,
+        input.targetUserId,
+        workspace.id,
+      );
+
+      await client.query(
+        `UPDATE workspace_members
+         SET role = 'owner'
+         WHERE workspace_id = $1 AND user_id = $2`,
+        [workspace.id, input.targetUserId],
+      );
+      if (!input.retainOwnerRole) {
+        await client.query(
+          `UPDATE workspace_members
+           SET role = 'editor'
+           WHERE workspace_id = $1 AND user_id = $2`,
+          [workspace.id, input.actorUserId],
+        );
+      }
+      await this.auditStore.write(client, {
+        actorUserId: input.actorUserId,
+        eventType: "workspace_ownership_transferred",
+        metadata: {
+          previousRole: targetRole,
+          retainOwnerRole: input.retainOwnerRole,
+        },
+        targetId: input.targetUserId,
+        targetType: "workspace_member",
+        workspaceId: workspace.id,
+        workspaceName: workspace.name,
+      });
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async leaveWorkspace(input: {
     userId: string;
     userDisplayName: string;
@@ -325,6 +378,28 @@ export class PostgresWorkspaceMemberStore {
       throw new WorkspaceDomainError("member_not_found", "Workspace member not found");
     }
     return role as WorkspaceRole;
+  }
+
+  private async requireTransferTarget(
+    client: PoolClient,
+    targetUserId: string,
+    workspaceId: string,
+  ): Promise<Exclude<WorkspaceRole, "owner">> {
+    const result = await client.query(
+      `SELECT role
+       FROM workspace_members
+       WHERE workspace_id = $1 AND user_id = $2
+       LIMIT 1`,
+      [workspaceId, targetUserId],
+    );
+    const role = result.rows[0]?.role;
+    if (role !== "editor" && role !== "viewer") {
+      throw new WorkspaceDomainError(
+        "ownership_target_invalid",
+        "Ownership can only be transferred to a non-owner workspace member",
+      );
+    }
+    return role;
   }
 
   private async protectLastOwner(

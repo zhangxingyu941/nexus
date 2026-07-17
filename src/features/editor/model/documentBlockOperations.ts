@@ -1,4 +1,4 @@
-import type { Block, BlockData, BlockStatus, BlockType, EditorDocument, MoveDirection } from "./block";
+import type { Block, BlockData, BlockStatus, BlockType, EditorDocument, HeadingLevel, MoveDirection } from "./block";
 
 export function createBlockId(now: number) {
   return `block-${now}`;
@@ -36,6 +36,7 @@ export function createBlock(type: BlockType, now: number, content = "", blockId 
   return {
     id: blockId,
     type,
+    headingLevel: 1,
     content,
     data: createDefaultBlockData(type),
     checked: false,
@@ -259,6 +260,7 @@ export function changeBlockType(
   blockId: string,
   type: BlockType,
   now = Date.now(),
+  headingLevel: HeadingLevel = 1,
 ): EditorDocument {
   let changed = false;
   const blocks = document.blocks.map((block) => {
@@ -270,6 +272,7 @@ export function changeBlockType(
     return {
       ...block,
       type,
+      headingLevel: type === "heading" ? headingLevel : 1,
       checked: type === "todo" ? block.checked : false,
       data: block.type === type ? block.data : createDefaultBlockData(type),
       updatedAt: now,

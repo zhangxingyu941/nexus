@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  leaveWorkspace,
   loadWorkspaceMembers,
+  removeWorkspaceMember,
+  updateWorkspaceMemberRole,
 } from "./workspaceMemberRepository";
 
 describe("workspace member repository", () => {
@@ -25,6 +28,35 @@ describe("workspace member repository", () => {
     expect(fetchSpy).toHaveBeenCalledWith(
       "/api/workspaces/workspace%2Fa/members",
       expect.objectContaining({ method: "GET" }),
+    );
+  });
+
+  it("uses PATCH, DELETE, and the dedicated leave route", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(null, { status: 204 }),
+    );
+
+    await updateWorkspaceMemberRole("workspace/a", "user/b", "viewer");
+    await removeWorkspaceMember("workspace/a", "user/b");
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ selectedWorkspaceId: "ws-1" }), { status: 200 }),
+    );
+    await leaveWorkspace("workspace/a");
+
+    expect(fetchSpy).toHaveBeenNthCalledWith(
+      1,
+      "/api/workspaces/workspace%2Fa/members/user%2Fb",
+      expect.objectContaining({ method: "PATCH" }),
+    );
+    expect(fetchSpy).toHaveBeenNthCalledWith(
+      2,
+      "/api/workspaces/workspace%2Fa/members/user%2Fb",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(fetchSpy).toHaveBeenNthCalledWith(
+      3,
+      "/api/workspaces/workspace%2Fa/leave",
+      expect.objectContaining({ method: "POST" }),
     );
   });
 });

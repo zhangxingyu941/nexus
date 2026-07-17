@@ -264,8 +264,26 @@ describe("workspace operations", () => {
       assignee: "",
       data: null,
       dueDate: "",
+      headingLevel: 1,
       status: "unset",
     });
+  });
+
+  it("preserves valid heading levels and normalizes invalid levels to H1", () => {
+    const workspace = createDefaultWorkspace(1000);
+    const block = workspace.documents[0].blocks[0];
+    const normalized = normalizeWorkspace({
+      ...workspace,
+      documents: workspace.documents.map((document) => ({
+        ...document,
+        blocks: [
+          { ...block, headingLevel: 4, id: "heading-4", type: "heading" },
+          { ...block, headingLevel: 9 as 1, id: "invalid-heading", type: "heading" },
+        ],
+      })),
+    });
+
+    expect(normalized.documents[0].blocks.map((item) => item.headingLevel)).toEqual([4, 1]);
   });
 
   it("normalizes valid structured block data and rejects mismatched data kinds", () => {

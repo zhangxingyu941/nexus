@@ -2,7 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BlockContentRecord, DocumentStructureRecord } from "./collaborationTypes";
 import { getDefaultCollaborationUrl, useDocumentCollaboration } from "./useDocumentCollaboration";
-import { insertBlockAfter, updateBlockContent, updateDocumentTitle } from "../model/documentOperations";
+import { changeBlockType, insertBlockAfter, updateBlockContent, updateDocumentTitle } from "../model/documentOperations";
 import { createDefaultWorkspace, createWorkspaceDocument } from "../model/workspaceOperations";
 
 const websocketMock = vi.hoisted(() => {
@@ -244,6 +244,40 @@ describe("useDocumentCollaboration", () => {
     });
 
     expect(documentStructureMap.get(document.id)?.updatedAt).toBe(1000);
+    unmount();
+  });
+
+  it("publishes a heading-level-only structure change", () => {
+    const onRemotePatches = vi.fn();
+    const baseDocument = createDefaultWorkspace(1000).documents[0];
+    const blockId = baseDocument.blocks[0].id;
+    const headingDocument = changeBlockType(baseDocument, blockId, "heading", 1500, 1);
+    const { rerender, unmount } = renderHook(
+      ({ currentDocument }) =>
+        useDocumentCollaboration({
+          document: currentDocument,
+          onRemotePatches,
+          workspaceId: "workspace-a",
+        }),
+      { initialProps: { currentDocument: headingDocument } },
+    );
+    const provider = websocketMock.instances[0];
+    const documentStructureMap = provider.doc.getMap("document-structure") as {
+      get: (key: string) => DocumentStructureRecord | undefined;
+    };
+
+    act(() => {
+      provider.emit("sync", true);
+    });
+
+    rerender({
+      currentDocument: changeBlockType(headingDocument, blockId, "heading", 2000, 4),
+    });
+
+    expect(documentStructureMap.get(headingDocument.id)).toMatchObject({
+      blocks: [expect.objectContaining({ headingLevel: 4 })],
+      updatedAt: 2000,
+    });
     unmount();
   });
 

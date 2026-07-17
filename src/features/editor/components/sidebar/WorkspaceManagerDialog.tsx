@@ -15,13 +15,16 @@ const ROLE_LABELS = { editor: "编辑者", owner: "所有者", viewer: "访客" 
 
 interface WorkspaceManagerDialogProps {
   catalog: WorkspaceCatalog;
+  currentUserId?: string;
   error: string;
   isTransitioning: boolean;
   onClose: () => void;
   onCreate: (name: string) => Promise<void>;
+  onMemberChanged?: () => void;
   onRename: (workspaceId: string, name: string) => Promise<void>;
   onSwitch: (workspaceId: string) => Promise<void>;
   open: boolean;
+  session?: { runServerTransition: (op: () => Promise<unknown>) => Promise<unknown> };
 }
 
 type ManagementTab = "members" | "invites";
@@ -34,13 +37,16 @@ type View =
 
 export function WorkspaceManagerDialog({
   catalog,
+  currentUserId,
   error,
   isTransitioning,
   onClose,
   onCreate,
+  onMemberChanged,
   onRename,
   onSwitch,
   open,
+  session,
 }: WorkspaceManagerDialogProps) {
   const [view, setView] = useState<View>({ type: "list" });
   const [query, setQuery] = useState("");
@@ -165,7 +171,12 @@ export function WorkspaceManagerDialog({
                 <TabsTrigger value="invites">邀请</TabsTrigger>
               </TabsList>
               <TabsContent className="pt-2" value="members">
-                <WorkspaceMembersTab workspaceId={view.workspace.id} />
+                <WorkspaceMembersTab
+                  currentUserId={currentUserId}
+                  onMemberChanged={onMemberChanged}
+                  session={session}
+                  workspaceId={view.workspace.id}
+                />
               </TabsContent>
               <TabsContent className="pt-2" value="invites">
                 <WorkspaceInvitesTab workspaceId={view.workspace.id} />

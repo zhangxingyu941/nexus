@@ -5,24 +5,27 @@ import StarterKit from "@tiptap/starter-kit";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import type { CollaborationDocument } from "../collaboration/collaborationTypes";
 import { getBlockCollaborationField } from "../collaboration/yjsWorkspaceMapping";
-import type { BlockType } from "../model/block";
+import type { BlockType, HeadingLevel } from "../model/block";
 import { isSlashCommandTrigger, resolveMarkdownShortcut } from "./markdownShortcuts";
+import type { EditorPopoverAnchor } from "./commands/EditorCommandPopover";
 
 interface RichTextBlockEditorProps {
+  ariaLabel?: string;
   blockId: string;
   collaborationDocument: CollaborationDocument | null;
   content: string;
   focusRequest: boolean;
   isReadOnly?: boolean;
-  variant: "paragraph" | "heading" | "quote" | "code";
+  variant: "paragraph" | "heading" | "quote" | "code" | "todo";
   onChange: (content: string) => void;
   onEnter: () => void;
   onFocused: () => void;
-  onMarkdownShortcut: (type: BlockType) => void;
-  onOpenCommandMenu: () => void;
+  onMarkdownShortcut: (type: BlockType, headingLevel?: HeadingLevel) => void;
+  onOpenCommandMenu: (anchor: EditorPopoverAnchor) => void;
 }
 
 export function RichTextBlockEditor({
+  ariaLabel = "块内容",
   blockId,
   collaborationDocument,
   content,
@@ -40,9 +43,13 @@ export function RichTextBlockEditor({
     heading: "标题",
     paragraph: "输入内容",
     quote: "引用内容",
+    todo: "待办内容",
   }[variant];
   const collaborationField = useMemo(() => getBlockCollaborationField(blockId), [blockId]);
-  const previousContentRef = useRef(content);
+  const initializedCollaborationRef = useRef<{
+    document: CollaborationDocument;
+    field: string;
+  } | null>(null);
   const extensions = useMemo(
     () => [
       StarterKit.configure({
@@ -70,7 +77,7 @@ export function RichTextBlockEditor({
     content,
     editorProps: {
       attributes: {
-        "aria-label": "块内容",
+        "aria-label": ariaLabel,
         "data-testid": `block-editor-${blockId}`,
         class: `rich-text-editor rich-text-editor-${variant}`,
       },
@@ -79,20 +86,21 @@ export function RichTextBlockEditor({
           return false;
         }
 
-        const shortcutType = resolveMarkdownShortcut(`${view.state.doc.textContent.trim()} `);
+        const shortcutCommand = resolveMarkdownShortcut(`${view.state.doc.textContent.trim()} `);
 
-        if (event.key === " " && shortcutType) {
+        if (event.key === " " && shortcutCommand) {
           event.preventDefault();
           view.dispatch(view.state.tr.delete(0, view.state.doc.content.size));
           onChange("");
-          onMarkdownShortcut(shortcutType);
+          onMarkdownShortcut(shortcutCommand.type, shortcutCommand.headingLevel);
           return true;
         }
 
         // 输入 / 时打开块插入菜单，并避免把触发符留在正文里。
         if (event.key === "/") {
           event.preventDefault();
-          onOpenCommandMenu();
+          const caret = view.coordsAtPos(view.state.selection.from);
+          onOpenCommandMenu({ bottom: caret.bottom, left: caret.left, top: caret.top });
           return true;
         }
 
@@ -112,19 +120,20 @@ export function RichTextBlockEditor({
       }
 
       const text = activeEditor.getText();
-      const shortcutType = resolveMarkdownShortcut(text);
+      const shortcutCommand = resolveMarkdownShortcut(text);
 
       if (isSlashCommandTrigger(text)) {
+        const caret = activeEditor.view.coordsAtPos(activeEditor.state.selection.from);
         activeEditor.commands.setContent("");
         onChange("");
-        onOpenCommandMenu();
+        onOpenCommandMenu({ bottom: caret.bottom, left: caret.left, top: caret.top });
         return;
       }
 
-      if (shortcutType) {
+      if (shortcutCommand) {
         activeEditor.commands.setContent("");
         onChange("");
-        onMarkdownShortcut(shortcutType);
+        onMarkdownShortcut(shortcutCommand.type, shortcutCommand.headingLevel);
         return;
       }
 
@@ -148,27 +157,33 @@ export function RichTextBlockEditor({
   }, [collaborationDocument, content, editor]);
 
   useEffect(() => {
-    if (!collaborationDocument || !editor) {
+    if (!collaborationDocument) {
+      initializedCollaborationRef.current = null;
       return;
     }
 
-    const previousContent = previousContentRef.current;
-    previousContentRef.current = content;
-
-    if (editor.getText() === content) {
+    if (!editor) {
       return;
     }
+
+    const initializedCollaboration = initializedCollaborationRef.current;
+
+    if (
+      initializedCollaboration?.document === collaborationDocument &&
+      initializedCollaboration.field === collaborationField
+    ) {
+      return;
+    }
+
+    initializedCollaborationRef.current = {
+      document: collaborationDocument,
+      field: collaborationField,
+    };
 
     const fragment = collaborationDocument.getXmlFragment(collaborationField);
 
-    if (fragment.length === 0) {
-      if (content) {
-        editor.commands.setContent(content);
-      }
-      return;
-    }
-
-    if (content !== previousContent) {
+    // Seed persisted text once. After initialization the Yjs fragment is the only collaborative text source.
+    if (fragment.length === 0 && content && editor.getText() !== content) {
       editor.commands.setContent(content);
     }
   }, [collaborationDocument, collaborationField, content, editor]);

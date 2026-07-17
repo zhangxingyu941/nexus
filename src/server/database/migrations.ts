@@ -103,6 +103,7 @@ const MULTI_WORKSPACE_FOUNDATION_MIGRATION_ID = "2026-07-15-multi-workspace-foun
 const ORPHANED_USER_WORKSPACES_MIGRATION_ID = "2026-07-16-orphaned-user-workspaces";
 const WORKSPACE_INVITATIONS_AUDIT_MIGRATION_ID =
   "2026-07-16-workspace-invitations-audit";
+const HEADING_LEVEL_MIGRATION_ID = "2026-07-17-editor-heading-level";
 const MIGRATION_LOCK_ID = "__migration_lock__";
 
 const WORKSPACE_SCOPED_CONTENT_SCHEMA = [
@@ -287,6 +288,12 @@ const WORKSPACE_INVITATIONS_AUDIT_SCHEMA = [
     + "ON workspace_audit_events(workspace_id,created_at DESC)",
 ];
 
+const HEADING_LEVEL_SCHEMA = [
+  `ALTER TABLE editor_blocks
+   ADD COLUMN heading_level INTEGER NOT NULL DEFAULT 1
+   CHECK (heading_level BETWEEN 1 AND 6)`,
+];
+
 export async function migrateDatabase(pool: Pool) {
   const client = await pool.connect();
 
@@ -446,6 +453,22 @@ export async function migrateDatabase(pool: Pool) {
       await client.query(
         "INSERT INTO schema_migrations (id, applied_at) VALUES ($1, $2)",
         [WORKSPACE_INVITATIONS_AUDIT_MIGRATION_ID, Date.now()],
+      );
+    }
+
+    const headingLevelResult = await client.query(
+      "SELECT id FROM schema_migrations WHERE id = $1",
+      [HEADING_LEVEL_MIGRATION_ID],
+    );
+
+    if (headingLevelResult.rows.length === 0) {
+      for (const statement of HEADING_LEVEL_SCHEMA) {
+        await client.query(statement);
+      }
+
+      await client.query(
+        "INSERT INTO schema_migrations (id, applied_at) VALUES ($1, $2)",
+        [HEADING_LEVEL_MIGRATION_ID, Date.now()],
       );
     }
 

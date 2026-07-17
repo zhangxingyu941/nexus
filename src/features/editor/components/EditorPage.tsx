@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { flushSync } from "react-dom";
 import { useDocumentCollaboration } from "../collaboration/useDocumentCollaboration";
 import type { WorkspaceSummary } from "../../../shared/workspace";
-import type { Block, BlockData, BlockStatus, BlockType, EditorDocument, EditorWorkspace, MoveDirection } from "../model/block";
+import type { Block, BlockData, BlockStatus, BlockType, EditorDocument, EditorWorkspace, HeadingLevel, MoveDirection } from "../model/block";
 import {
   addBlockComment,
   changeBlockType,
@@ -307,8 +307,10 @@ export function EditorPage({
   );
 
   const handleChangeType = useCallback(
-    (blockId: string, type: BlockType) => {
-      applyActiveDocumentChange((current) => changeBlockType(current, blockId, type, Date.now()));
+    (blockId: string, type: BlockType, headingLevel?: HeadingLevel) => {
+      applyActiveDocumentChange((current) =>
+        changeBlockType(current, blockId, type, Date.now(), headingLevel),
+      );
     },
     [applyActiveDocumentChange],
   );

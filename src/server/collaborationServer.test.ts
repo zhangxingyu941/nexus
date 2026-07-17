@@ -1,8 +1,10 @@
 // @vitest-environment node
 import type { AddressInfo } from "node:net";
+import { EventEmitter } from "node:events";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import { createCollaborationServer } from "./collaborationServer";
+import type { WorkspaceAccessInvalidationSource } from "./workspaceAccessNotifications";
 
 const servers: Array<ReturnType<typeof createCollaborationServer>> = [];
 const sockets: WebSocket[] = [];
@@ -32,6 +34,27 @@ function getRejectedStatus(url: string, origin: string) {
     });
     socket.once("open", () => reject(new Error("WebSocket unexpectedly opened")));
     socket.once("error", () => undefined);
+  });
+}
+
+function createFakeInvalidationSource(): WorkspaceAccessInvalidationSource & { emit(event: { userId: string | null; workspaceId: string }): void } {
+  const emitter = new EventEmitter();
+  return {
+    on: (event: "invalidation", listener: (event: { userId: string | null; workspaceId: string }) => void) => {
+      emitter.on(event, listener);
+    },
+    removeAllListeners: () => {
+      emitter.removeAllListeners();
+    },
+    emit: (event: { userId: string | null; workspaceId: string }) => {
+      emitter.emit("invalidation", event);
+    },
+  };
+}
+
+async function waitForClose(socket: WebSocket): Promise<number> {
+  return new Promise<number>((resolve) => {
+    socket.once("close", (code) => resolve(code));
   });
 }
 
@@ -124,5 +147,128 @@ describe("authenticated collaboration server", () => {
     await collaborationServer.close();
 
     expect(flushRooms).toHaveBeenCalledOnce();
+  });
+
+  it("closes only the invalidated user sockets", async () => {
+    const invalidations = createFakeInvalidationSource();
+    const getDocumentAccess = vi.fn().mockResolvedValue({ role: "editor", workspaceId: "workspace-1" });
+    const setupConnection = vi.fn((
+      socket: WebSocket,
+      _request: unknown,
+      _options: { docName: string },
+    ) => socket.send("ready"));
+    const collaborationServer = createCollaborationServer({
+      accessInvalidations: invalidations,
+      allowedOrigins: ["http://localhost:3000"],
+      authStore: { getUserBySessionToken: vi.fn().mockResolvedValue({ id: "user-1" }) },
+      setupConnection,
+      workspaceStore: { getDocumentAccess },
+    });
+    servers.push(collaborationServer);
+    const url = await listen(collaborationServer);
+
+    const first = new WebSocket(url, {
+      headers: {
+        Cookie: "notion_editor_session=session-token",
+        Origin: "http://localhost:3000",
+      },
+    });
+    sockets.push(first);
+    await new Promise<string>((resolve, reject) => {
+      first.once("message", (message) => resolve(message.toString()));
+      first.once("error", reject);
+    });
+
+    // Override auth for second user
+    getDocumentAccess.mockResolvedValue({ role: "editor", workspaceId: "workspace-1" });
+    collaborationServer.connections.set(first, { userId: "user-1", workspaceId: "workspace-1" });
+
+    // Create a second connection tracked as user-2
+    const second = new WebSocket(url, {
+      headers: {
+        Cookie: "notion_editor_session=session-token-2",
+        Origin: "http://localhost:3000",
+      },
+    });
+    sockets.push(second);
+    await new Promise<string>((resolve, reject) => {
+      second.once("message", (message) => resolve(message.toString()));
+      second.once("error", reject);
+    });
+
+    // Manually track second as user-2
+    for (const [socket] of collaborationServer.connections) {
+      if (socket !== first) {
+        collaborationServer.connections.set(socket, { userId: "user-2", workspaceId: "workspace-1" });
+      }
+    }
+
+    invalidations.emit({ userId: "user-1", workspaceId: "workspace-1" });
+
+    await expect(waitForClose(first)).resolves.toBe(4403);
+    expect(second.readyState).toBe(WebSocket.OPEN);
+  });
+
+  it("closes all workspace connections on workspace-level invalidation", async () => {
+    const invalidations = createFakeInvalidationSource();
+    const getDocumentAccess = vi.fn().mockResolvedValue({ role: "editor", workspaceId: "workspace-1" });
+    const setupConnection = vi.fn((
+      socket: WebSocket,
+      _request: unknown,
+      _options: { docName: string },
+    ) => socket.send("ready"));
+
+    const userByToken = new Map<string, string>([
+      ["session-token", "user-1"],
+      ["session-token-2", "user-2"],
+    ]);
+    const authStore = {
+      getUserBySessionToken: vi.fn(async (token: string) => {
+        const id = userByToken.get(token);
+        return id ? { id } : null;
+      }),
+    };
+
+    const collaborationServer = createCollaborationServer({
+      accessInvalidations: invalidations,
+      allowedOrigins: ["http://localhost:3000"],
+      authStore,
+      setupConnection,
+      workspaceStore: { getDocumentAccess },
+    });
+    servers.push(collaborationServer);
+    const url = await listen(collaborationServer);
+
+    const first = new WebSocket(url, {
+      headers: {
+        Cookie: "notion_editor_session=session-token",
+        Origin: "http://localhost:3000",
+      },
+    });
+    sockets.push(first);
+    await new Promise<string>((resolve, reject) => {
+      first.once("message", (message) => resolve(message.toString()));
+      first.once("error", reject);
+    });
+
+    const second = new WebSocket(url, {
+      headers: {
+        Cookie: "notion_editor_session=session-token-2",
+        Origin: "http://localhost:3000",
+      },
+    });
+    sockets.push(second);
+    await new Promise<string>((resolve, reject) => {
+      second.once("message", (message) => resolve(message.toString()));
+      second.once("error", reject);
+    });
+
+    const firstClose = waitForClose(first);
+    const secondClose = waitForClose(second);
+
+    invalidations.emit({ userId: null, workspaceId: "workspace-1" });
+
+    await expect(firstClose).resolves.toBe(4403);
+    await expect(secondClose).resolves.toBe(4403);
   });
 });

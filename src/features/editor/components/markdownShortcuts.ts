@@ -1,14 +1,21 @@
-import type { BlockType } from "../model/block";
+import { EDITOR_COMMANDS } from "../commands/editorCommands";
+import type { BlockType, HeadingLevel } from "../model/block";
 
-const MARKDOWN_SHORTCUTS: Record<string, BlockType> = {
-  "# ": "heading",
-  "> ": "quote",
-  "[] ": "todo",
-  "``` ": "code",
-};
+export interface MarkdownCommandMatch {
+  headingLevel?: HeadingLevel;
+  type: BlockType;
+}
 
-export function resolveMarkdownShortcut(text: string): BlockType | null {
-  return MARKDOWN_SHORTCUTS[text] ?? null;
+export function resolveMarkdownShortcut(text: string): MarkdownCommandMatch | null {
+  const command = EDITOR_COMMANDS.find((item) => item.markdown && `${item.markdown} ` === text);
+
+  if (!command) {
+    return null;
+  }
+
+  return command.headingLevel
+    ? { headingLevel: command.headingLevel, type: command.type }
+    : { type: command.type };
 }
 
 export function isSlashCommandTrigger(text: string): boolean {

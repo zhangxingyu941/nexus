@@ -51,7 +51,8 @@ describe("RichTextBlockEditor collaboration integration", () => {
     await waitFor(() => expect(onChange).toHaveBeenLastCalledWith("collab content"));
   });
 
-  it("renders remote workspace content patches while collaboration is enabled", async () => {
+  it("keeps CRDT content when a delayed parent snapshot arrives during rapid input", async () => {
+    const user = userEvent.setup();
     const ydoc = new Y.Doc();
     const props = {
       blockId: "block-1",
@@ -64,12 +65,15 @@ describe("RichTextBlockEditor collaboration integration", () => {
       onOpenCommandMenu: vi.fn(),
       variant: "paragraph" as const,
     };
-    const { rerender } = render(<RichTextBlockEditor {...props} content="initial content" />);
+    const { rerender } = render(<RichTextBlockEditor {...props} content="" />);
+    const editor = screen.getByTestId("block-editor-block-1");
 
-    await waitFor(() => expect(screen.getByTestId("block-editor-block-1")).toHaveTextContent("initial content"));
+    await user.click(editor);
+    await user.keyboard("fast collaborative input");
+    await waitFor(() => expect(editor).toHaveTextContent("fast collaborative input"));
 
-    rerender(<RichTextBlockEditor {...props} content="remote patch content" />);
+    rerender(<RichTextBlockEditor {...props} content="delayed parent snapshot" />);
 
-    await waitFor(() => expect(screen.getByTestId("block-editor-block-1")).toHaveTextContent("remote patch content"));
+    await waitFor(() => expect(editor).toHaveTextContent("fast collaborative input"));
   });
 });

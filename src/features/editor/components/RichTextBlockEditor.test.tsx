@@ -15,6 +15,17 @@ type TiptapExtensionConfig = {
 type TiptapEditorOptions = {
   content: string;
   editable: boolean;
+  editorProps: {
+    handleKeyDown: (view: {
+      coordsAtPos: (position: number) => { bottom: number; left: number; top: number };
+      dispatch: (transaction: unknown) => void;
+      state: {
+        doc: { content: { size: number }; textContent: string };
+        selection: { from: number };
+        tr: { delete: (from: number, to: number) => unknown };
+      };
+    }, event: KeyboardEvent) => boolean;
+  };
   extensions: TiptapExtensionConfig[];
   onUpdate: (payload: {
     editor: {
@@ -121,6 +132,38 @@ describe("RichTextBlockEditor", () => {
     expect(onChange).toHaveBeenCalledWith("Updated content");
   });
 
+  it("opens the command menu at the current caret coordinates", () => {
+    const onOpenCommandMenu = vi.fn();
+    render(
+      <RichTextBlockEditor
+        blockId="block-1"
+        collaborationDocument={null}
+        content=""
+        focusRequest={false}
+        onChange={vi.fn()}
+        onEnter={vi.fn()}
+        onFocused={vi.fn()}
+        onMarkdownShortcut={vi.fn()}
+        onOpenCommandMenu={onOpenCommandMenu}
+        variant="paragraph"
+      />,
+    );
+    const editorOptions = tiptapMock.useEditor.mock.calls[0][0];
+    const view = {
+      coordsAtPos: vi.fn(() => ({ bottom: 220, left: 140, top: 200 })),
+      dispatch: vi.fn(),
+      state: {
+        doc: { content: { size: 0 }, textContent: "" },
+        selection: { from: 3 },
+        tr: { delete: vi.fn() },
+      },
+    };
+
+    expect(editorOptions.editorProps.handleKeyDown(view, new KeyboardEvent("keydown", { key: "/" }))).toBe(true);
+    expect(view.coordsAtPos).toHaveBeenCalledWith(3);
+    expect(onOpenCommandMenu).toHaveBeenCalledWith({ bottom: 220, left: 140, top: 200 });
+  });
+
   it("does not overwrite focused local input with a delayed parent value", () => {
     const props = {
       blockId: "block-1",
@@ -138,6 +181,49 @@ describe("RichTextBlockEditor", () => {
     tiptapMock.editor.isFocused = true;
     tiptapMock.editor.getText.mockReturnValue("最新输入");
     rerender(<RichTextBlockEditor {...props} content="较旧父值" />);
+
+    expect(tiptapMock.editor.commands.setContent).not.toHaveBeenCalled();
+  });
+
+  it("does not write delayed parent content back into a populated collaboration fragment", () => {
+    const ydoc = new Y.Doc();
+    const fragment = ydoc.getXmlFragment("block-content:block-1");
+    fragment.insert(0, [new Y.XmlElement("paragraph")]);
+    const props = {
+      blockId: "block-1",
+      collaborationDocument: ydoc,
+      focusRequest: false,
+      onChange: vi.fn(),
+      onEnter: vi.fn(),
+      onFocused: vi.fn(),
+      onMarkdownShortcut: vi.fn(),
+      onOpenCommandMenu: vi.fn(),
+      variant: "paragraph" as const,
+    };
+    tiptapMock.editor.getText.mockReturnValue("current CRDT content");
+    const { rerender } = render(<RichTextBlockEditor {...props} content="current CRDT content" />);
+
+    rerender(<RichTextBlockEditor {...props} content="delayed parent snapshot" />);
+
+    expect(tiptapMock.editor.commands.setContent).not.toHaveBeenCalled();
+  });
+
+  it("only considers persisted content when an empty collaboration fragment first initializes", () => {
+    const ydoc = new Y.Doc();
+    const props = {
+      blockId: "block-1",
+      collaborationDocument: ydoc,
+      focusRequest: false,
+      onChange: vi.fn(),
+      onEnter: vi.fn(),
+      onFocused: vi.fn(),
+      onMarkdownShortcut: vi.fn(),
+      onOpenCommandMenu: vi.fn(),
+      variant: "paragraph" as const,
+    };
+    const { rerender } = render(<RichTextBlockEditor {...props} content="" />);
+
+    rerender(<RichTextBlockEditor {...props} content="delayed parent snapshot" />);
 
     expect(tiptapMock.editor.commands.setContent).not.toHaveBeenCalled();
   });

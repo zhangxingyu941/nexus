@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
@@ -47,6 +47,18 @@ async function getRows() {
   return screen.findAllByTestId(/^block-row-/);
 }
 
+function getTodoEditorByText(content: string) {
+  const editor = screen
+    .getAllByLabelText("待办内容")
+    .find((element) => element.textContent === content);
+
+  if (!editor) {
+    throw new Error(`Todo editor not found: ${content}`);
+  }
+
+  return editor;
+}
+
 async function getDocumentButtons() {
   return screen.findAllByTestId(/^document-nav-/);
 }
@@ -82,6 +94,31 @@ describe("EditorPage", () => {
     expect(screen.queryByText("最后编辑 10:42")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("块类型")).not.toBeInTheDocument();
     expect(screen.getAllByLabelText("打开块菜单").length).toBeGreaterThan(0);
+  });
+
+  it("activates the Focus Rail and contextual toolbar for the focused block", async () => {
+    const user = userEvent.setup();
+    await renderEditor({ seedFixture: false });
+    const row = (await getRows())[0];
+    const editor = within(row).getByTestId(/^block-editor-/);
+
+    expect(row).toHaveAttribute("data-active", "false");
+    await user.click(editor);
+
+    expect(row).toHaveAttribute("data-active", "true");
+    expect(within(row).getByRole("toolbar", { name: "当前块操作" })).toBeVisible();
+  });
+
+  it("opens the fixed shortcut center from the keyboard and topbar", async () => {
+    const user = userEvent.setup();
+    await renderEditor({ seedFixture: false });
+
+    fireEvent.keyDown(document, { ctrlKey: true, key: "/" });
+    expect(screen.getByRole("dialog", { name: "快捷键" })).toBeVisible();
+
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("button", { name: "快捷键" }));
+    expect(screen.getByRole("dialog", { name: "快捷键" })).toBeVisible();
   });
 
   it("opens invitations from a fixed-size topbar control without shifting for the count", async () => {
@@ -183,7 +220,7 @@ describe("EditorPage", () => {
     expect(screen.getByLabelText("文档标题")).toHaveAttribute("readonly");
     expect(screen.getByText("只读")).toBeInTheDocument();
     expect(screen.getByText("协同未启用")).toBeInTheDocument();
-    expect(screen.getByLabelText("待办内容")).toBeDisabled();
+    expect(screen.getByLabelText("待办内容")).toHaveAttribute("contenteditable", "false");
     expect(screen.getByLabelText("待办完成状态")).toBeDisabled();
     expect(screen.queryByLabelText("在下方添加块")).not.toBeInTheDocument();
     expect(screen.getByLabelText("块内容")).toHaveAttribute("contenteditable", "false");
@@ -307,7 +344,7 @@ describe("EditorPage", () => {
     await user.click(within(searchDialog).getByRole("button", { name: "打开搜索结果 确认上线窗口 项目计划" }));
 
     expect(screen.getByLabelText("文档标题")).toHaveValue("项目计划");
-    expect(screen.getByDisplayValue("确认上线窗口")).toHaveFocus();
+    expect(getTodoEditorByText("确认上线窗口")).toHaveFocus();
     expect(screen.queryByRole("dialog", { name: "快速搜索" })).not.toBeInTheDocument();
   });
 
@@ -370,7 +407,7 @@ describe("EditorPage", () => {
     await user.click(within(taskCenter).getByRole("button", { name: "打开任务 确认上线窗口" }));
 
     expect(screen.getByLabelText("文档标题")).toHaveValue("项目计划");
-    expect(screen.getByDisplayValue("确认上线窗口")).toHaveFocus();
+    expect(getTodoEditorByText("确认上线窗口")).toHaveFocus();
     expect(screen.queryByRole("dialog", { name: "任务中心" })).not.toBeInTheDocument();
   });
 
@@ -550,8 +587,8 @@ describe("EditorPage", () => {
     const user = userEvent.setup();
     await renderEditor();
 
-    const taskInput = screen.getByDisplayValue("确认核心场景");
-    const taskRow = taskInput.closest("article");
+    const taskEditor = getTodoEditorByText("确认核心场景");
+    const taskRow = taskEditor.closest("article");
 
     expect(taskRow).not.toBeNull();
     await user.click(within(taskRow as HTMLElement).getByLabelText("打开块协作属性"));
@@ -802,11 +839,41 @@ describe("EditorPage", () => {
     await user.click(editor);
     await user.keyboard("/");
 
-    expect(screen.getByRole("menu", { name: "插入菜单" })).toBeInTheDocument();
-    await user.click(screen.getByRole("menuitem", { name: "标题" }));
+    expect(screen.getByRole("listbox", { name: "插入内容" })).toBeInTheDocument();
+    await user.click(screen.getByRole("option", { name: /H1/ }));
 
     expect((await getRows())[0]).toHaveClass("block-row-heading");
     expect(editor).not.toHaveTextContent("/");
+  });
+
+  it("keeps the editor focused after selecting H2 from slash", async () => {
+    const user = userEvent.setup();
+    await renderEditor();
+    await createBlankDocument(user);
+    const editor = await screen.findByTestId(/^block-editor-/);
+
+    await user.click(editor);
+    await user.keyboard("/");
+    await user.click(screen.getByRole("option", { name: /H2/ }));
+
+    expect((await getRows())[0]).toHaveAttribute("data-heading-level", "2");
+    expect(editor).toHaveFocus();
+  });
+
+  it("converts to a directly editable Todo and keeps its TipTap surface focused", async () => {
+    const user = userEvent.setup();
+    await renderEditor();
+    await createBlankDocument(user);
+    const editor = await screen.findByTestId(/^block-editor-/);
+
+    await user.click(editor);
+    await user.keyboard("/");
+    await user.click(screen.getByRole("option", { name: /Todo/ }));
+
+    const todoEditor = await screen.findByLabelText("待办内容");
+    expect(todoEditor.tagName).toBe("DIV");
+    expect(todoEditor).toHaveAttribute("contenteditable", "true");
+    expect(todoEditor).toHaveFocus();
   });
 
   it("changes a block to an image and stores the uploaded attachment", async () => {
@@ -817,7 +884,7 @@ describe("EditorPage", () => {
     await user.click(editor);
     await user.keyboard("/");
 
-    await user.click(screen.getByRole("menuitem", { name: "图片" }));
+    await user.click(screen.getByRole("option", { name: /Image/ }));
     const uploadInput = await screen.findByLabelText("上传图片");
     const file = new File(["image"], "设计稿.png", { type: "image/png" });
     vi.stubGlobal("fetch", vi.fn().mockImplementation((url: string) => {
@@ -852,7 +919,7 @@ describe("EditorPage", () => {
     const editor = await screen.findByTestId(/^block-editor-/);
     await user.click(editor);
     await user.keyboard("/");
-    await user.click(screen.getByRole("menuitem", { name: "表格" }));
+    await user.click(screen.getByRole("option", { name: /Table/ }));
 
     const table = await screen.findByRole("table", { name: "表格块" });
     const nameCell = within(table).getByLabelText("单元格 空白 名称");
@@ -863,7 +930,7 @@ describe("EditorPage", () => {
     const nextEditor = await screen.findByTestId(/^block-editor-/);
     await user.click(nextEditor);
     await user.keyboard("/");
-    await user.click(screen.getByRole("menuitem", { name: "看板" }));
+    await user.click(screen.getByRole("option", { name: /Board/ }));
 
     await user.click(screen.getByRole("button", { name: "在待处理中添加卡片" }));
     expect(await screen.findByDisplayValue("新卡片")).toBeInTheDocument();
@@ -878,7 +945,7 @@ describe("EditorPage", () => {
     await user.click(editor);
     await user.type(editor, "/");
 
-    expect(screen.getByRole("menu", { name: "插入菜单" })).toBeInTheDocument();
+    expect(screen.getByRole("listbox", { name: "插入内容" })).toBeInTheDocument();
     expect(editor).not.toHaveTextContent("/");
   });
 
@@ -891,11 +958,29 @@ describe("EditorPage", () => {
     await user.click(editor);
     await user.keyboard("/");
 
-    expect(screen.getByRole("menu", { name: "插入菜单" })).toBeInTheDocument();
+    expect(screen.getByRole("listbox", { name: "插入内容" })).toBeInTheDocument();
     await user.keyboard("{ArrowDown}{Enter}");
 
     expect((await getRows())[0]).toHaveClass("block-row-heading");
-    expect(screen.queryByRole("menu", { name: "插入菜单" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("listbox", { name: "插入内容" })).not.toBeInTheDocument();
+  });
+
+  it("filters slash commands without moving focus into a search input", async () => {
+    const user = userEvent.setup();
+    await renderEditor();
+    await createBlankDocument(user);
+    const editor = await screen.findByTestId(/^block-editor-/);
+
+    await user.click(editor);
+    await user.keyboard("/table");
+
+    expect(screen.getByText("/table")).toBeVisible();
+    expect(screen.getByRole("option", { name: /Table/ })).toBeVisible();
+    expect(screen.queryByRole("option", { name: /Text/ })).not.toBeInTheDocument();
+    expect(editor).toHaveFocus();
+
+    await user.keyboard("{Enter}");
+    expect(await screen.findByRole("table", { name: "表格块" })).toBeVisible();
   });
 
   it("turns markdown shortcuts into block types without keeping the trigger text", async () => {
@@ -923,7 +1008,7 @@ describe("EditorPage", () => {
     await user.click(todoEditor);
     await user.keyboard("[[] ");
     expect((await getRows())[2]).toHaveClass("block-row-todo");
-    expect(screen.getByLabelText("待办内容")).toHaveValue("");
+    expect(screen.getByLabelText("待办内容")).toHaveTextContent("");
 
     await user.click(screen.getAllByLabelText("在下方添加块")[2]);
     const codeRow = (await getRows())[3];
@@ -943,7 +1028,7 @@ describe("EditorPage", () => {
     const editor = await screen.findByTestId(/^block-editor-/);
     await user.click(editor);
     await user.keyboard("/");
-    await user.click(screen.getByRole("menuitem", { name: "引用" }));
+    await user.click(screen.getByRole("option", { name: /Quote/ }));
     expect((await getRows())[0]).toHaveClass("block-row-quote");
 
     await user.click(screen.getByLabelText("在下方添加块"));
@@ -951,7 +1036,7 @@ describe("EditorPage", () => {
     const secondEditor = within(rows[1]).getByTestId(/^block-editor-/);
     await user.click(secondEditor);
     await user.keyboard("/");
-    await user.click(screen.getByRole("menuitem", { name: "代码" }));
+    await user.click(screen.getByRole("option", { name: /Code/ }));
 
     expect((await getRows())[1]).toHaveClass("block-row-code");
     expect(screen.getByText("代码片段")).toBeInTheDocument();

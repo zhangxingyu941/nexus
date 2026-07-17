@@ -5,14 +5,16 @@ import type {
   CollaborationDocument,
   CollaborationPresence,
 } from "../collaboration/collaborationTypes";
-import type { BlockData, BlockStatus, BlockType, EditorDocument, MoveDirection } from "../model/block";
+import type { BlockData, BlockStatus, BlockType, EditorDocument, HeadingLevel, MoveDirection } from "../model/block";
 import type { WorkspaceActivity, WorkspaceCollaborator } from "../model/workspaceOperations";
 import type {
   DatabaseWorkspaceMember,
   EditorSessionUser,
 } from "../session/sessionTypes";
 import { BlockList } from "./BlockList";
+import { getEditorShortcut, matchesEditorShortcut } from "../commands/editorShortcuts";
 import { DocumentContextPanel } from "./DocumentContextPanel";
+import { EditorShortcutCenter } from "./commands/EditorShortcutCenter";
 import { CommentsPanel } from "./document/CommentsPanel";
 import { DocumentTitleSection } from "./document/DocumentTitleSection";
 import { DocumentTopbar } from "./document/DocumentTopbar";
@@ -49,7 +51,7 @@ interface DocumentEditorProps {
   onChangeBlockData: (blockId: string, data: BlockData | null) => void;
   onChangeContent: (blockId: string, content: string) => void;
   onChangeTitle: (title: string) => void;
-  onChangeType: (blockId: string, type: BlockType) => void;
+  onChangeType: (blockId: string, type: BlockType, headingLevel?: HeadingLevel) => void;
   onDelete: (blockId: string) => void;
   onFocusedBlock: () => void;
   onIndent: (blockId: string) => void;
@@ -104,6 +106,7 @@ export function DocumentEditor({
   const [isContextOpen, setIsContextOpen] = useState(false);
   const [isMembersOpen, setIsMembersOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
+  const [isShortcutOpen, setIsShortcutOpen] = useState(false);
   const [commentFilter, setCommentFilter] = useState<CommentFilter>("open");
   const [sharePermission, setSharePermission] = useState<SharePermission>("private");
   const [shareStatus, setShareStatus] = useState("");
@@ -148,7 +151,24 @@ export function DocumentEditor({
 
   useEffect(() => {
     setIsContextOpen(false);
+    setIsShortcutOpen(false);
   }, [document.id]);
+
+  useEffect(() => {
+    const shortcut = getEditorShortcut("shortcut-center");
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (!matchesEditorShortcut(event, shortcut)) {
+        return;
+      }
+
+      event.preventDefault();
+      setIsShortcutOpen((current) => !current);
+    }
+
+    globalThis.document.addEventListener("keydown", handleKeyDown);
+    return () => globalThis.document.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const handleCopyLink = () => {
     const shareLink = `${window.location.origin}/documents/${document.id}`;
@@ -169,6 +189,7 @@ export function DocumentEditor({
         isHistoryOpen={isHistoryOpen}
         isMembersOpen={isMembersOpen}
         isShareOpen={isShareOpen}
+        isShortcutsOpen={isShortcutOpen}
         isWorkspaceNavigationOpen={isWorkspaceNavigationOpen}
         inviteCount={inviteCount}
         onOpenInvites={onOpenInvites}
@@ -195,6 +216,7 @@ export function DocumentEditor({
           setIsHistoryOpen(false);
         }}
         onToggleShare={() => setIsShareOpen((current) => !current)}
+        onToggleShortcuts={() => setIsShortcutOpen((current) => !current)}
         onToggleWorkspaceNavigation={onToggleWorkspaceNavigation}
       />
 
@@ -272,6 +294,8 @@ export function DocumentEditor({
           onCopyLink={handleCopyLink}
         />
       ) : null}
+
+      <EditorShortcutCenter isOpen={isShortcutOpen} onOpenChange={setIsShortcutOpen} />
 
       {isMembersOpen ? (
         <MembersPopover

@@ -32,6 +32,7 @@ describe("document operations", () => {
     expect(document.blocks).toHaveLength(1);
     expect(document.blocks[0]).toMatchObject({
       type: "paragraph",
+      headingLevel: 1,
       content: "",
       checked: false,
       parentId: null,
@@ -129,6 +130,19 @@ describe("document operations", () => {
       type: "heading",
       checked: false,
       updatedAt: 4000,
+    });
+  });
+
+  it("persists a requested heading level", () => {
+    const document = createDefaultDocument(1000);
+    const targetId = document.blocks[0].id;
+
+    const next = changeBlockType(document, targetId, "heading", 2000, 4);
+
+    expect(next.blocks[0]).toMatchObject({
+      headingLevel: 4,
+      type: "heading",
+      updatedAt: 2000,
     });
   });
 

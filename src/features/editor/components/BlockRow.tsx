@@ -1,17 +1,19 @@
-import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from "react";
-import { useEffect, useRef, useState } from "react";
+import type { CSSProperties, FocusEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { searchEditorCommands } from "../commands/editorCommands";
+import type { EditorCommandDefinition } from "../commands/editorCommands";
 import type { CollaborationDocument } from "../collaboration/collaborationTypes";
-import type { Block, BlockData, BlockStatus, BlockType, MoveDirection } from "../model/block";
+import type { Block, BlockData, BlockStatus, BlockType, HeadingLevel, MoveDirection } from "../model/block";
 import { AttachmentBlockEditor } from "./blocks/AttachmentBlockEditor";
+import { BlockActionBar } from "./blocks/BlockActionBar";
 import { BlockCollabPopover } from "./blocks/BlockCollabPopover";
 import { BlockCommentsPopover } from "./blocks/BlockCommentsPopover";
 import { BlockControls } from "./blocks/BlockControls";
-import { BlockInlineActions } from "./blocks/BlockInlineActions";
 import { BlockMetaStrip } from "./blocks/BlockMetaStrip";
 import { KanbanBlockEditor } from "./blocks/KanbanBlockEditor";
-import { SLASH_COMMANDS } from "./blocks/blockMenuOptions";
-import { SlashMenu } from "./blocks/SlashMenu";
 import { TableBlockEditor } from "./blocks/TableBlockEditor";
+import { EditorCommandPopover } from "./commands/EditorCommandPopover";
+import type { EditorPopoverAnchor } from "./commands/EditorCommandPopover";
 import { RichTextBlockEditor } from "./RichTextBlockEditor";
 import { TodoBlockEditor } from "./TodoBlockEditor";
 
@@ -32,7 +34,7 @@ interface BlockRowProps {
   onChangeBlockStatus: (blockId: string, status: BlockStatus) => void;
   onChangeBlockData: (blockId: string, data: BlockData | null) => void;
   onChangeContent: (blockId: string, content: string) => void;
-  onChangeType: (blockId: string, type: BlockType) => void;
+  onChangeType: (blockId: string, type: BlockType, headingLevel?: HeadingLevel) => void;
   onDelete: (blockId: string) => void;
   onFocused: () => void;
   onIndent: (blockId: string) => void;
@@ -75,7 +77,12 @@ export function BlockRow({
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
   const [activeSlashIndex, setActiveSlashIndex] = useState(0);
   const [commentDraft, setCommentDraft] = useState("");
+  const [isActive, setIsActive] = useState(false);
+  const [restoreEditorFocus, setRestoreEditorFocus] = useState(false);
+  const [slashAnchor, setSlashAnchor] = useState<EditorPopoverAnchor | null>(null);
+  const [slashQuery, setSlashQuery] = useState("");
   const rowRef = useRef<HTMLElement | null>(null);
+  const slashCommands = useMemo(() => searchEditorCommands(slashQuery), [slashQuery]);
 
   useEffect(() => {
     if (openMenu !== "slash") {
@@ -103,14 +110,28 @@ export function BlockRow({
     };
   }, [openMenu]);
 
-  const handleChangeType = (type: BlockType) => {
+  const handleChangeType = (type: BlockType, headingLevel?: HeadingLevel) => {
     setOpenMenu(null);
-    onChangeType(block.id, type);
+    setRestoreEditorFocus(
+      type === "paragraph" || type === "heading" || type === "todo" || type === "quote" || type === "code",
+    );
+    onChangeType(block.id, type, headingLevel);
   };
 
-  const openSlashMenu = () => {
+  const openSlashMenu = (anchor?: EditorPopoverAnchor) => {
+    const rowBounds = rowRef.current?.getBoundingClientRect();
     setActiveSlashIndex(0);
+    setSlashQuery("");
+    setSlashAnchor(anchor ?? {
+      bottom: rowBounds?.bottom ?? 40,
+      left: (rowBounds?.left ?? 0) + 38,
+      top: rowBounds?.top ?? 20,
+    });
     setOpenMenu("slash");
+  };
+
+  const handleSelectCommand = (command: EditorCommandDefinition) => {
+    handleChangeType(command.type, command.headingLevel);
   };
 
   const handleSlashMenuKeyDown = (event: ReactKeyboardEvent) => {
@@ -121,21 +142,28 @@ export function BlockRow({
     if (event.key === "ArrowDown") {
       event.preventDefault();
       event.stopPropagation();
-      setActiveSlashIndex((current) => (current + 1) % SLASH_COMMANDS.length);
+      if (slashCommands.length > 0) {
+        setActiveSlashIndex((current) => (current + 1) % slashCommands.length);
+      }
       return;
     }
 
     if (event.key === "ArrowUp") {
       event.preventDefault();
       event.stopPropagation();
-      setActiveSlashIndex((current) => (current - 1 + SLASH_COMMANDS.length) % SLASH_COMMANDS.length);
+      if (slashCommands.length > 0) {
+        setActiveSlashIndex((current) => (current - 1 + slashCommands.length) % slashCommands.length);
+      }
       return;
     }
 
     if (event.key === "Enter") {
       event.preventDefault();
       event.stopPropagation();
-      handleChangeType(SLASH_COMMANDS[activeSlashIndex].type);
+      const command = slashCommands[activeSlashIndex];
+      if (command) {
+        handleSelectCommand(command);
+      }
       return;
     }
 
@@ -143,6 +171,33 @@ export function BlockRow({
       event.preventDefault();
       event.stopPropagation();
       setOpenMenu(null);
+      return;
+    }
+
+    if (event.key === "Backspace") {
+      event.preventDefault();
+      event.stopPropagation();
+      setActiveSlashIndex(0);
+      setSlashQuery((current) => current.slice(0, -1));
+      return;
+    }
+
+    if (event.key.length === 1 && !event.altKey && !event.ctrlKey && !event.metaKey) {
+      event.preventDefault();
+      event.stopPropagation();
+      setActiveSlashIndex(0);
+      setSlashQuery((current) => `${current}${event.key}`);
+    }
+  };
+
+  const handleEditorFocused = () => {
+    setRestoreEditorFocus(false);
+    onFocused();
+  };
+
+  const handleBlur = (event: FocusEvent<HTMLElement>) => {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      setIsActive(false);
     }
   };
 
@@ -170,8 +225,12 @@ export function BlockRow({
   return (
     <article
       className={`block-row block-row-${block.type}${openMenu ? " block-row-menu-open" : ""}`}
+      data-active={isActive || openMenu !== null}
       data-block-depth={depth}
+      data-heading-level={block.headingLevel}
       data-testid={`block-row-${block.id}`}
+      onBlurCapture={handleBlur}
+      onFocusCapture={() => setIsActive(true)}
       onKeyDownCapture={handleSlashMenuKeyDown}
       ref={rowRef}
       style={{ "--block-depth": Math.min(depth, 6) } as CSSProperties}
@@ -225,12 +284,14 @@ export function BlockRow({
           <TodoBlockEditor
             blockId={block.id}
             checked={block.checked}
+            collaborationDocument={collaborationDocument}
             content={block.content}
-            focusRequest={focusRequest}
+            focusRequest={focusRequest || restoreEditorFocus}
             isReadOnly={isReadOnly}
             onChange={(content) => onChangeContent(block.id, content)}
             onEnter={() => onAddAfter(block.id)}
-            onFocused={onFocused}
+            onFocused={handleEditorFocused}
+            onMarkdownShortcut={(type, headingLevel) => onChangeType(block.id, type, headingLevel)}
             onOpenCommandMenu={openSlashMenu}
             onToggle={() => onToggleTodo(block.id)}
           />
@@ -239,12 +300,12 @@ export function BlockRow({
             blockId={block.id}
             collaborationDocument={collaborationDocument}
             content={block.content}
-            focusRequest={focusRequest}
+            focusRequest={focusRequest || restoreEditorFocus}
             isReadOnly={isReadOnly}
             onChange={(content) => onChangeContent(block.id, content)}
             onEnter={() => onAddAfter(block.id)}
-            onFocused={onFocused}
-            onMarkdownShortcut={(type) => onChangeType(block.id, type)}
+            onFocused={handleEditorFocused}
+            onMarkdownShortcut={(type, headingLevel) => onChangeType(block.id, type, headingLevel)}
             onOpenCommandMenu={openSlashMenu}
             variant={block.type}
           />
@@ -252,7 +313,8 @@ export function BlockRow({
 
         {block.type === "code" ? <span className="code-block-label">代码片段</span> : null}
 
-        <BlockInlineActions
+        <BlockActionBar
+          block={block}
           collabContent={(
             <BlockCollabPopover
               block={block}
@@ -280,7 +342,15 @@ export function BlockRow({
 
         <BlockMetaStrip block={block} />
 
-        {openMenu === "slash" ? <SlashMenu activeIndex={activeSlashIndex} onSelect={handleChangeType} /> : null}
+        {openMenu === "slash" && slashAnchor ? (
+          <EditorCommandPopover
+            activeIndex={activeSlashIndex}
+            anchor={slashAnchor}
+            commands={slashCommands}
+            onSelect={handleSelectCommand}
+            query={slashQuery}
+          />
+        ) : null}
       </div>
     </article>
   );

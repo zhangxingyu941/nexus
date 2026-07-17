@@ -128,13 +128,16 @@ export function WorkspaceShell({ mode, sessionUser, onSignOut }: WorkspaceShellP
       ) : null}
       <WorkspaceManagerDialog
         catalog={session.catalog!}
+        currentUserId={sessionUser?.id}
         error={session.error}
         isTransitioning={session.isTransitioning}
         onClose={() => setIsManagerOpen(false)}
         onCreate={session.createWorkspace}
+        onMemberChanged={() => void session.reload()}
         onRename={session.renameWorkspace}
         onSwitch={session.switchWorkspace}
         open={isManagerOpen}
+        session={session}
       />
     </>
   );

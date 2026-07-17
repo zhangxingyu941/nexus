@@ -57,6 +57,18 @@ describe("explicit workspace member route", () => {
     expect(memberRoute).not.toHaveProperty("POST");
   });
 
+  it("uses PATCH, DELETE, and the dedicated leave route", async () => {
+    await expect(
+      handlers.PATCH(new Request("http://localhost", { method: "PATCH" }), "workspace/a", "user/b"),
+    ).resolves.toBeDefined();
+    await expect(
+      handlers.DELETE(new Request("http://localhost", { method: "DELETE" }), "workspace/a", "user/b"),
+    ).resolves.toBeDefined();
+    await expect(
+      handlers.leave(new Request("http://localhost", { method: "POST" }), "workspace/a"),
+    ).resolves.toBeDefined();
+  });
+
   it("returns 404 for a workspace the user cannot access", async () => {
     const owner = await authStore.createSession({ displayName: "林夏", email: "owner@example.com" });
     const response = await handlers.GET(

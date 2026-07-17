@@ -9,6 +9,7 @@ import {
   isAllowedCollaborationOrigin,
   type CollaborationAuthorizationResult,
 } from "./collaborationAuthorization";
+import type { WorkspaceAccessInvalidationSource } from "./workspaceAccessNotifications";
 
 interface CollaborationServerAuthStore {
   getUserBySessionToken(token: string): Promise<{ id: string } | null>;
@@ -28,6 +29,7 @@ type SetupConnection = (
 ) => void;
 
 interface CollaborationServerOptions {
+  accessInvalidations?: WorkspaceAccessInvalidationSource;
   allowedOrigins: string[];
   authStore: CollaborationServerAuthStore;
   flushRooms?: () => Promise<void>;
@@ -64,6 +66,7 @@ function rejectUpgrade(socket: Duplex, status: number, message: string) {
 }
 
 export function createCollaborationServer({
+  accessInvalidations,
   allowedOrigins,
   authStore,
   flushRooms,
@@ -72,10 +75,22 @@ export function createCollaborationServer({
   workspaceStore,
 }: CollaborationServerOptions) {
   const webSocketServer = new WebSocketServer({ noServer: true });
+  const connections = new Map<WebSocket, { userId: string; workspaceId: string }>();
   const server = createServer((_request, response) => {
     response.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
     response.end(JSON.stringify({ service: "collaboration", status: "ok" }));
   });
+
+  function handleInvalidation(event: { userId: string | null; workspaceId: string }) {
+    for (const [socket, info] of connections) {
+      if (info.workspaceId !== event.workspaceId) continue;
+      if (event.userId !== null && info.userId !== event.userId) continue;
+      socket.close(4403, "Access revoked");
+      connections.delete(socket);
+    }
+  }
+
+  accessInvalidations?.on("invalidation", handleInvalidation);
 
   server.on("upgrade", (request, socket, head) => {
     void (async () => {
@@ -105,6 +120,13 @@ export function createCollaborationServer({
       }
 
       webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
+        connections.set(webSocket, {
+          userId: authorization.userId,
+          workspaceId: authorization.access.workspaceId,
+        });
+        webSocket.on("close", () => {
+          connections.delete(webSocket);
+        });
         setupConnection(webSocket, request, {
           docName,
         });
@@ -113,11 +135,14 @@ export function createCollaborationServer({
   });
 
   return {
+    connections,
     server,
     async close() {
+      accessInvalidations?.removeAllListeners();
       for (const client of webSocketServer.clients) {
         client.terminate();
       }
+      connections.clear();
       await flushRooms?.();
       webSocketServer.close();
       if (!server.listening) {
