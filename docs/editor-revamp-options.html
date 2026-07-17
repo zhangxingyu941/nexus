@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nexus 编辑器改版方向</title>
+    <style>
+      :root {
+        --ink: #27272a;
+        --muted: #71717a;
+        --line: #e4e4e7;
+        --surface: #ffffff;
+        --ground: #f4f4f5;
+        --saved: #16a34a;
+        --failed: #dc2626;
+        --shadow: 0 14px 35px rgba(24, 24, 27, 0.1);
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        color: var(--ink);
+        background: var(--ground);
+        font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+        line-height: 1.5;
+      }
+      button { font: inherit; }
+      .page { width: min(1440px, calc(100% - 48px)); margin: 0 auto; padding: 48px 0 72px; }
+      .eyebrow { margin: 0 0 8px; color: var(--muted); font-size: 13px; font-weight: 700; }
+      h1 { margin: 0; font-size: 34px; line-height: 1.2; }
+      .intro { max-width: 700px; margin: 12px 0 32px; color: var(--muted); }
+      .principles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 38px; }
+      .principle { padding: 14px 16px; border-left: 3px solid #a1a1aa; background: rgba(255, 255, 255, 0.6); }
+      .principle strong, .principle span { display: block; }
+      .principle span { margin-top: 3px; color: var(--muted); font-size: 13px; }
+      .status-policy { display: flex; align-items: center; gap: 16px; margin: -12px 0 38px; padding: 13px 16px; border: 1px solid var(--line); background: #fff; }
+      .status-policy strong { font-size: 13px; }
+      .status-policy > span { color: var(--muted); font-size: 12px; }
+      .status-examples { display: flex; flex: 1; justify-content: flex-end; gap: 16px; }
+      .choices { display: grid; gap: 30px; }
+      .choice { border: 1px solid var(--line); background: var(--surface); box-shadow: var(--shadow); }
+      .choice-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding: 22px 24px 18px; border-bottom: 1px solid var(--line); }
+      .choice-head h2 { margin: 0; font-size: 20px; }
+      .choice-head p { max-width: 620px; margin: 5px 0 0; color: var(--muted); font-size: 14px; }
+      .badge { flex: 0 0 auto; padding: 4px 9px; border: 1px solid var(--line); color: #27272a; background: #fafafa; font-size: 12px; font-weight: 700; }
+      .badge.neutral { color: var(--muted); background: #fafafa; }
+      .preview-wrap { padding: 24px; overflow-x: auto; }
+      .preview { min-width: 900px; height: 500px; overflow: hidden; border: 1px solid #d4d4d8; background: #fff; }
+      .preview *, .preview *::before, .preview *::after { box-sizing: border-box; }
+      .tool-icon { display: grid; width: 28px; height: 28px; place-items: center; border: 0; border-radius: 5px; color: #71717a; background: transparent; cursor: pointer; }
+      .tool-icon:hover { background: #f4f4f5; }
+      .save-status { display: inline-flex; align-items: center; gap: 6px; color: #52525b; font-size: 12px; }
+      .status-dot { width: 7px; height: 7px; border-radius: 99px; background: #a1a1aa; }
+      .save-status.saved .status-dot { background: var(--saved); }
+      .save-status.failed { color: #b91c1c; }
+      .save-status.failed .status-dot { background: var(--failed); }
+      .avatar { display: grid; width: 24px; height: 24px; place-items: center; border: 2px solid #fff; border-radius: 50%; color: #fff; background: #71717a; font-size: 10px; font-weight: 800; }
+      .avatar.blue { margin-left: -6px; background: #a1a1aa; }
+      .doc-title { color: #18181b; font-size: 15px; font-weight: 700; }
+      .doc-meta { color: #71717a; font-size: 12px; }
+      .canvas-heading { margin: 0; color: #18181b; font-size: 32px; line-height: 1.25; }
+      .doc-copy { margin: 14px 0; color: #52525b; font-size: 14px; line-height: 1.8; }
+      .block { display: flex; align-items: flex-start; gap: 8px; margin: 5px 0; padding: 6px 0; border-radius: 4px; }
+      .block:hover { background: #fafafa; }
+      .handle { width: 18px; color: #a1a1aa; text-align: center; }
+      .todo { width: 16px; height: 16px; margin-top: 3px; border: 1.5px solid #a1a1aa; border-radius: 4px; }
+      .todo.done { border-color: #27272a; background: #27272a; }
+      .todo.done::after { display: block; color: white; content: "✓"; font-size: 12px; line-height: 14px; text-align: center; }
+      .note { padding: 13px 15px; border-left: 3px solid #a1a1aa; color: #52525b; background: #f4f4f5; font-size: 13px; }
+      .annotation { padding: 0 24px 24px; color: var(--muted); font-size: 13px; }
+      .annotation strong { color: var(--ink); }
+
+      /* A: focus editor */
+      .focus-app { display: grid; grid-template-rows: 54px 1fr; height: 100%; }
+      .focus-top { display: flex; align-items: center; gap: 12px; padding: 0 18px; border-bottom: 1px solid var(--line); }
+      .focus-name { flex: 1; color: #71717a; font-size: 13px; }
+      .focus-body { display: grid; grid-template-columns: 172px 1fr; height: 446px; }
+      .focus-nav { padding: 16px 10px; border-right: 1px solid var(--line); background: #fafafa; }
+      .focus-nav b { display: block; padding: 0 8px 10px; font-size: 13px; }
+      .focus-nav span { display: block; padding: 8px; color: #71717a; font-size: 12px; }
+      .focus-nav span.active { color: #18181b; background: #f4f4f5; font-weight: 700; }
+      .focus-canvas { width: 680px; margin: 0 auto; padding: 54px 0; }
+      .focus-canvas .doc-meta { display: flex; align-items: center; gap: 7px; margin: 12px 0 28px; }
+      .quick-insert { display: inline-flex; align-items: center; gap: 5px; margin-top: 12px; padding: 5px 8px; border: 1px dashed #d4d4d8; border-radius: 4px; color: #71717a; background: white; font-size: 12px; }
+
+      /* B: collaboration command center */
+      .command-app { display: grid; grid-template-columns: 190px 1fr 245px; grid-template-rows: 54px 1fr; height: 100%; }
+      .command-top { display: flex; grid-column: 1 / -1; align-items: center; gap: 11px; padding: 0 16px; border-bottom: 1px solid var(--line); }
+      .command-brand { color: #18181b; font-size: 16px; font-weight: 800; }
+      .command-search { width: 210px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 4px; color: #a1a1aa; background: #fafafa; font-size: 12px; }
+      .command-spacer { flex: 1; }
+      .command-button { padding: 6px 10px; border: 0; border-radius: 4px; color: #fff; background: #18181b; font-size: 12px; font-weight: 700; }
+      .command-left { padding: 16px 10px; border-right: 1px solid var(--line); background: #fafafa; }
+      .workspace { padding: 9px; border: 1px solid #d4d4d8; border-radius: 4px; color: #27272a; background: #f4f4f5; font-size: 12px; font-weight: 700; }
+      .nav-label { margin: 18px 8px 6px; color: #a1a1aa; font-size: 10px; font-weight: 800; }
+      .command-left span { display: block; padding: 7px 8px; color: #71717a; font-size: 12px; }
+      .command-left span.active { border-left: 2px solid #27272a; color: #18181b; background: #f4f4f5; font-weight: 700; }
+      .command-canvas { padding: 42px 42px 24px; }
+      .command-canvas .canvas-heading { font-size: 28px; }
+      .tag { display: inline-block; margin: 0 4px 16px 0; padding: 3px 7px; border-radius: 3px; color: #52525b; background: #f4f4f5; font-size: 11px; }
+      .task-row { display: grid; grid-template-columns: 18px minmax(0, 1fr) 80px 80px; gap: 7px; align-items: center; padding: 9px 0; border-bottom: 1px solid #f4f4f5; font-size: 13px; }
+      .task-row .status { padding: 3px 5px; border-radius: 3px; color: #52525b; background: #f4f4f5; font-size: 10px; text-align: center; }
+      .task-row .date { color: #71717a; font-size: 11px; text-align: right; }
+      .command-right { padding: 17px 13px; border-left: 1px solid var(--line); background: #fafafa; }
+      .panel-title { margin: 0 0 10px; color: #52525b; font-size: 12px; font-weight: 800; }
+      .mini-card { margin-bottom: 13px; padding: 10px; border: 1px solid #e4e4e7; border-radius: 4px; background: #fff; }
+      .mini-card strong, .mini-card span { display: block; }
+      .mini-card span { margin-top: 4px; color: #71717a; font-size: 11px; }
+      .progress { height: 6px; margin-top: 9px; overflow: hidden; border-radius: 99px; background: #e4e4e7; }
+      .progress i { display: block; width: 64%; height: 100%; background: #52525b; }
+
+      /* C: contextual hybrid */
+      .hybrid-app { display: grid; grid-template-rows: 54px 1fr; height: 100%; }
+      .hybrid-top { display: flex; align-items: center; gap: 12px; padding: 0 18px; border-bottom: 1px solid var(--line); }
+      .hybrid-breadcrumb { flex: 1; color: #71717a; font-size: 12px; }
+      .hybrid-body { display: grid; grid-template-columns: 206px minmax(0, 1fr); height: 446px; }
+      .hybrid-nav { padding: 16px 11px; border-right: 1px solid var(--line); background: #fafafa; }
+      .hybrid-nav .team { display: flex; align-items: center; gap: 7px; padding: 8px; color: #27272a; background: #f4f4f5; font-size: 12px; font-weight: 700; }
+      .hybrid-nav .nav-item { display: flex; align-items: center; justify-content: space-between; margin-top: 4px; padding: 8px; color: #71717a; font-size: 12px; }
+      .hybrid-nav .nav-item.active { color: #18181b; background: #fff; box-shadow: inset 2px 0 #27272a; font-weight: 700; }
+      .hybrid-main { position: relative; overflow: hidden; }
+      .hybrid-canvas { width: 680px; margin: 0 auto; padding: 48px 0; }
+      .hybrid-canvas .doc-meta { display: flex; align-items: center; gap: 8px; margin: 11px 0 24px; }
+      .context-rail { position: absolute; top: 44px; right: 18px; width: 156px; padding: 11px; border: 1px solid #e4e4e7; border-radius: 5px; background: #fff; box-shadow: 0 8px 20px rgba(24, 24, 27, 0.08); }
+      .context-rail h4 { margin: 0 0 8px; color: #52525b; font-size: 11px; }
+      .context-rail p { margin: 4px 0; color: #71717a; font-size: 11px; }
+      .context-rail .compact-progress { display: flex; height: 5px; margin: 8px 0; overflow: hidden; border-radius: 8px; background: #e4e4e7; }
+      .context-rail .compact-progress i { width: 62%; background: #52525b; }
+      .block.active-block { margin-right: -4px; padding: 7px; outline: 1px solid #d4d4d8; background: #fafafa; }
+      .block-actions { margin-left: auto; color: #52525b; font-size: 12px; }
+      .hybrid-footer { position: absolute; right: 18px; bottom: 18px; display: flex; align-items: center; gap: 7px; padding: 7px 9px; border: 1px solid #e4e4e7; border-radius: 5px; color: #52525b; background: #fff; font-size: 11px; }
+
+      @media (max-width: 760px) {
+        .page { width: min(100% - 28px, 1440px); padding-top: 28px; }
+        h1 { font-size: 28px; }
+        .principles { grid-template-columns: 1fr; }
+        .status-policy { display: grid; gap: 10px; }
+        .status-examples { justify-content: flex-start; flex-wrap: wrap; }
+        .choice-head { display: block; }
+        .badge { display: inline-block; margin-top: 10px; }
+        .preview-wrap { padding: 14px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <p class="eyebrow">NEXUS / EDITOR REVAMP</p>
+      <h1>编辑模块改版方向</h1>
+      <p class="intro">现有功能已经覆盖文档、任务、评论、协作和大纲。下一版不应继续堆叠面板，而应让用户在写作时保持专注，在处理任务时即时获得上下文。</p>
+
+      <section class="principles" aria-label="评估原则">
+        <div class="principle"><strong>正文优先</strong><span>编辑区是持续工作的中心，不被固定工具栏和状态卡切碎。</span></div>
+        <div class="principle"><strong>按需显露</strong><span>协作信息在选中任务块、评论或需要决策时出现，而不是常驻占位。</span></div>
+        <div class="principle"><strong>一处完成</strong><span>区块操作、状态、负责人和评论从当前块直接完成，避免跨面板跳转。</span></div>
+      </section>
+      <section class="status-policy" aria-label="保存状态语义">
+        <strong>保存状态</strong>
+        <span>固定在文档标题下方或顶栏右侧，状态变化时文字同步更新。</span>
+        <div class="status-examples">
+          <span class="save-status saved"><span class="status-dot"></span>已同步</span>
+          <span class="save-status"><span class="status-dot"></span>正在保存</span>
+          <span class="save-status failed"><span class="status-dot"></span>同步失败 · 重试</span>
+        </div>
+      </section>
+
+      <section class="choices" aria-label="三个方案">
+        <article class="choice">
+          <header class="choice-head">
+            <div><h2>A. 沉浸式文档</h2><p>左侧保留轻量导航，顶部只保留协作状态和分享；任务、评论与属性全部收进块的悬浮操作中。</p></div>
+            <span class="badge neutral">适合：个人写作、知识库</span>
+          </header>
+          <div class="preview-wrap"><div class="preview focus-app" aria-label="沉浸式文档预览">
+            <div class="focus-top"><span class="doc-title">Nexus</span><span class="focus-name">产品团队 / 迭代复盘</span><span class="save-status saved"><span class="status-dot"></span>已同步</span><span class="avatar">林</span><span class="avatar blue">周</span><button class="tool-icon" aria-label="分享">↗</button></div>
+            <div class="focus-body"><aside class="focus-nav"><b>工作区</b><span>⌕ 搜索</span><span>▣ 全部文档</span><span class="active">迭代复盘</span><span>需求规划</span><span>会议记录</span></aside><section class="focus-canvas"><h3 class="canvas-heading">第 24 周迭代复盘</h3><p class="doc-meta">2 人正在查看 · 最后编辑于刚刚</p><div class="block"><span class="handle">⠿</span><span>本周重点是缩短需求从评审到上线的等待时间，并明确各模块负责人。</span></div><div class="block"><span class="handle">⠿</span><strong>本周结论</strong></div><div class="block"><span class="handle">⠿</span><span class="todo done"></span><span>统一需求评审模板</span></div><div class="block"><span class="handle">⠿</span><span class="todo"></span><span>补齐编辑器区块操作的可用性测试</span></div><div class="note">引用数据与待办全部在当前文档中处理，右侧不再常驻信息面板。</div><button class="quick-insert">＋ 添加内容或输入 /</button></section></div>
+          </div></div>
+          <p class="annotation"><strong>优点：</strong>阅读和写作体验最安静。<strong>代价：</strong>任务与评论的全局可见性较弱，需要依赖搜索和局部入口。</p>
+        </article>
+
+        <article class="choice">
+          <header class="choice-head">
+            <div><h2>B. 协作指挥台</h2><p>将文档视为项目作业面：右侧始终显示进度、成员和近期活动，正文中的任务行直接展示状态、负责人和截止日期。</p></div>
+            <span class="badge neutral">适合：项目推进、任务密集</span>
+          </header>
+          <div class="preview-wrap"><div class="preview command-app" aria-label="协作指挥台预览">
+            <div class="command-top"><strong class="command-brand">Nexus</strong><span class="command-search">⌕ 搜索文档、任务与成员</span><span class="command-spacer"></span><span class="save-status saved"><span class="status-dot"></span>已同步</span><span class="doc-meta">3 人在线</span><button class="command-button">分享</button></div>
+            <aside class="command-left"><div class="workspace">产品团队 ▾</div><p class="nav-label">快速入口</p><span>⌕ 搜索</span><span>✓ 我的任务</span><span>◷ 最近动态</span><p class="nav-label">文档</p><span class="active">迭代复盘</span><span>需求规划</span><span>设计评审</span></aside>
+            <section class="command-canvas"><span class="tag">Sprint 24</span><span class="tag">编辑器</span><h3 class="canvas-heading">编辑器体验改版</h3><p class="doc-copy">把优先级明确的事项放在正文中，成员可以直接完成、指派与修改状态。</p><div class="task-row"><span class="todo done"></span><span>梳理现有编辑流程</span><span class="status">已完成</span><span class="date">昨天</span></div><div class="task-row"><span class="todo"></span><span>完成交互方案评审</span><span class="status">待评审</span><span class="date">周四</span></div><div class="task-row"><span class="todo"></span><span>实现块级快捷操作</span><span class="status">进行中</span><span class="date">周五</span></div><div class="task-row"><span class="todo"></span><span>补充协作状态测试</span><span class="status">待处理</span><span class="date">下周</span></div></section>
+            <aside class="command-right"><p class="panel-title">本页进度</p><div class="mini-card"><strong>6 / 9 已完成</strong><div class="progress"><i></i></div><span>本周目标：周五前完成</span></div><p class="panel-title">正在协作</p><div class="mini-card"><strong>林然 · 正在编辑</strong><span>任务「块级快捷操作」</span></div><div class="mini-card"><strong>周明 · 2 条评论</strong><span>等待你处理</span></div><p class="panel-title">最近活动</p><div class="mini-card"><strong>设计评审已更新</strong><span>12 分钟前</span></div></aside>
+          </div></div>
+          <p class="annotation"><strong>优点：</strong>任务推进、协作感和工作状态一眼可见。<strong>代价：</strong>长文阅读空间变窄，页面也更容易显得像管理后台。</p>
+        </article>
+
+        <article class="choice">
+          <header class="choice-head">
+            <div><h2>C. 情境化混合模式</h2><p>默认使用安静的文档画布。只有焦点进入任务块、评论块或用户主动打开页面信息时，才出现靠近内容的轻量上下文工具。</p></div>
+            <span class="badge">推荐：写作与协作兼顾</span>
+          </header>
+          <div class="preview-wrap"><div class="preview hybrid-app" aria-label="情境化混合模式预览">
+            <div class="hybrid-top"><strong class="doc-title">Nexus</strong><span class="hybrid-breadcrumb">产品团队 / 迭代复盘</span><span class="save-status saved"><span class="status-dot"></span>已同步</span><span class="avatar">林</span><span class="avatar blue">周</span><button class="tool-icon" aria-label="评论">◌</button><button class="command-button">分享</button></div>
+            <div class="hybrid-body"><aside class="hybrid-nav"><div class="team">产品团队 <span style="margin-left:auto">⌄</span></div><div class="nav-item">⌕ 搜索 <span>⌘K</span></div><div class="nav-item">✓ 我的任务 <span>4</span></div><p class="nav-label">已固定</p><div class="nav-item active">迭代复盘</div><div class="nav-item">需求规划</div><p class="nav-label">最近访问</p><div class="nav-item">设计评审</div><div class="nav-item">发布清单</div></aside>
+            <section class="hybrid-main"><div class="hybrid-canvas"><h3 class="canvas-heading">第 24 周迭代复盘</h3><p class="doc-meta">2 人正在查看 · 最后编辑于刚刚</p><div class="block"><span class="handle">⠿</span><span>本周我们聚焦于编辑器的可发现性与协作效率，先缩短高频操作路径。</span></div><div class="block"><span class="handle">⠿</span><strong>下一步</strong></div><div class="block active-block"><span class="handle">⠿</span><span class="todo"></span><span>完成编辑模块交互方案评审</span><span class="block-actions">林然 · 周四 · 3 评论</span></div><div class="block"><span class="handle">⠿</span><span class="todo done"></span><span>整理当前编辑体验问题</span></div><div class="block"><span class="handle">⠿</span><span class="todo"></span><span>定义第一版改造范围</span></div><button class="quick-insert">＋ 添加内容或输入 /</button></div><aside class="context-rail"><h4>当前任务</h4><p><strong>待评审</strong></p><p>负责人：林然</p><p>截止：周四</p><div class="compact-progress"><i></i></div><p>3 条未解决评论</p></aside><div class="hybrid-footer"><span class="save-status saved"><span class="status-dot"></span>已同步</span></div></section></div>
+          </div></div>
+          <p class="annotation"><strong>推荐理由：</strong>保持正文的呼吸感，同时把协作信息放到与当前区块相关的位置。右侧上下文栏改为“选中任务/打开页面信息时出现”的抽屉，而不是桌面端默认常驻。</p>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>

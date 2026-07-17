@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nexus 编辑器内部交互方案</title>
+    <style>
+      :root {
+        --ink-strong: #09090b;
+        --ink: #27272a;
+        --muted: #71717a;
+        --faint: #a1a1aa;
+        --line: #e4e4e7;
+        --line-strong: #d4d4d8;
+        --surface: #ffffff;
+        --sidebar: #fafafa;
+        --hover: #f4f4f5;
+        --blue: #3b82f6;
+        --blue-soft: #eff6ff;
+        --green: #16a34a;
+        --amber: #d97706;
+        --red: #dc2626;
+        --shadow: 0 18px 48px rgba(24, 24, 27, 0.14);
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-width: 320px;
+        color: var(--ink);
+        background: #f4f4f5;
+        font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+        letter-spacing: 0;
+      }
+      button, input { font: inherit; }
+      button { cursor: pointer; }
+      .page { width: min(1480px, calc(100% - 40px)); margin: 0 auto; padding: 32px 0 64px; }
+      .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 28px; margin-bottom: 22px; }
+      .page-head p { margin: 0 0 7px; color: var(--muted); font-size: 12px; font-weight: 700; }
+      .page-head h1 { margin: 0; color: var(--ink-strong); font-size: 28px; line-height: 1.2; }
+      .page-head .summary { max-width: 620px; margin: 0; font-weight: 400; line-height: 1.7; }
+
+      .mode-tabs { display: flex; gap: 4px; margin-bottom: 12px; padding: 4px; border: 1px solid var(--line); background: #fff; }
+      .mode-tabs button { min-height: 32px; padding: 6px 12px; border: 0; border-radius: 4px; color: var(--muted); background: transparent; }
+      .mode-tabs button[aria-selected="true"] { color: var(--ink-strong); background: var(--hover); font-weight: 750; }
+      .mode-tabs span { margin-left: auto; align-self: center; padding-right: 8px; color: var(--faint); font-size: 12px; }
+
+      .prototype { position: relative; height: 700px; overflow: hidden; border: 1px solid var(--line-strong); background: #fff; box-shadow: var(--shadow); }
+      .app { display: grid; grid-template-columns: 228px minmax(0, 1fr); grid-template-rows: 54px minmax(0, 1fr); height: 100%; }
+      .topbar { display: flex; grid-column: 1 / -1; align-items: center; gap: 10px; padding: 0 15px; border-bottom: 1px solid var(--line); }
+      .brand { display: flex; width: 212px; align-items: center; gap: 8px; }
+      .brand img { width: 27px; height: 27px; border-radius: 6px; }
+      .brand strong { color: var(--ink-strong); font-size: 14px; }
+      .breadcrumb { min-width: 0; flex: 1; overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+      .save-state { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+      .save-state i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+      .avatars { display: flex; }
+      .avatar { display: grid; width: 26px; height: 26px; place-items: center; border: 2px solid #fff; border-radius: 50%; color: #fff; background: #52525b; font-size: 10px; font-weight: 800; }
+      .avatar + .avatar { margin-left: -7px; background: #a1a1aa; }
+      .icon-button { display: grid; width: 32px; height: 32px; place-items: center; border: 0; border-radius: 5px; color: var(--muted); background: transparent; }
+      .icon-button:hover { color: var(--ink); background: var(--hover); }
+      .share { min-height: 32px; padding: 6px 11px; border: 0; border-radius: 5px; color: #fff; background: #18181b; }
+
+      .sidebar { display: flex; min-height: 0; flex-direction: column; padding: 12px; border-right: 1px solid var(--line); background: var(--sidebar); }
+      .workspace { display: flex; align-items: center; justify-content: space-between; min-height: 38px; padding: 8px; border-radius: 5px; color: var(--ink-strong); background: var(--hover); font-size: 13px; font-weight: 750; }
+      .nav-label { margin: 18px 8px 6px; color: var(--faint); font-size: 10px; font-weight: 800; }
+      .nav-item { display: flex; min-height: 34px; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 5px; color: var(--muted); font-size: 12px; }
+      .nav-item b { margin-left: auto; color: var(--faint); font-size: 10px; font-weight: 600; }
+      .nav-item.active { color: var(--ink-strong); background: #fff; box-shadow: inset 2px 0 #27272a; font-weight: 700; }
+      .sidebar-help { display: flex; align-items: center; justify-content: space-between; margin-top: auto; padding: 10px 8px 2px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+
+      .workbench { position: relative; min-width: 0; min-height: 0; overflow: auto; }
+      .document { width: min(760px, calc(100% - 90px)); margin: 0 auto; padding: 58px 0 120px; }
+      .document h2 { margin: 0; color: var(--ink-strong); font-size: 38px; line-height: 1.2; }
+      .doc-meta { margin: 12px 0 28px; color: var(--faint); font-size: 12px; }
+      .copy { margin: 0 0 15px; color: #3f3f46; font-size: 14px; line-height: 1.85; }
+      .section-title { margin: 26px 0 8px; color: #18181b; font-size: 18px; }
+      .block { position: relative; display: grid; grid-template-columns: 30px minmax(0, 1fr); align-items: start; min-height: 40px; margin: 2px 0; padding: 6px 8px 6px 0; border: 1px solid transparent; border-radius: 5px; color: #3f3f46; font-size: 14px; line-height: 1.7; }
+      .block:hover { background: #fafafa; }
+      .gutter { display: flex; align-items: center; justify-content: center; min-height: 26px; color: var(--faint); opacity: 0; }
+      .block:hover .gutter, .block.focused .gutter { opacity: 1; }
+      .block.focused { border-color: #bfdbfe; background: var(--blue-soft); }
+      .focus-rail { position: absolute; top: 3px; bottom: 3px; left: -5px; width: 3px; border-radius: 4px; background: var(--blue); opacity: 0; }
+      .block.focused .focus-rail { opacity: 1; }
+      .todo-line { display: flex; align-items: flex-start; gap: 9px; }
+      .checkbox { width: 17px; height: 17px; flex: 0 0 17px; margin-top: 4px; border: 1.5px solid var(--faint); border-radius: 4px; background: #fff; }
+      .block-meta { display: none; align-items: center; gap: 7px; margin: 5px 0 0 26px; color: var(--muted); font-size: 11px; }
+      .block.focused .block-meta { display: flex; }
+      .chip { padding: 2px 6px; border-radius: 3px; color: #1d4ed8; background: #dbeafe; }
+      .due { color: #a16207; }
+      .insert-hint { display: inline-flex; margin: 12px 0 0 30px; padding: 5px 8px; border: 1px dashed var(--line-strong); border-radius: 4px; color: var(--faint); background: #fff; font-size: 12px; }
+
+      .focus-toolbar { position: absolute; z-index: 6; top: -38px; left: 24px; display: none; align-items: center; padding: 3px; border: 1px solid var(--line); border-radius: 6px; background: #fff; box-shadow: 0 10px 28px rgba(24, 24, 27, 0.12); }
+      .block.focused .focus-toolbar { display: flex; }
+      .focus-toolbar button { display: flex; min-height: 28px; align-items: center; gap: 6px; padding: 5px 8px; border: 0; border-radius: 4px; color: #52525b; background: transparent; font-size: 11px; }
+      .focus-toolbar button:hover { background: var(--hover); }
+      .focus-toolbar .divider { width: 1px; height: 18px; margin: 0 2px; background: var(--line); }
+      kbd { display: inline-flex; min-width: 22px; min-height: 20px; align-items: center; justify-content: center; padding: 2px 6px; border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 4px; color: #52525b; background: #fafafa; font-family: inherit; font-size: 10px; line-height: 1; white-space: nowrap; }
+
+      .overlay { position: absolute; z-index: 10; inset: 0; display: none; align-items: flex-start; justify-content: center; padding-top: 92px; background: rgba(24, 24, 27, 0.16); backdrop-filter: blur(1px); }
+      .markdown-mode .markdown-overlay,
+      .shortcuts-mode .shortcuts-overlay { display: flex; }
+      .inline-popover { position: absolute; z-index: 12; top: 330px; left: clamp(270px, 42%, 650px); display: none; }
+      .slash-mode .slash-popover,
+      .mention-mode .mention-popover { display: block; }
+      .slash-popover::before,
+      .mention-popover::before { position: absolute; top: -6px; left: 22px; width: 10px; height: 10px; border-top: 1px solid var(--line-strong); border-left: 1px solid var(--line-strong); background: #fff; content: ""; transform: rotate(45deg); }
+      .palette { width: min(410px, calc(100vw - 40px)); overflow: hidden; border: 1px solid var(--line-strong); border-radius: 7px; background: #fff; box-shadow: var(--shadow); }
+      .palette-search { display: flex; align-items: center; gap: 9px; min-height: 48px; padding: 0 14px; border-bottom: 1px solid var(--line); }
+      .palette-search input { min-width: 0; flex: 1; border: 0; outline: 0; color: var(--ink); background: transparent; }
+      .palette-search input::placeholder { color: var(--faint); }
+      .palette-body { max-height: 350px; overflow: auto; padding: 7px; }
+      .palette-group { margin: 9px 8px 5px; color: var(--faint); font-size: 10px; font-weight: 800; }
+      .command { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 9px; min-height: 42px; padding: 5px 8px; border-radius: 5px; }
+      .command.active { background: var(--blue-soft); }
+      .command-icon { display: grid; width: 28px; height: 28px; place-items: center; border: 1px solid var(--line); border-radius: 5px; color: #52525b; background: #fff; }
+      .command strong, .command small { display: block; }
+      .command strong { color: #27272a; font-size: 12px; }
+      .command small { margin-top: 2px; color: var(--faint); font-size: 10px; }
+      .palette-foot { display: flex; align-items: center; gap: 10px; min-height: 38px; padding: 0 12px; border-top: 1px solid var(--line); color: var(--faint); background: #fafafa; font-size: 10px; }
+      .palette-foot span:last-child { margin-left: auto; }
+
+      .editor-caret { display: inline-block; width: 2px; height: 1.15em; margin: 0 1px -2px; border-radius: 2px; background: var(--blue); }
+      .direct-edit-note { display: flex; align-items: center; gap: 8px; margin: 18px 0 0 30px; color: var(--muted); font-size: 11px; }
+      .direct-edit-note i { width: 3px; height: 20px; border-radius: 3px; background: var(--blue); }
+
+      .collaboration-demo { display: none; margin: 28px 0 20px; padding: 15px 16px; border: 1px solid var(--line); border-radius: 5px; background: #fafafa; }
+      .collaboration-mode .collaboration-demo { display: block; }
+      .collaboration-demo h3 { margin: 0 0 16px; color: var(--ink-strong); font-size: 14px; }
+      .collaboration-line { margin: 13px 0; color: #3f3f46; font-size: 14px; line-height: 1.9; }
+      .cursor-anchor { position: relative; }
+      .person-caret { position: absolute; z-index: 4; top: -2px; right: -2px; width: 2px; height: 24px; border-radius: 2px; background: var(--person-color); }
+      .person-label { position: absolute; right: -4px; bottom: calc(100% + 3px); padding: 3px 7px; border-radius: 4px 4px 0 4px; color: #fff; background: var(--person-color); font-size: 10px; font-weight: 750; line-height: 1.25; white-space: nowrap; }
+      .person-remote { --person-color: #7c3aed; }
+      .person-third { --person-color: #0891b2; }
+      .remote-selection { padding: 1px 0; background: rgba(124, 58, 237, 0.15); }
+      .collaboration-note { display: flex; align-items: center; gap: 8px; margin-top: 16px; color: var(--muted); font-size: 11px; }
+      .person-swatch { width: 10px; height: 10px; border-radius: 3px; background: #7c3aed; }
+
+      .markdown-sheet { width: min(720px, calc(100% - 36px)); overflow: hidden; border: 1px solid var(--line-strong); border-radius: 7px; background: #fff; box-shadow: var(--shadow); }
+      .markdown-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 17px 18px; border-bottom: 1px solid var(--line); }
+      .markdown-head h3 { margin: 0; color: var(--ink-strong); font-size: 16px; }
+      .markdown-head p { margin: 5px 0 0; color: var(--muted); font-size: 11px; }
+      .markdown-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: var(--line); }
+      .markdown-item { display: grid; grid-template-columns: 105px minmax(0, 1fr); align-items: center; gap: 10px; min-height: 54px; padding: 9px 14px; background: #fff; }
+      .markdown-item code { color: #1d4ed8; font-family: "SFMono-Regular", Consolas, monospace; font-size: 11px; }
+      .markdown-item strong, .markdown-item small { display: block; }
+      .markdown-item strong { color: #3f3f46; font-size: 12px; }
+      .markdown-item small { margin-top: 2px; color: var(--faint); font-size: 10px; }
+
+      .mention-palette { width: min(390px, calc(100vw - 40px)); overflow: hidden; border: 1px solid var(--line-strong); border-radius: 7px; background: #fff; box-shadow: var(--shadow); }
+      .mention-tabs { display: flex; gap: 3px; padding: 7px; border-bottom: 1px solid var(--line); background: #fafafa; }
+      .mention-tabs span { padding: 5px 8px; border-radius: 4px; color: var(--muted); font-size: 11px; }
+      .mention-tabs span.active { color: #1d4ed8; background: #dbeafe; font-weight: 750; }
+      .mention-result { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 9px; min-height: 46px; padding: 6px 12px; }
+      .mention-result.active { background: var(--blue-soft); }
+      .mention-avatar { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 6px; color: #fff; background: #52525b; font-size: 10px; font-weight: 800; }
+      .mention-result strong, .mention-result small { display: block; }
+      .mention-result strong { color: #3f3f46; font-size: 12px; }
+      .mention-result small { margin-top: 2px; color: var(--faint); font-size: 10px; }
+      .mention-kind { color: var(--faint); font-size: 10px; }
+
+      .selection-menu { position: absolute; z-index: 8; top: 222px; left: 50%; display: none; align-items: center; padding: 4px; border: 1px solid var(--line-strong); border-radius: 6px; background: #18181b; box-shadow: 0 12px 32px rgba(24, 24, 27, 0.22); transform: translateX(-12%); }
+      .selection-mode .selection-menu { display: flex; }
+      .selection-menu button { display: grid; min-width: 30px; height: 30px; place-items: center; border: 0; border-radius: 4px; color: #e4e4e7; background: transparent; font-size: 12px; font-weight: 800; }
+      .selection-menu button:hover { color: #fff; background: #3f3f46; }
+      .selection-menu .divider { width: 1px; height: 18px; margin: 0 3px; background: #52525b; }
+      .selection-highlight { background: #dbeafe; }
+
+      .shortcut-dialog { width: min(760px, calc(100% - 36px)); max-height: 520px; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 7px; background: #fff; box-shadow: var(--shadow); }
+      .shortcut-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 18px; border-bottom: 1px solid var(--line); }
+      .shortcut-head h3 { margin: 0; color: var(--ink-strong); font-size: 17px; }
+      .shortcut-head p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+      .shortcut-body { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; max-height: 430px; padding: 18px; overflow: auto; }
+      .shortcut-group h4 { margin: 0 0 8px; color: var(--faint); font-size: 10px; }
+      .shortcut-row { display: flex; min-height: 38px; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid #f4f4f5; color: #3f3f46; font-size: 12px; }
+      .keys { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; }
+      .fixed-note { grid-column: 1 / -1; padding: 10px 12px; border-left: 3px solid var(--blue); color: #52525b; background: var(--blue-soft); font-size: 11px; }
+
+      .rules { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin-top: 22px; border: 1px solid var(--line); background: var(--line); }
+      .rule { min-height: 132px; padding: 16px; background: #fff; }
+      .rule span { display: block; margin-bottom: 7px; color: var(--faint); font-size: 10px; font-weight: 800; }
+      .rule strong { color: var(--ink-strong); font-size: 13px; }
+      .rule p { margin: 7px 0 0; color: var(--muted); font-size: 12px; line-height: 1.65; }
+      .rule.wide { grid-column: 1 / -1; min-height: 0; }
+
+      @media (max-width: 920px) {
+        .page { width: min(100% - 20px, 1480px); padding-top: 20px; }
+        .page-head { display: block; }
+        .page-head .summary { margin-top: 10px; }
+        .prototype { overflow-x: auto; }
+        .app { min-width: 980px; }
+        .rules { grid-template-columns: repeat(2, 1fr); }
+      }
+      @media (max-width: 600px) {
+        .mode-tabs { overflow-x: auto; }
+        .mode-tabs span { display: none; }
+        .rules, .shortcut-body, .markdown-grid { grid-template-columns: 1fr; }
+        .rule.wide { grid-column: 1; }
+        .fixed-note { grid-column: 1; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <header class="page-head">
+        <div><p>NEXUS / EDITOR INTERACTION</p><h1>Focus Rail + 固定快捷键体系</h1></div>
+        <p class="summary">延续 Notion 的块编辑心智，但用蓝色焦点轨道统一当前操作位置。高频动作同时提供可见入口和固定快捷键，复杂协作属性继续进入情境化右侧面板。</p>
+      </header>
+
+      <nav class="mode-tabs" aria-label="交互预览">
+        <button aria-selected="true" data-mode="focus" type="button">Focus Rail</button>
+        <button aria-selected="false" data-mode="slash" type="button">Slash 菜单</button>
+        <button aria-selected="false" data-mode="markdown" type="button">Markdown 快捷输入</button>
+        <button aria-selected="false" data-mode="mention" type="button">@ 统一引用</button>
+        <button aria-selected="false" data-mode="collaboration" type="button">协作光标</button>
+        <button aria-selected="false" data-mode="selection" type="button">文本选择</button>
+        <button aria-selected="false" data-mode="shortcuts" type="button">快捷键中心</button>
+        <span>点击切换交互状态</span>
+      </nav>
+
+      <section class="prototype">
+        <div class="app" id="interaction-demo">
+          <header class="topbar">
+            <div class="brand"><img src="../public/nexus-logo.svg" alt="Nexus" /><strong>Nexus</strong></div>
+            <div class="breadcrumb">产品团队 / 编辑器体验改版</div>
+            <span class="save-state"><i></i>已同步</span>
+            <div class="avatars"><span class="avatar">林</span><span class="avatar">周</span></div>
+            <button class="icon-button" aria-label="打开快捷键中心" type="button">?</button>
+            <button class="share" type="button">分享</button>
+          </header>
+
+          <aside class="sidebar">
+            <div class="workspace"><span>产品团队</span><span>⌄</span></div>
+            <div class="nav-item">⌕ <span>搜索</span><b>Ctrl K</b></div>
+            <div class="nav-item">✓ <span>我的任务</span><b>4</b></div>
+            <p class="nav-label">已固定</p>
+            <div class="nav-item active">▤ <span>编辑器体验改版</span></div>
+            <div class="nav-item">▤ <span>迭代复盘</span></div>
+            <div class="sidebar-help"><span>快捷键</span><kbd>Ctrl /</kbd></div>
+          </aside>
+
+          <section class="workbench">
+            <article class="document">
+              <h2>编辑器体验改版</h2>
+              <p class="doc-meta">2 人正在查看 · 最后编辑于刚刚</p>
+              <p class="copy">Nexus 保留块编辑器熟悉的输入方式，但将当前操作位置、协作状态和快捷动作收拢为一套一致的交互语言。</p>
+              <section class="collaboration-demo" aria-label="多人协作光标">
+                <h3>同一段内容中的实时光标</h3>
+                <p class="collaboration-line">A 正在整理编辑器交互方案<span class="editor-caret" aria-label="本地光标"></span>，本地光标保持默认显示。</p>
+                <p class="collaboration-line">B 正准备修改<span class="remote-selection">协作光标的显示规则</span><span class="cursor-anchor">。<span class="person-caret person-remote"><span class="person-label">周明</span></span></span></p>
+                <p class="collaboration-line">另一位成员正在补充移动端行为<span class="cursor-anchor">。<span class="person-caret person-third"><span class="person-label">林然</span></span></span></p>
+                <p class="collaboration-note"><span class="person-swatch"></span><span>姓名标签背景、文字选区和竖向光标使用同一个人员颜色。</span></p>
+              </section>
+              <h3 class="section-title">下一步</h3>
+              <div class="block focused">
+                <span class="focus-rail"></span>
+                <span class="gutter">⠿</span>
+                <div>
+                  <div class="todo-line"><span class="checkbox"></span><span>完成 Focus Rail 与快捷键方案<span class="editor-caret"></span>评审</span></div>
+                  <div class="block-meta"><span class="chip">进行中</span><span>林然</span><span class="due">周四</span><span>2 条评论</span></div>
+                </div>
+                <div class="focus-toolbar">
+                  <button type="button">Todo <kbd>/</kbd></button><span class="divider"></span>
+                  <button type="button">状态</button><button type="button">负责人</button><button type="button">评论 <kbd>Ctrl Shift M</kbd></button><span class="divider"></span>
+                  <button aria-label="更多操作" type="button">•••</button>
+                </div>
+              </div>
+              <div class="block"><span class="gutter">⠿</span><span>默认状态只显示正文，悬停时出现加号和拖拽手柄。</span></div>
+              <div class="block"><span class="gutter">⠿</span><span class="selection-copy">选中文字后，<mark class="selection-highlight">浮动工具栏紧贴选区出现</mark>，不打断阅读。</span></div>
+              <div class="block"><span class="gutter">⠿</span><span>复杂属性和评论详情仍由右侧上下文面板承载。</span></div>
+              <button class="insert-hint" type="button">＋ 添加内容或输入 /</button>
+              <p class="direct-edit-note"><i></i><span>点击正文任意位置直接定位光标，不出现输入框边框、底色或表单控件。</span></p>
+            </article>
+
+            <div class="selection-menu" aria-label="文本格式">
+              <button aria-label="加粗" type="button">B</button><button aria-label="斜体" type="button"><i>I</i></button><button aria-label="删除线" type="button"><s>S</s></button><span class="divider"></span><button aria-label="链接" type="button">↗</button><button aria-label="评论" type="button">◌</button>
+            </div>
+          </section>
+
+          <div class="inline-popover slash-popover">
+            <section class="palette" aria-label="插入内容">
+              <div class="palette-search"><span>/</span><input value="" placeholder="搜索内容类型或操作" /><kbd>Esc</kbd></div>
+              <div class="palette-body">
+                <p class="palette-group">RECENT</p>
+                <div class="command active"><span class="command-icon">✓</span><span><strong>Todo</strong><small>创建可分配、可跟踪的任务</small></span><kbd>Enter</kbd></div>
+                <div class="command"><span class="command-icon">@</span><span><strong>Mention</strong><small>关联成员、文档、任务或日期</small></span><kbd>@</kbd></div>
+                <p class="palette-group">TEXT &amp; HEADINGS</p>
+                <div class="command"><span class="command-icon">T</span><span><strong>Text</strong><small>普通文本内容</small></span></div>
+                <div class="command"><span class="command-icon">H1</span><span><strong>H1</strong><small>一级内容标题</small></span><kbd># 空格</kbd></div>
+                <div class="command"><span class="command-icon">H2</span><span><strong>H2</strong><small>二级内容标题</small></span><kbd>## 空格</kbd></div>
+                <div class="command"><span class="command-icon">H3</span><span><strong>H3</strong><small>三级内容标题</small></span><kbd>### 空格</kbd></div>
+                <div class="command"><span class="command-icon">H4</span><span><strong>H4</strong><small>四级内容标题</small></span><kbd>#### 空格</kbd></div>
+                <div class="command"><span class="command-icon">H5</span><span><strong>H5</strong><small>五级内容标题</small></span><kbd>##### 空格</kbd></div>
+                <div class="command"><span class="command-icon">H6</span><span><strong>H6</strong><small>六级内容标题</small></span><kbd>###### 空格</kbd></div>
+                <div class="command"><span class="command-icon">“</span><span><strong>Quote</strong><small>强调引用或结论</small></span><kbd>&gt; 空格</kbd></div>
+                <div class="command"><span class="command-icon">—</span><span><strong>Divider</strong><small>分隔不同主题</small></span><kbd>--- Enter</kbd></div>
+                <p class="palette-group">LISTS &amp; TASKS</p>
+                <div class="command"><span class="command-icon">•</span><span><strong>Bullet List</strong><small>项目符号列表</small></span><kbd>- 空格</kbd></div>
+                <div class="command"><span class="command-icon">1.</span><span><strong>Numbered List</strong><small>编号步骤或流程</small></span><kbd>1. 空格</kbd></div>
+                <div class="command"><span class="command-icon">▸</span><span><strong>Toggle</strong><small>按需展开详细内容</small></span></div>
+                <p class="palette-group">MEDIA</p>
+                <div class="command"><span class="command-icon">▧</span><span><strong>Image</strong><small>上传或粘贴图片</small></span></div>
+                <div class="command"><span class="command-icon">↗</span><span><strong>Link Card</strong><small>展示网页摘要与封面</small></span></div>
+                <div class="command"><span class="command-icon">□</span><span><strong>File</strong><small>上传团队附件</small></span></div>
+                <p class="palette-group">DATA &amp; ADVANCED</p>
+                <div class="command"><span class="command-icon">&lt;/&gt;</span><span><strong>Code</strong><small>代码片段与技术说明</small></span><kbd>``` 空格</kbd></div>
+                <div class="command"><span class="command-icon">▦</span><span><strong>Table</strong><small>结构化记录信息</small></span></div>
+                <div class="command"><span class="command-icon">▥</span><span><strong>Board</strong><small>按阶段组织工作</small></span></div>
+                <div class="command"><span class="command-icon">∑</span><span><strong>Formula</strong><small>插入行内或块级公式</small></span></div>
+              </div>
+              <footer class="palette-foot"><span>↑↓ 选择</span><span>Enter 确认</span><span>Esc 返回原光标</span><span>选择后直接聚焦内容</span></footer>
+            </section>
+          </div>
+
+          <div class="overlay markdown-overlay">
+            <section class="markdown-sheet" aria-label="Markdown 快捷输入">
+              <header class="markdown-head"><div><h3>Markdown 快捷输入</h3><p>在空块开头输入触发符并按空格，立即转换为对应富文本块；不进入源码编辑模式。</p></div><kbd>Esc</kbd></header>
+              <div class="markdown-grid">
+                <div class="markdown-item"><code># ... ######</code><span><strong>H1-H6</strong><small>输入对应数量的 # 后按空格</small></span></div>
+                <div class="markdown-item"><code>- + 空格</code><span><strong>无序列表</strong><small>继续 Enter 创建下一项</small></span></div>
+                <div class="markdown-item"><code>1. + 空格</code><span><strong>有序列表</strong><small>自动维护序号</small></span></div>
+                <div class="markdown-item"><code>- [ ] + 空格</code><span><strong>待办</strong><small>转换后可继续分配负责人</small></span></div>
+                <div class="markdown-item"><code>&gt; + 空格</code><span><strong>引用</strong><small>适合结论与引用内容</small></span></div>
+                <div class="markdown-item"><code>``` + 空格</code><span><strong>代码块</strong><small>保留等宽字体和语言选择</small></span></div>
+                <div class="markdown-item"><code>--- + Enter</code><span><strong>分割线</strong><small>转换后光标进入下一块</small></span></div>
+                <div class="markdown-item"><code>**文本**</code><span><strong>加粗</strong><small>闭合标记后转换为文本格式</small></span></div>
+                <div class="markdown-item"><code>_文本_</code><span><strong>斜体</strong><small>保留标准 Markdown 输入习惯</small></span></div>
+                <div class="markdown-item"><code>`代码`</code><span><strong>行内代码</strong><small>仅作用于当前选区</small></span></div>
+              </div>
+              <footer class="palette-foot"><span>Markdown 只负责快捷输入</span><span>转换后直接以富文本方式继续编辑</span></footer>
+            </section>
+          </div>
+
+          <div class="inline-popover mention-popover">
+            <section class="mention-palette" aria-label="统一引用">
+              <div class="palette-search"><span>@</span><input value="" placeholder="搜索成员、文档、任务或日期" /><kbd>Esc</kbd></div>
+              <div class="mention-tabs"><span class="active">All</span><span>People</span><span>Docs</span><span>Tasks</span><span>Dates</span></div>
+              <div class="mention-result active"><span class="mention-avatar">周</span><span><strong>周明</strong><small>产品设计 · 在线</small></span><span class="mention-kind">People</span></div>
+              <div class="mention-result"><span class="mention-avatar" style="background:#2563eb">页</span><span><strong>编辑器体验改版</strong><small>产品团队 / 已固定</small></span><span class="mention-kind">Docs</span></div>
+              <div class="mention-result"><span class="mention-avatar" style="background:#7c3aed">任</span><span><strong>完成协作光标方案</strong><small>进行中 · 林然</small></span><span class="mention-kind">Tasks</span></div>
+              <div class="mention-result"><span class="mention-avatar" style="background:#52525b">日</span><span><strong>明天</strong><small>2026 年 7 月 18 日</small></span><span class="mention-kind">Dates</span></div>
+              <footer class="palette-foot"><span>↑↓ 选择</span><span>Enter 插入引用</span><span>插入后光标停在引用后方</span></footer>
+            </section>
+          </div>
+
+          <div class="overlay shortcuts-overlay">
+            <section class="shortcut-dialog" aria-label="快捷键中心">
+              <header class="shortcut-head"><div><h3>快捷键中心</h3><p>第一版采用固定快捷键，不支持自定义。</p></div><kbd>Esc</kbd></header>
+              <div class="shortcut-body">
+                <section class="shortcut-group"><h4>通用</h4>
+                  <div class="shortcut-row"><span>搜索工作区</span><span class="keys"><kbd>Ctrl</kbd><kbd>K</kbd></span></div>
+                  <div class="shortcut-row"><span>打开快捷键中心</span><span class="keys"><kbd>Ctrl</kbd><kbd>/</kbd></span></div>
+                  <div class="shortcut-row"><span>撤销</span><span class="keys"><kbd>Ctrl</kbd><kbd>Z</kbd></span></div>
+                  <div class="shortcut-row"><span>重做</span><span class="keys"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>Z</kbd></span></div>
+                  <div class="shortcut-row"><span>关闭当前界面</span><span class="keys"><kbd>Esc</kbd></span></div>
+                </section>
+                <section class="shortcut-group"><h4>区块操作</h4>
+                  <div class="shortcut-row"><span>新建下一个块</span><span class="keys"><kbd>Enter</kbd></span></div>
+                  <div class="shortcut-row"><span>块内换行</span><span class="keys"><kbd>Shift</kbd><kbd>Enter</kbd></span></div>
+                  <div class="shortcut-row"><span>缩进 / 取消缩进</span><span class="keys"><kbd>Tab</kbd><kbd>Shift Tab</kbd></span></div>
+                  <div class="shortcut-row"><span>上移 / 下移块</span><span class="keys"><kbd>Alt</kbd><kbd>↑ / ↓</kbd></span></div>
+                  <div class="shortcut-row"><span>添加评论</span><span class="keys"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>M</kbd></span></div>
+                </section>
+                <section class="shortcut-group"><h4>文本格式</h4>
+                  <div class="shortcut-row"><span>加粗</span><span class="keys"><kbd>Ctrl</kbd><kbd>B</kbd></span></div>
+                  <div class="shortcut-row"><span>斜体</span><span class="keys"><kbd>Ctrl</kbd><kbd>I</kbd></span></div>
+                  <div class="shortcut-row"><span>删除线</span><span class="keys"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>X</kbd></span></div>
+                  <div class="shortcut-row"><span>添加链接</span><span class="keys"><kbd>Ctrl</kbd><kbd>K</kbd></span></div>
+                </section>
+                <section class="shortcut-group"><h4>输入与任务</h4>
+                  <div class="shortcut-row"><span>打开插入菜单</span><span class="keys"><kbd>/</kbd></span></div>
+                  <div class="shortcut-row"><span>打开统一引用</span><span class="keys"><kbd>@</kbd></span></div>
+                  <div class="shortcut-row"><span>完成 / 取消完成待办</span><span class="keys"><kbd>Ctrl</kbd><kbd>Enter</kbd></span></div>
+                  <div class="shortcut-row"><span>空块合并到上一块</span><span class="keys"><kbd>Backspace</kbd></span></div>
+                  <div class="shortcut-row"><span>聚焦上一块 / 下一块</span><span class="keys"><kbd>↑ / ↓</kbd></span></div>
+                </section>
+                <p class="fixed-note">菜单项、悬浮提示和快捷键中心都读取同一份快捷键定义；系统根据 Windows/Linux 与 macOS 自动显示 Ctrl 或 ⌘。选中文字时 Ctrl + K 添加链接，未选中文字时打开全局搜索。</p>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section class="rules" aria-label="交互规则">
+        <div class="rule"><span>01 / 自身风格</span><strong>蓝色 Focus Rail</strong><p>蓝色只表达当前操作焦点和任务进度；它连接块手柄、操作条和右侧上下文，形成 Nexus 的识别点。</p></div>
+        <div class="rule"><span>02 / 直接编辑</span><strong>正文不是输入框</strong><p>点击文字直接定位光标，聚焦仅显示 Focus Rail；不出现输入边框、底色或表单式文本框。</p></div>
+        <div class="rule"><span>03 / Markdown</span><strong>快捷转换，不是源码模式</strong><p>触发符完成后立即转换为富文本块；标题类型直接显示为 H1 到 H6。</p></div>
+        <div class="rule"><span>04 / 插入分类</span><strong>Slash 锚定光标出现</strong><p>不使用弹窗和遮罩；最近使用、标题、列表任务、媒体和数据内容分组展示，并支持别名搜索。</p></div>
+        <div class="rule"><span>05 / 统一引用</span><strong>@ 使用行内选择层</strong><p>People、Docs、Tasks 和 Dates 跟随光标出现；插入后成为可点击、可同步的行内实体。</p></div>
+        <div class="rule"><span>06 / 快捷键一致性</span><strong>单一快捷键注册表</strong><p>行为、菜单标签和快捷键中心共用定义，并按作用域处理冲突；第一版不开放自定义。</p></div>
+        <div class="rule wide"><span>07 / 协作光标</span><strong>仅远程光标显示人员身份</strong><p>本地光标保持 TipTap 默认样式且不显示名称；远程光标、姓名标签和选区共享人员色。标签靠近视口边缘时自动翻转，断线或离开文档后立即清除。</p></div>
+        <div class="rule wide"><span>08 / 连续聚焦</span><strong>完成选择后立即进入下一步输入</strong><p>打开 Popover 前保存当前选区；Text、H1-H6、Todo、Quote 和 Code 选择后直接聚焦正文，Table 聚焦首个单元格，Image/File 聚焦上传或说明区域，Board 聚焦首个卡片标题，Mention 插入后把光标放在引用后方。Esc 关闭时恢复原光标，不产生额外点击。</p></div>
+      </section>
+    </main>
+
+    <script>
+      const demo = document.querySelector("#interaction-demo");
+      const tabs = document.querySelectorAll("[data-mode]");
+
+      tabs.forEach((tab) => {
+        tab.addEventListener("click", () => {
+          const mode = tab.dataset.mode;
+          tabs.forEach((item) => item.setAttribute("aria-selected", String(item === tab)));
+          demo.classList.toggle("slash-mode", mode === "slash");
+          demo.classList.toggle("markdown-mode", mode === "markdown");
+          demo.classList.toggle("mention-mode", mode === "mention");
+          demo.classList.toggle("collaboration-mode", mode === "collaboration");
+          demo.classList.toggle("selection-mode", mode === "selection");
+          demo.classList.toggle("shortcuts-mode", mode === "shortcuts");
+        });
+      });
+    </script>
+  </body>
+</html>
