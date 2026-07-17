@@ -24,7 +24,7 @@ describe("editor commands", () => {
     expect(getEditorCommandsByCategory("media").map((command) => command.label)).toEqual(["Image", "File"]);
     expect(searchEditorCommands("表格").map((command) => command.id)).toEqual(["table"]);
     expect(searchEditorCommands("task").map((command) => command.id)).toContain("todo");
-    expect(searchEditorCommands("large heading").map((command) => command.id)).toContain("heading-1");
+    expect(searchEditorCommands("一级标题").map((command) => command.id)).toContain("heading-1");
     expect(searchEditorCommands("######").map((command) => command.id)).toEqual(["heading-6"]);
   });
 });

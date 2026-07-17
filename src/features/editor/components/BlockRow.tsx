@@ -4,6 +4,8 @@ import { searchEditorCommands } from "../commands/editorCommands";
 import type { EditorCommandDefinition } from "../commands/editorCommands";
 import type { CollaborationDocument } from "../collaboration/collaborationTypes";
 import type { Block, BlockData, BlockStatus, BlockType, HeadingLevel, MoveDirection } from "../model/block";
+import type { EditorSessionUser } from "../session/sessionTypes";
+import { useMentionSearchContext } from "./MentionSearchContext";
 import { AttachmentBlockEditor } from "./blocks/AttachmentBlockEditor";
 import { BlockActionBar } from "./blocks/BlockActionBar";
 import { BlockCollabPopover } from "./blocks/BlockCollabPopover";
@@ -14,6 +16,8 @@ import { KanbanBlockEditor } from "./blocks/KanbanBlockEditor";
 import { TableBlockEditor } from "./blocks/TableBlockEditor";
 import { EditorCommandPopover } from "./commands/EditorCommandPopover";
 import type { EditorPopoverAnchor } from "./commands/EditorCommandPopover";
+import { MentionPopover } from "./commands/MentionPopover";
+import type { MentionItem } from "./commands/useMentionSearch";
 import { RichTextBlockEditor } from "./RichTextBlockEditor";
 import { TodoBlockEditor } from "./TodoBlockEditor";
 
@@ -42,10 +46,11 @@ interface BlockRowProps {
   onOutdent: (blockId: string) => void;
   onResolveBlockComment: (blockId: string, commentId: string) => void;
   onToggleTodo: (blockId: string) => void;
+  sessionUser: EditorSessionUser | null;
   workspaceId: string;
 }
 
-type OpenMenu = "block" | "slash" | "collab" | "comments" | null;
+type OpenMenu = "block" | "slash" | "collab" | "comments" | "mention" | null;
 
 export function BlockRow({
   block,
@@ -72,6 +77,7 @@ export function BlockRow({
   onOutdent,
   onResolveBlockComment,
   onToggleTodo,
+  sessionUser,
   workspaceId,
 }: BlockRowProps) {
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
@@ -81,11 +87,16 @@ export function BlockRow({
   const [restoreEditorFocus, setRestoreEditorFocus] = useState(false);
   const [slashAnchor, setSlashAnchor] = useState<EditorPopoverAnchor | null>(null);
   const [slashQuery, setSlashQuery] = useState("");
+  const [mentionAnchor, setMentionAnchor] = useState<EditorPopoverAnchor | null>(null);
+  const [mentionQuery, setMentionQuery] = useState("");
+  const [activeMentionIndex, setActiveMentionIndex] = useState(0);
   const rowRef = useRef<HTMLElement | null>(null);
   const slashCommands = useMemo(() => searchEditorCommands(slashQuery), [slashQuery]);
+  const searchMentionItems = useMentionSearchContext();
+  const mentionItems = useMemo(() => searchMentionItems(mentionQuery), [searchMentionItems, mentionQuery]);
 
   useEffect(() => {
-    if (openMenu !== "slash") {
+    if (openMenu !== "slash" && openMenu !== "mention") {
       return;
     }
 
@@ -195,6 +206,80 @@ export function BlockRow({
     onFocused();
   };
 
+  const openMentionMenu = (anchor?: EditorPopoverAnchor) => {
+    const rowBounds = rowRef.current?.getBoundingClientRect();
+    setActiveMentionIndex(0);
+    setMentionQuery("");
+    setMentionAnchor(anchor ?? {
+      bottom: rowBounds?.bottom ?? 40,
+      left: (rowBounds?.left ?? 0) + 38,
+      top: rowBounds?.top ?? 20,
+    });
+    setOpenMenu("mention");
+  };
+
+  const handleSelectMention = (item: MentionItem) => {
+    setOpenMenu(null);
+    setRestoreEditorFocus(true);
+    document.execCommand("insertText", false, `@${item.label}`);
+  };
+
+  const handleMentionMenuKeyDown = (event: ReactKeyboardEvent) => {
+    if (openMenu !== "mention") {
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      event.stopPropagation();
+      if (mentionItems.length > 0) {
+        setActiveMentionIndex((current) => (current + 1) % mentionItems.length);
+      }
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      event.stopPropagation();
+      if (mentionItems.length > 0) {
+        setActiveMentionIndex((current) => (current - 1 + mentionItems.length) % mentionItems.length);
+      }
+      return;
+    }
+
+    if (event.key === "Enter") {
+      event.preventDefault();
+      event.stopPropagation();
+      const item = mentionItems[activeMentionIndex];
+      if (item) {
+        handleSelectMention(item);
+      }
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      setOpenMenu(null);
+      return;
+    }
+
+    if (event.key === "Backspace") {
+      event.preventDefault();
+      event.stopPropagation();
+      setActiveMentionIndex(0);
+      setMentionQuery((current) => current.slice(0, -1));
+      return;
+    }
+
+    if (event.key.length === 1 && !event.altKey && !event.ctrlKey && !event.metaKey) {
+      event.preventDefault();
+      event.stopPropagation();
+      setActiveMentionIndex(0);
+      setMentionQuery((current) => `${current}${event.key}`);
+    }
+  };
+
   const handleBlur = (event: FocusEvent<HTMLElement>) => {
     if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
       setIsActive(false);
@@ -231,7 +316,10 @@ export function BlockRow({
       data-testid={`block-row-${block.id}`}
       onBlurCapture={handleBlur}
       onFocusCapture={() => setIsActive(true)}
-      onKeyDownCapture={handleSlashMenuKeyDown}
+      onKeyDownCapture={(event) => {
+        handleSlashMenuKeyDown(event);
+        handleMentionMenuKeyDown(event);
+      }}
       ref={rowRef}
       style={{ "--block-depth": Math.min(depth, 6) } as CSSProperties}
     >
@@ -293,7 +381,9 @@ export function BlockRow({
             onFocused={handleEditorFocused}
             onMarkdownShortcut={(type, headingLevel) => onChangeType(block.id, type, headingLevel)}
             onOpenCommandMenu={openSlashMenu}
+            onOpenMentionMenu={openMentionMenu}
             onToggle={() => onToggleTodo(block.id)}
+            sessionUser={sessionUser ?? undefined}
           />
         ) : (
           <RichTextBlockEditor
@@ -307,6 +397,8 @@ export function BlockRow({
             onFocused={handleEditorFocused}
             onMarkdownShortcut={(type, headingLevel) => onChangeType(block.id, type, headingLevel)}
             onOpenCommandMenu={openSlashMenu}
+            onOpenMentionMenu={openMentionMenu}
+            sessionUser={sessionUser ?? undefined}
             variant={block.type}
           />
         )}
@@ -349,6 +441,16 @@ export function BlockRow({
             commands={slashCommands}
             onSelect={handleSelectCommand}
             query={slashQuery}
+          />
+        ) : null}
+
+        {openMenu === "mention" && mentionAnchor ? (
+          <MentionPopover
+            activeIndex={activeMentionIndex}
+            anchor={mentionAnchor}
+            items={mentionItems}
+            onSelect={handleSelectMention}
+            query={mentionQuery}
           />
         ) : null}
       </div>

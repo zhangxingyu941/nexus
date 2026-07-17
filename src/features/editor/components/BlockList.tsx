@@ -3,6 +3,7 @@ import type { RefObject } from "react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CollaborationDocument } from "../collaboration/collaborationTypes";
 import type { Block, BlockData, BlockStatus, BlockType, HeadingLevel } from "../model/block";
+import type { EditorSessionUser } from "../session/sessionTypes";
 import { BlockRow } from "./BlockRow";
 
 interface BlockListProps {
@@ -26,6 +27,7 @@ interface BlockListProps {
   onResolveBlockComment: (blockId: string, commentId: string) => void;
   onToggleTodo: (blockId: string) => void;
   scrollElementRef: RefObject<HTMLElement | null>;
+  sessionUser: EditorSessionUser | null;
   workspaceId: string;
 }
 
@@ -68,6 +70,7 @@ export function BlockList({
   onResolveBlockComment,
   onToggleTodo,
   scrollElementRef,
+  sessionUser,
   workspaceId,
 }: BlockListProps) {
   const listRef = useRef<HTMLDivElement>(null);
@@ -169,6 +172,7 @@ export function BlockList({
       onOutdent={onOutdent}
       onResolveBlockComment={onResolveBlockComment}
       onToggleTodo={onToggleTodo}
+      sessionUser={sessionUser}
       workspaceId={workspaceId}
     />;
   };

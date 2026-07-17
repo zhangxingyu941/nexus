@@ -35,7 +35,7 @@ export const EDITOR_COMMANDS: EditorCommandDefinition[] = [
   {
     aliases: ["paragraph", "正文", "段落"],
     category: "text",
-    description: "Plain text",
+    description: "纯文本",
     icon: Type,
     id: "text",
     label: "Text",
@@ -44,7 +44,7 @@ export const EDITOR_COMMANDS: EditorCommandDefinition[] = [
   {
     aliases: ["title", "一级标题"],
     category: "text",
-    description: "Large heading",
+    description: "一级标题",
     headingLevel: 1,
     icon: Heading1,
     id: "heading-1",
@@ -55,7 +55,7 @@ export const EDITOR_COMMANDS: EditorCommandDefinition[] = [
   {
     aliases: ["subtitle", "二级标题"],
     category: "text",
-    description: "Section heading",
+    description: "二级标题",
     headingLevel: 2,
     icon: Heading2,
     id: "heading-2",
@@ -66,7 +66,7 @@ export const EDITOR_COMMANDS: EditorCommandDefinition[] = [
   {
     aliases: ["三级标题"],
     category: "text",
-    description: "Subsection heading",
+    description: "三级标题",
     headingLevel: 3,
     icon: Heading3,
     id: "heading-3",
@@ -77,7 +77,7 @@ export const EDITOR_COMMANDS: EditorCommandDefinition[] = [
   {
     aliases: ["四级标题"],
     category: "text",
-    description: "Small heading",
+    description: "四级标题",
     headingLevel: 4,
     icon: Heading4,
     id: "heading-4",
@@ -88,7 +88,7 @@ export const EDITOR_COMMANDS: EditorCommandDefinition[] = [
   {
     aliases: ["五级标题"],
     category: "text",
-    description: "Compact heading",
+    description: "五级标题",
     headingLevel: 5,
     icon: Heading5,
     id: "heading-5",
@@ -99,7 +99,7 @@ export const EDITOR_COMMANDS: EditorCommandDefinition[] = [
   {
     aliases: ["六级标题"],
     category: "text",
-    description: "Minor heading",
+    description: "六级标题",
     headingLevel: 6,
     icon: Heading6,
     id: "heading-6",
@@ -110,7 +110,7 @@ export const EDITOR_COMMANDS: EditorCommandDefinition[] = [
   {
     aliases: ["引用"],
     category: "text",
-    description: "Quoted text",
+    description: "引用文本",
     icon: Quote,
     id: "quote",
     label: "Quote",
@@ -120,7 +120,7 @@ export const EDITOR_COMMANDS: EditorCommandDefinition[] = [
   {
     aliases: ["task", "待办"],
     category: "list",
-    description: "Track a task",
+    description: "待办任务",
     icon: ListTodo,
     id: "todo",
     label: "Todo",
@@ -130,7 +130,7 @@ export const EDITOR_COMMANDS: EditorCommandDefinition[] = [
   {
     aliases: ["图片"],
     category: "media",
-    description: "Upload an image",
+    description: "上传图片",
     icon: ImageIcon,
     id: "image",
     label: "Image",
@@ -139,7 +139,7 @@ export const EDITOR_COMMANDS: EditorCommandDefinition[] = [
   {
     aliases: ["文件"],
     category: "media",
-    description: "Attach a file",
+    description: "附件文件",
     icon: FileText,
     id: "file",
     label: "File",
@@ -148,7 +148,7 @@ export const EDITOR_COMMANDS: EditorCommandDefinition[] = [
   {
     aliases: ["代码"],
     category: "data",
-    description: "Code block",
+    description: "代码块",
     icon: Code2,
     id: "code",
     label: "Code",
@@ -158,7 +158,7 @@ export const EDITOR_COMMANDS: EditorCommandDefinition[] = [
   {
     aliases: ["表格"],
     category: "data",
-    description: "Structured rows and columns",
+    description: "结构化表格",
     icon: Table2,
     id: "table",
     label: "Table",
@@ -167,7 +167,7 @@ export const EDITOR_COMMANDS: EditorCommandDefinition[] = [
   {
     aliases: ["kanban", "看板"],
     category: "data",
-    description: "Cards grouped by status",
+    description: "按状态分组的看板",
     icon: Columns3,
     id: "board",
     label: "Board",

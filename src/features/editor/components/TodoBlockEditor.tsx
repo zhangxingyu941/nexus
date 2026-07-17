@@ -1,5 +1,6 @@
 import type { CollaborationDocument } from "../collaboration/collaborationTypes";
 import type { BlockType, HeadingLevel } from "../model/block";
+import type { EditorSessionUser } from "../session/sessionTypes";
 import type { EditorPopoverAnchor } from "./commands/EditorCommandPopover";
 import { RichTextBlockEditor } from "./RichTextBlockEditor";
 
@@ -16,6 +17,8 @@ interface TodoBlockEditorProps {
   onFocused: () => void;
   onMarkdownShortcut: (type: BlockType, headingLevel?: HeadingLevel) => void;
   onOpenCommandMenu: (anchor: EditorPopoverAnchor) => void;
+  onOpenMentionMenu?: (anchor: EditorPopoverAnchor) => void;
+  sessionUser?: { id: string; name: string; color: string };
 }
 
 export function TodoBlockEditor({
@@ -31,6 +34,8 @@ export function TodoBlockEditor({
   onFocused,
   onMarkdownShortcut,
   onOpenCommandMenu,
+  onOpenMentionMenu,
+  sessionUser,
 }: TodoBlockEditorProps) {
   return (
     <div className="todo-editor">
@@ -54,6 +59,8 @@ export function TodoBlockEditor({
         onFocused={onFocused}
         onMarkdownShortcut={onMarkdownShortcut}
         onOpenCommandMenu={onOpenCommandMenu}
+        onOpenMentionMenu={onOpenMentionMenu}
+        sessionUser={sessionUser}
         variant="todo"
       />
     </div>

@@ -420,10 +420,12 @@ export function useDocumentCollaboration({
   }, [document, enabled]);
 
   const activeYdoc = syncedYdoc?.roomName === roomName ? syncedYdoc.ydoc : null;
+  const activeProvider = syncedYdoc?.roomName === roomName ? providerRef.current : null;
 
   return {
     connectionState,
     presence,
+    provider: activeProvider,
     roomName,
     ydoc: activeYdoc,
   };

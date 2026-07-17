@@ -253,6 +253,7 @@ export function DocumentEditor({
               onResolveBlockComment={onResolveBlockComment}
               onToggleTodo={onToggleTodo}
               scrollElementRef={documentScrollRef}
+              sessionUser={sessionUser}
               workspaceId={workspaceId}
             />
 

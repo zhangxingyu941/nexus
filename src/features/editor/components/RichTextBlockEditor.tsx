@@ -1,8 +1,11 @@
 import Collaboration from "@tiptap/extension-collaboration";
+import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
 import Placeholder from "@tiptap/extension-placeholder";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useCollaborationSession } from "../collaboration/CollaborationSessionContext";
+import { getCursorColor } from "../collaboration/remoteCursorColors";
 import type { CollaborationDocument } from "../collaboration/collaborationTypes";
 import { getBlockCollaborationField } from "../collaboration/yjsWorkspaceMapping";
 import type { BlockType, HeadingLevel } from "../model/block";
@@ -16,12 +19,14 @@ interface RichTextBlockEditorProps {
   content: string;
   focusRequest: boolean;
   isReadOnly?: boolean;
+  sessionUser?: { id: string; name: string; color: string };
   variant: "paragraph" | "heading" | "quote" | "code" | "todo";
   onChange: (content: string) => void;
   onEnter: () => void;
   onFocused: () => void;
   onMarkdownShortcut: (type: BlockType, headingLevel?: HeadingLevel) => void;
   onOpenCommandMenu: (anchor: EditorPopoverAnchor) => void;
+  onOpenMentionMenu?: (anchor: EditorPopoverAnchor) => void;
 }
 
 export function RichTextBlockEditor({
@@ -31,13 +36,16 @@ export function RichTextBlockEditor({
   content,
   focusRequest,
   isReadOnly = false,
+  sessionUser,
   variant,
   onChange,
   onEnter,
   onFocused,
   onMarkdownShortcut,
   onOpenCommandMenu,
+  onOpenMentionMenu,
 }: RichTextBlockEditorProps) {
+  const { provider } = useCollaborationSession();
   const placeholder = {
     code: "输入代码",
     heading: "标题",
@@ -64,11 +72,22 @@ export function RichTextBlockEditor({
             }),
           ]
         : []),
+      ...(provider && sessionUser
+        ? [
+            CollaborationCursor.configure({
+              provider,
+              user: {
+                name: sessionUser.name,
+                color: getCursorColor(sessionUser.id),
+              },
+            }),
+          ]
+        : []),
       Placeholder.configure({
         placeholder,
       }),
     ],
-    [collaborationDocument, collaborationField, placeholder],
+    [collaborationDocument, collaborationField, placeholder, provider, sessionUser],
   );
 
   const editor = useEditor({
@@ -101,6 +120,13 @@ export function RichTextBlockEditor({
           event.preventDefault();
           const caret = view.coordsAtPos(view.state.selection.from);
           onOpenCommandMenu({ bottom: caret.bottom, left: caret.left, top: caret.top });
+          return true;
+        }
+
+        if (event.key === "@" && onOpenMentionMenu) {
+          event.preventDefault();
+          const caret = view.coordsAtPos(view.state.selection.from);
+          onOpenMentionMenu({ bottom: caret.bottom, left: caret.left, top: caret.top });
           return true;
         }
 

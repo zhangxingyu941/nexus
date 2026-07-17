@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { flushSync } from "react-dom";
+import { CollaborationSessionProvider } from "../collaboration/CollaborationSessionContext";
 import { useDocumentCollaboration } from "../collaboration/useDocumentCollaboration";
+import { MentionSearchProvider } from "./MentionSearchContext";
+import { useMentionSearchFn } from "./commands/useMentionSearch";
 import type { WorkspaceSummary } from "../../../shared/workspace";
 import type { Block, BlockData, BlockStatus, BlockType, EditorDocument, EditorWorkspace, HeadingLevel, MoveDirection } from "../model/block";
 import {
@@ -141,6 +144,11 @@ export function EditorPage({
     [workspace],
   );
   const workspaceTasks = workspace ? getWorkspaceTasks(workspace) : [];
+  const mentionSearchFn = useMentionSearchFn({
+    documents: workspace?.documents ?? [],
+    members: workspaceMembers,
+    tasks: workspaceTasks,
+  });
   const handleRemotePatches = useCallback((patches: Parameters<typeof applyRemoteBlockContentPatch>[1][]) => {
     onWorkspaceChange((current) => {
       if (!current) {
@@ -439,7 +447,9 @@ export function EditorPage({
   }
 
   return (
-    <div className={`app-shell grid h-dvh min-h-[560px] grid-cols-[270px_minmax(0,1fr)] overflow-hidden bg-background max-lg:grid-cols-1${isSidebarOpen ? " sidebar-open" : ""}`}>
+    <CollaborationSessionProvider value={{ provider: collaboration.provider ?? null }}>
+      <MentionSearchProvider value={mentionSearchFn}>
+      <div className={`app-shell grid h-dvh min-h-[560px] grid-cols-[270px_minmax(0,1fr)] overflow-hidden bg-background max-lg:grid-cols-1${isSidebarOpen ? " sidebar-open" : ""}`}>
       <WorkspaceSidebar
         activeDocumentId={workspace.activeDocumentId}
         documents={workspace.documents}
@@ -521,5 +531,7 @@ export function EditorPage({
         </div>
       ) : null}
     </div>
+      </MentionSearchProvider>
+    </CollaborationSessionProvider>
   );
 }

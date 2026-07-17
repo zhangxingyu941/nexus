@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import type { CSSProperties } from "react";
 import type {
   EditorCommandCategory,
@@ -19,10 +20,10 @@ interface EditorCommandPopoverProps {
 }
 
 const COMMAND_GROUPS: Array<{ category: EditorCommandCategory; label: string }> = [
-  { category: "text", label: "Text & Headings" },
-  { category: "list", label: "Lists & Tasks" },
-  { category: "media", label: "Media" },
-  { category: "data", label: "Data & Advanced" },
+  { category: "text", label: "文本与标题" },
+  { category: "list", label: "列表与任务" },
+  { category: "media", label: "媒体" },
+  { category: "data", label: "数据与高级" },
 ];
 
 export function EditorCommandPopover({
@@ -32,6 +33,15 @@ export function EditorCommandPopover({
   onSelect,
   query = "",
 }: EditorCommandPopoverProps) {
+  const listboxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const active = listboxRef.current?.querySelector('[aria-selected="true"]');
+    if (active && typeof active.scrollIntoView === "function") {
+      active.scrollIntoView({ block: "nearest" });
+    }
+  }, [activeIndex]);
+
   const viewportHeight = typeof window === "undefined" ? 768 : window.innerHeight;
   const viewportWidth = typeof window === "undefined" ? 1024 : window.innerWidth;
   const side = viewportHeight - anchor.bottom >= 320 ? "bottom" : "top";
@@ -46,6 +56,7 @@ export function EditorCommandPopover({
       aria-label="插入内容"
       className="editor-command-popover"
       data-side={side}
+      ref={listboxRef}
       role="listbox"
       style={style}
     >

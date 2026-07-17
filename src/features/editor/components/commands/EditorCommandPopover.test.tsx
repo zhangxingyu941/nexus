@@ -16,9 +16,9 @@ describe("EditorCommandPopover", () => {
 
     expect(screen.getByRole("listbox", { name: "插入内容" })).toBeVisible();
     expect(screen.getByRole("option", { name: /H6/ })).toBeVisible();
-    expect(screen.getByText("Text & Headings")).toBeVisible();
-    expect(screen.getByText("Media")).toBeVisible();
-    expect(screen.getByText("Data & Advanced")).toBeVisible();
+    expect(screen.getByText("文本与标题")).toBeVisible();
+    expect(screen.getByText("媒体")).toBeVisible();
+    expect(screen.getByText("数据与高级")).toBeVisible();
   });
 
   it("preserves the editor selection on pointer down and executes once on click", () => {
