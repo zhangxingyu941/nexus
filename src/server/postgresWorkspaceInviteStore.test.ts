@@ -461,6 +461,39 @@ describe("PostgresWorkspaceInviteStore", () => {
     })).rejects.toMatchObject({ code: "invite_already_accepted" });
   });
 
+  it("restores invite metadata only for the matching signed context and recipient", async () => {
+    const created = await store.createInvite({
+      actorUserId: "owner-1",
+      email: "member@example.com",
+      role: "editor",
+      workspaceId: "workspace-1",
+    });
+    const tokenService = new WorkspaceInviteTokenService(
+      "test-workspace-invite-secret-at-least-32-bytes",
+    );
+    const context = {
+      inviteId: created.invite.id,
+      tokenHash: tokenService.hashRawToken(created.rawToken),
+      userEmail: "member@example.com",
+      userId: "member-1",
+    };
+
+    await expect(store.resolveInviteContext(context)).resolves.toMatchObject({
+      id: created.invite.id,
+      maskedEmail: "m***@example.com",
+      workspaceId: "workspace-1",
+      workspaceName: "Product",
+    });
+    await expect(store.resolveInviteContext({
+      ...context,
+      tokenHash: tokenService.hashRawToken("stale-token"),
+    })).rejects.toMatchObject({ code: "invite_not_found" });
+    await expect(store.resolveInviteContext({
+      ...context,
+      userEmail: "other@example.com",
+    })).rejects.toMatchObject({ code: "invite_email_mismatch" });
+  });
+
   it("rejects acceptance when the session email or context token does not match", async () => {
     const created = await store.createInvite({
       actorUserId: "owner-1",

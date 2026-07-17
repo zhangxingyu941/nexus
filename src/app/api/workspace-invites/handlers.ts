@@ -19,6 +19,7 @@ interface WorkspaceInviteRecipientRouteDependencies {
     | "acceptInvite"
     | "declineInvite"
     | "listReceivedInvites"
+    | "resolveInviteContext"
     | "resolveRawToken"
   >;
   tokenService: WorkspaceInviteTokenService;
@@ -109,20 +110,45 @@ export function createWorkspaceInviteRecipientRouteHandlers({
 
     async resolve(request: Request) {
       const rawToken = await parseRawToken(request);
-      if (!rawToken) return inviteNotFoundResponse();
+      if (rawToken) {
+        try {
+          const invite = await inviteStore.resolveRawToken(rawToken);
+          const context = await tokenService.signContext({
+            expiresAt: invite.expiresAt,
+            inviteId: invite.id,
+            tokenHash: tokenService.hashRawToken(rawToken),
+          });
+          const response = NextResponse.json({ invite });
+          setWorkspaceInviteContextCookie(response, context, invite.expiresAt);
+          return response;
+        } catch (error) {
+          return mapInviteError(error);
+        }
+      }
+
+      const user = await authenticate(request);
+      if (!user) return authenticationRequiredResponse();
+      const contextValue = getCookieValue(request, WORKSPACE_INVITE_CONTEXT_COOKIE);
+      if (!contextValue) return inviteContextMissingResponse();
+
+      let context: Awaited<ReturnType<WorkspaceInviteTokenService["verifyContext"]>>;
+      try {
+        context = await tokenService.verifyContext(contextValue);
+      } catch {
+        return clearContextResponse(inviteContextMissingResponse());
+      }
 
       try {
-        const invite = await inviteStore.resolveRawToken(rawToken);
-        const context = await tokenService.signContext({
-          expiresAt: invite.expiresAt,
-          inviteId: invite.id,
-          tokenHash: tokenService.hashRawToken(rawToken),
+        const invite = await inviteStore.resolveInviteContext({
+          inviteId: context.inviteId,
+          tokenHash: context.tokenHash,
+          userEmail: user.email,
+          userId: user.id,
         });
-        const response = NextResponse.json({ invite });
-        setWorkspaceInviteContextCookie(response, context, invite.expiresAt);
-        return response;
+        return NextResponse.json({ invite });
       } catch (error) {
-        return mapInviteError(error);
+        const response = mapInviteError(error);
+        return isTerminalInviteError(error) ? clearContextResponse(response) : response;
       }
     },
 

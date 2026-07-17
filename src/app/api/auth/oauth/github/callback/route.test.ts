@@ -61,7 +61,60 @@ describe("GitHub OAuth callback route", () => {
     expect(oauth.exchange).not.toHaveBeenCalled();
     expect(authStore.loginWithOAuth).not.toHaveBeenCalled();
   });
+
+  it("redirects GitHub callback to a validated invitation path and clears it", async () => {
+    const handler = createGitHubCallbackRouteHandler(createDependencies());
+    const response = await handler(validCallbackRequest(
+      "notion_editor_oauth_return_to=%2Finvitations%2Faccept",
+    ));
+    const cookies = response.headers.get("set-cookie") ?? "";
+
+    expect(response.headers.get("location")).toBe("http://localhost/invitations/accept");
+    expect(cookies).toContain("notion_editor_oauth_return_to=");
+    expect(cookies).toContain("Max-Age=0");
+  });
+
+  it("defaults an invalid callback return cookie to the application root", async () => {
+    const handler = createGitHubCallbackRouteHandler(createDependencies());
+    const response = await handler(validCallbackRequest(
+      "notion_editor_oauth_return_to=https%3A%2F%2Fattacker.example%2Fsteal",
+    ));
+
+    expect(response.headers.get("location")).toBe("http://localhost/");
+  });
 });
+
+function createDependencies() {
+  return {
+    authStore: {
+      loginWithOAuth: vi.fn().mockResolvedValue({
+        expiresAt: 5000,
+        token: "oauth-session-token",
+        user: { displayName: "林夏", email: "linxia@example.com", id: "user-1" },
+      }),
+    },
+    oauth: {
+      exchange: vi.fn().mockResolvedValue({
+        displayName: "林夏",
+        email: "linxia@example.com",
+        provider: "github" as const,
+        providerAccountId: "42",
+      }),
+    },
+    security: createSecurity(),
+  };
+}
+
+function validCallbackRequest(extraCookie: string) {
+  return new Request(
+    "http://localhost/api/auth/oauth/github/callback?code=authorization-code&state=oauth-state",
+    {
+      headers: {
+        Cookie: `notion_editor_oauth_state=oauth-state; notion_editor_oauth_verifier=pkce-verifier; ${extraCookie}`,
+      },
+    },
+  );
+}
 
 function createSecurity() {
   return {

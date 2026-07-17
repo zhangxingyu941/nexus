@@ -74,6 +74,55 @@ describe("workspace invite recipient routes", () => {
     await expect(response.json()).resolves.toMatchObject({ code: "invite_not_found" });
   });
 
+  it("restores invite metadata from signed context for the authenticated recipient", async () => {
+    const created = await createInvite();
+    const handlers = createHandlers();
+    const initialResolve = await handlers.resolve(jsonRequest({ token: created.rawToken }));
+
+    const response = await handlers.resolve(authenticatedJsonRequest(
+      recipient.token,
+      cookiePair(initialResolve),
+      {},
+    ));
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      invite: { id: "invite-1", maskedEmail: "r***@example.com", workspaceId },
+    });
+  });
+
+  it("rejects signed-context restoration for another authenticated email", async () => {
+    const created = await createInvite();
+    const handlers = createHandlers();
+    const initialResolve = await handlers.resolve(jsonRequest({ token: created.rawToken }));
+    const other = await authStore.createSession({
+      displayName: "Other",
+      email: "other@example.com",
+    });
+
+    const response = await handlers.resolve(authenticatedJsonRequest(
+      other.token,
+      cookiePair(initialResolve),
+      {},
+    ));
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({ code: "invite_email_mismatch" });
+  });
+
+  it("clears an invalid signed context instead of surfacing a server error", async () => {
+    const response = await createHandlers().resolve(authenticatedJsonRequest(
+      recipient.token,
+      "nexus_workspace_invite_context=invalid-context",
+      {},
+    ));
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get("set-cookie") ?? "")
+      .toContain("nexus_workspace_invite_context=");
+    await expect(response.json()).resolves.toMatchObject({ code: "invite_context_missing" });
+  });
+
   it("lists only the authenticated recipient's pending invitations", async () => {
     await createInvite();
 
@@ -226,6 +275,17 @@ function jsonRequest(payload: unknown) {
   return new Request("http://localhost", {
     body: JSON.stringify(payload),
     headers: { "Content-Type": "application/json" },
+    method: "POST",
+  });
+}
+
+function authenticatedJsonRequest(token: string, inviteContext: string, payload: unknown) {
+  return new Request("http://localhost", {
+    body: JSON.stringify(payload),
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: `notion_editor_session=${token}; ${inviteContext}`,
+    },
     method: "POST",
   });
 }

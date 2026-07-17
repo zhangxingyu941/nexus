@@ -24,7 +24,13 @@ import { AuthRequestError, requestAuth, requestEncryptedAuth } from "./authClien
 
 type AuthMode = "forgot" | "login" | "register" | "register-code" | "reset-code";
 
-export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: EditorSessionUser) => void }) {
+export function AuthScreen({
+  oauthReturnTo,
+  onAuthenticated,
+}: {
+  oauthReturnTo?: string;
+  onAuthenticated: (user: EditorSessionUser) => void;
+}) {
   const [mode, setMode] = useState<AuthMode>("login");
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
@@ -339,7 +345,9 @@ export function AuthScreen({ onAuthenticated }: { onAuthenticated: (user: Editor
                 或
               </div>
               <Button asChild className="h-11" variant="outline">
-                <a href="/api/auth/oauth/github">
+                <a href={oauthReturnTo
+                  ? `/api/auth/oauth/github?returnTo=${encodeURIComponent(oauthReturnTo)}`
+                  : "/api/auth/oauth/github"}>
                   <Github aria-hidden="true" className="size-4" />
                   使用 GitHub 登录
                 </a>

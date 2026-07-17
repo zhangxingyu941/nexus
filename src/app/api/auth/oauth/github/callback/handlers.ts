@@ -5,8 +5,10 @@ import type { CreatedSession } from "../../../../../../server/postgresAuthStore"
 import { getCookieValue, getSessionCookieOptions, SESSION_COOKIE_NAME } from "../../../../../../server/sessionCookie";
 import {
   getOAuthCookieOptions,
+  GITHUB_OAUTH_RETURN_TO_COOKIE,
   GITHUB_OAUTH_STATE_COOKIE,
   GITHUB_OAUTH_VERIFIER_COOKIE,
+  normalizeOAuthReturnTo,
 } from "../oauthCookies";
 import { enforceAuthRateLimit, recordAuthAudit, type RouteAuthSecurity } from "../../../authSecurity";
 
@@ -33,6 +35,9 @@ export function createGitHubCallbackRouteHandler({
     const state = url.searchParams.get("state") ?? "";
     const expectedState = getCookieValue(request, GITHUB_OAUTH_STATE_COOKIE);
     const codeVerifier = getCookieValue(request, GITHUB_OAUTH_VERIFIER_COOKIE);
+    const returnTo = normalizeOAuthReturnTo(
+      getCookieValue(request, GITHUB_OAUTH_RETURN_TO_COOKIE),
+    );
     const limitedResponse = await enforceAuthRateLimit(security, request, "github-callback", state);
     if (limitedResponse) {
       return clearOAuthCookies(limitedResponse);
@@ -48,7 +53,7 @@ export function createGitHubCallbackRouteHandler({
       const session = await authStore.loginWithOAuth(profile);
       await security.reset(request, "github-callback", state);
       await recordAuthAudit(security, request, "github-oauth", true, session.user.id);
-      const response = NextResponse.redirect(new URL("/", url.origin));
+      const response = NextResponse.redirect(new URL(returnTo, url.origin));
       response.cookies.set(SESSION_COOKIE_NAME, session.token, getSessionCookieOptions(session.expiresAt));
       return clearOAuthCookies(response);
     } catch {
@@ -62,6 +67,7 @@ function clearOAuthCookies(response: NextResponse) {
   const options = getOAuthCookieOptions(0);
   response.cookies.set(GITHUB_OAUTH_STATE_COOKIE, "", options);
   response.cookies.set(GITHUB_OAUTH_VERIFIER_COOKIE, "", options);
+  response.cookies.set(GITHUB_OAUTH_RETURN_TO_COOKIE, "", options);
   return response;
 }
 

@@ -297,6 +297,13 @@ export class PostgresWorkspaceInviteStore {
     }
   }
 
+  async resolveInviteContext(input: RecipientInviteInput): Promise<ReceivedWorkspaceInvite> {
+    return this.mutateRecipientInvite(
+      input,
+      (client, workspace, invite) => this.toReceivedInvite(client, workspace, invite),
+    );
+  }
+
   async markDeliveryResult(
     actorUserId: string,
     workspaceId: string,
