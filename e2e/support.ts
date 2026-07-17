@@ -24,6 +24,18 @@ type EncryptedAuthApiInput = { email: string } & (
   | { purpose: "verify-email"; secrets: { code: string } }
 );
 
+type MailCapture =
+  | {
+      code: string;
+      purpose: "reset-password" | "verify-email";
+      to: string;
+    }
+  | {
+      purpose: "workspace-invite";
+      to: string;
+      url?: string;
+    };
+
 export function createAcceptanceIdentity(prefix: string) {
   const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   return {
@@ -112,6 +124,28 @@ export async function waitForCapturedCode(
   throw new Error(`No captured ${purpose} mail for ${email}`);
 }
 
+export async function waitForCapturedInvite(email: string) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const match = [...readMailCaptures()].reverse().find((capture) =>
+      capture.to === email && capture.purpose === "workspace-invite",
+    );
+    if (match && typeof match.url === "string") return match.url;
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
+  }
+  throw new Error("No captured workspace invitation for " + email);
+}
+
+export function ageWorkspaceInviteForResend(email: string) {
+  updatePendingWorkspaceInvite(
+    email,
+    "last_delivery_attempt_at = 0, updated_at = 0",
+  );
+}
+
+export function expireWorkspaceInvite(email: string) {
+  updatePendingWorkspaceInvite(email, "expires_at = 0");
+}
+
 export function cleanupAcceptanceData() {
   dockerCompose([
     "exec",
@@ -135,6 +169,7 @@ export function cleanupAcceptanceData() {
     "0",
     "notion-editor:auth-rate:*",
     "notion-editor:auth-credential:*",
+    "notion-editor:workspace-invite-rate:*",
   ]);
   dockerCompose(["exec", "-T", "web", "sh", "-c", `rm -f ${captureFile}`]);
 }
@@ -155,11 +190,26 @@ function readMailCaptures() {
   return output
     .split("\n")
     .filter(Boolean)
-    .map((line) => JSON.parse(line) as {
-      code: string;
-      purpose: "reset-password" | "verify-email";
-      to: string;
-    });
+    .map((line) => JSON.parse(line) as MailCapture);
+}
+
+function updatePendingWorkspaceInvite(email: string, assignment: string) {
+  const escapedEmail = email.trim().toLowerCase().replaceAll("'", "''");
+  const output = dockerCompose([
+    "exec",
+    "-T",
+    "postgres",
+    "psql",
+    "-U",
+    "postgres",
+    "-d",
+    "notion_block_editor",
+    "-c",
+    `UPDATE workspace_invites SET ${assignment} WHERE id = (SELECT id FROM workspace_invites WHERE email = '${escapedEmail}' AND status = 'pending' ORDER BY created_at DESC LIMIT 1);`,
+  ]);
+  if (!output.includes("UPDATE 1")) {
+    throw new Error(`No pending workspace invitation for ${email}`);
+  }
 }
 
 function parseCredentialChallenge(payload: unknown) {
