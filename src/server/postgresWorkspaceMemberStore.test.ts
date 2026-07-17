@@ -110,6 +110,125 @@ describe("PostgresWorkspaceMemberStore", () => {
     )).resolves.toMatchObject({ rows: [{ role: "viewer" }] });
   });
 
+  it("removes membership, document preferences, and selects the earliest fallback", async () => {
+    await seedWorkspace(pool, "workspace-2", "Later", "outsider-1", 3000);
+    await seedMembership(pool, "workspace-2", "member-1", "viewer", 3100);
+    await seedWorkspace(pool, "workspace-3", "Earlier", "editor-1", 2500);
+    await seedMembership(pool, "workspace-3", "member-1", "editor", 2600);
+    await pool.query(
+      `INSERT INTO workspace_preferences (user_id, selected_workspace_id)
+       VALUES ($1, $2)`,
+      ["member-1", "workspace-1"],
+    );
+    await pool.query(
+      `INSERT INTO workspace_document_preferences
+         (user_id, workspace_id, active_document_id, updated_at)
+       VALUES ($1, $2, NULL, $3)`,
+      ["member-1", "workspace-1", 3000],
+    );
+    await pool.query(
+      `INSERT INTO auth_sessions (token_hash, user_id, expires_at, created_at)
+       VALUES ($1, $2, $3, $4)`,
+      ["member-session", "member-1", 9000, 3000],
+    );
+
+    await expect(store.removeMember({
+      actorUserId: "owner-1",
+      memberId: "member-1",
+      workspaceId: "workspace-1",
+    })).resolves.toBeUndefined();
+
+    await expect(pool.query(
+      "SELECT 1 FROM workspace_members WHERE workspace_id = $1 AND user_id = $2",
+      ["workspace-1", "member-1"],
+    )).resolves.toMatchObject({ rows: [] });
+    await expect(pool.query(
+      "SELECT 1 FROM workspace_document_preferences WHERE workspace_id = $1 AND user_id = $2",
+      ["workspace-1", "member-1"],
+    )).resolves.toMatchObject({ rows: [] });
+    await expect(pool.query(
+      "SELECT selected_workspace_id FROM workspace_preferences WHERE user_id = $1",
+      ["member-1"],
+    )).resolves.toMatchObject({ rows: [{ selected_workspace_id: "workspace-3" }] });
+    await expect(pool.query(
+      "SELECT 1 FROM auth_sessions WHERE user_id = $1",
+      ["member-1"],
+    )).resolves.toMatchObject({ rows: [{}] });
+    await expect(pool.query(
+      `SELECT actor_user_id, event_type, target_id, target_type
+       FROM workspace_audit_events
+       WHERE workspace_id = $1`,
+      ["workspace-1"],
+    )).resolves.toMatchObject({
+      rows: [{
+        actor_user_id: "owner-1",
+        event_type: "workspace_member_removed",
+        target_id: "member-1",
+        target_type: "workspace_member",
+      }],
+    });
+  });
+
+  it("leaves a workspace and provisions a personal fallback in the same transaction", async () => {
+    await pool.query(
+      `INSERT INTO workspace_preferences (user_id, selected_workspace_id)
+       VALUES ($1, $2)`,
+      ["member-1", "workspace-1"],
+    );
+
+    const result = await store.leaveWorkspace({
+      userDisplayName: "Member",
+      userId: "member-1",
+      workspaceId: "workspace-1",
+    });
+
+    expect(result.selectedWorkspaceId).not.toBe("workspace-1");
+    await expect(pool.query(
+      `SELECT workspaces.id, workspaces.name, members.role
+       FROM workspace_members members
+       INNER JOIN editor_workspaces workspaces ON workspaces.id = members.workspace_id
+       WHERE members.user_id = $1`,
+      ["member-1"],
+    )).resolves.toMatchObject({
+      rows: [{
+        id: result.selectedWorkspaceId,
+        name: "Member的工作区",
+        role: "owner",
+      }],
+    });
+    await expect(pool.query(
+      "SELECT selected_workspace_id FROM workspace_preferences WHERE user_id = $1",
+      ["member-1"],
+    )).resolves.toMatchObject({
+      rows: [{ selected_workspace_id: result.selectedWorkspaceId }],
+    });
+    await expect(pool.query(
+      `SELECT actor_user_id, event_type, target_id
+       FROM workspace_audit_events
+       WHERE workspace_id = $1`,
+      ["workspace-1"],
+    )).resolves.toMatchObject({
+      rows: [{
+        actor_user_id: "member-1",
+        event_type: "workspace_member_left",
+        target_id: "member-1",
+      }],
+    });
+  });
+
+  it("protects the last owner and requires owners to use the leave operation", async () => {
+    await expect(store.leaveWorkspace({
+      userDisplayName: "Owner",
+      userId: "owner-1",
+      workspaceId: "workspace-1",
+    })).rejects.toMatchObject({ code: "last_owner_protected" });
+    await expect(store.removeMember({
+      actorUserId: "owner-1",
+      memberId: "owner-1",
+      workspaceId: "workspace-1",
+    })).rejects.toMatchObject({ code: "member_self_remove_forbidden" });
+  });
+
   it("validates the requested role, actor ownership, and target membership", async () => {
     await expect(store.updateRole({
       actorUserId: "owner-1",
@@ -171,12 +290,13 @@ async function seedWorkspace(
   id: string,
   name: string,
   ownerUserId: string,
+  createdAt = 1000,
 ) {
   await pool.query(
     "INSERT INTO editor_workspaces (id, name, updated_at, created_at) VALUES ($1, $2, $3, $3)",
-    [id, name, 1000],
+    [id, name, createdAt],
   );
-  await seedMembership(pool, id, ownerUserId, "owner", 1000);
+  await seedMembership(pool, id, ownerUserId, "owner", createdAt);
 }
 
 async function seedMembership(

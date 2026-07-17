@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import type { WorkspaceRole } from "../shared/workspace";
 import type { WorkspaceMemberSummary } from "../shared/workspaceMembers";
+import { PostgresWorkspaceStore } from "./postgresWorkspaceStore";
 import { WorkspaceAuditStore } from "./workspaceAuditStore";
 import { WorkspaceDomainError } from "./workspaceErrors";
 
@@ -12,15 +13,18 @@ interface PostgresWorkspaceMemberStoreOptions {
 
 export class PostgresWorkspaceMemberStore {
   private readonly auditStore: WorkspaceAuditStore;
+  private readonly workspaceStore: PostgresWorkspaceStore;
 
   constructor(
     private readonly pool: Pool,
     options: PostgresWorkspaceMemberStoreOptions = {},
   ) {
+    const now = options.now ?? Date.now;
     this.auditStore = new WorkspaceAuditStore(
       options.auditEventIdFactory ?? (() => `workspace-audit-${randomUUID()}`),
-      options.now ?? Date.now,
+      now,
     );
+    this.workspaceStore = new PostgresWorkspaceStore(pool, { now });
   }
 
   async listMembers(
@@ -118,6 +122,150 @@ export class PostgresWorkspaceMemberStore {
     }
   }
 
+  async removeMember(input: {
+    actorUserId: string;
+    memberId: string;
+    workspaceId: string;
+  }): Promise<void> {
+    const client = await this.pool.connect();
+
+    try {
+      await client.query("BEGIN");
+      const workspace = await this.lockWorkspace(client, input.workspaceId);
+      await this.requireOwner(client, input.actorUserId, workspace.id);
+      if (input.actorUserId === input.memberId) {
+        throw new WorkspaceDomainError(
+          "member_self_remove_forbidden",
+          "Owners must leave a workspace through the leave operation",
+        );
+      }
+      const targetRole = await this.requireMember(client, input.memberId, workspace.id);
+      await this.protectLastOwner(client, workspace.id, targetRole);
+      const displayName = await this.loadUserDisplayName(client, input.memberId);
+
+      await this.removeMembership(client, {
+        actorUserId: input.actorUserId,
+        displayName,
+        eventType: "workspace_member_removed",
+        role: targetRole,
+        userId: input.memberId,
+        workspace,
+      });
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async leaveWorkspace(input: {
+    userId: string;
+    userDisplayName: string;
+    workspaceId: string;
+  }): Promise<{ selectedWorkspaceId: string }> {
+    const client = await this.pool.connect();
+
+    try {
+      await client.query("BEGIN");
+      const workspace = await this.lockWorkspace(client, input.workspaceId);
+      const role = await this.requireMember(client, input.userId, workspace.id);
+      await this.protectLastOwner(client, workspace.id, role);
+      const selectedWorkspaceId = await this.removeMembership(client, {
+        actorUserId: input.userId,
+        displayName: input.userDisplayName,
+        eventType: "workspace_member_left",
+        role,
+        userId: input.userId,
+        workspace,
+      });
+      await client.query("COMMIT");
+      return { selectedWorkspaceId };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async removeMembership(
+    client: PoolClient,
+    input: {
+      actorUserId: string;
+      displayName: string;
+      eventType: "workspace_member_left" | "workspace_member_removed";
+      role: WorkspaceRole;
+      userId: string;
+      workspace: { id: string; name: string };
+    },
+  ) {
+    const preference = await client.query(
+      `SELECT selected_workspace_id
+       FROM workspace_preferences
+       WHERE user_id = $1
+       FOR UPDATE`,
+      [input.userId],
+    );
+    const currentWorkspaceId = preference.rows[0]?.selected_workspace_id
+      ? String(preference.rows[0].selected_workspace_id)
+      : null;
+
+    await client.query(
+      `DELETE FROM workspace_document_preferences
+       WHERE workspace_id = $1 AND user_id = $2`,
+      [input.workspace.id, input.userId],
+    );
+    await client.query(
+      `DELETE FROM workspace_members
+       WHERE workspace_id = $1 AND user_id = $2`,
+      [input.workspace.id, input.userId],
+    );
+    await this.auditStore.write(client, {
+      actorUserId: input.actorUserId,
+      eventType: input.eventType,
+      metadata: { previousRole: input.role },
+      targetId: input.userId,
+      targetType: "workspace_member",
+      workspaceId: input.workspace.id,
+      workspaceName: input.workspace.name,
+    });
+
+    const remaining = await client.query(
+      `SELECT workspaces.id
+       FROM workspace_members members
+       INNER JOIN editor_workspaces workspaces ON workspaces.id = members.workspace_id
+       WHERE members.user_id = $1
+       ORDER BY workspaces.created_at ASC, workspaces.id ASC`,
+      [input.userId],
+    );
+    const selectedWorkspaceId = remaining.rows.some(
+      (row) => String(row.id) === currentWorkspaceId,
+    )
+      ? currentWorkspaceId
+      : remaining.rows[0]?.id
+        ? String(remaining.rows[0].id)
+        : null;
+
+    if (selectedWorkspaceId) {
+      await client.query(
+        `INSERT INTO workspace_preferences (user_id, selected_workspace_id)
+         VALUES ($1, $2)
+         ON CONFLICT (user_id) DO UPDATE
+         SET selected_workspace_id = EXCLUDED.selected_workspace_id`,
+        [input.userId, selectedWorkspaceId],
+      );
+      return selectedWorkspaceId;
+    }
+
+    return this.workspaceStore.ensurePersonalWorkspace(
+      input.userId,
+      `${input.displayName}的工作区`,
+      client,
+    );
+  }
+
   private async lockWorkspace(client: PoolClient, workspaceId: string) {
     const result = await client.query(
       `SELECT id, name
@@ -170,6 +318,36 @@ export class PostgresWorkspaceMemberStore {
       throw new WorkspaceDomainError("member_not_found", "Workspace member not found");
     }
     return role as WorkspaceRole;
+  }
+
+  private async protectLastOwner(
+    client: PoolClient,
+    workspaceId: string,
+    role: WorkspaceRole,
+  ) {
+    if (role !== "owner") {
+      return;
+    }
+    const ownerCount = await client.query(
+      `SELECT COUNT(*)::int AS count
+       FROM workspace_members
+       WHERE workspace_id = $1 AND role = 'owner'`,
+      [workspaceId],
+    );
+    if (Number(ownerCount.rows[0]?.count) <= 1) {
+      throw new WorkspaceDomainError(
+        "last_owner_protected",
+        "A workspace must retain at least one owner",
+      );
+    }
+  }
+
+  private async loadUserDisplayName(client: PoolClient, userId: string) {
+    const result = await client.query(
+      "SELECT display_name FROM app_users WHERE id = $1",
+      [userId],
+    );
+    return String(result.rows[0]?.display_name ?? "");
   }
 }
 
