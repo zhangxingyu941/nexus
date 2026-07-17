@@ -111,6 +111,50 @@ describe("useWorkspaceSession", () => {
     expect(result.current.isTransitioning).toBe(false);
   });
 
+  it("flushes the current save before installing a server transition", async () => {
+    const workspaceA = createSnapshot("workspace-a", "Alpha", "owner", 1000);
+    const workspaceB = createSnapshot("workspace-b", "Beta", "editor", 3000);
+    const nextCatalog = createCatalog(workspaceB.summary, workspaceA.summary);
+    const saveDeferred = createDeferred<void>();
+    const repository = createRepository({
+      catalog: createCatalog(workspaceA.summary),
+      snapshots: { "workspace-a": workspaceA },
+      target: "remote",
+    });
+    vi.mocked(repository.save).mockReturnValueOnce(saveDeferred.promise);
+    const operation = vi.fn().mockResolvedValue({
+      catalog: nextCatalog,
+      workspace: workspaceB,
+    });
+    const { result } = renderHook(() => useWorkspaceSession(repository));
+    await waitFor(() => expect(result.current.snapshot).toEqual(workspaceA));
+
+    act(() => {
+      result.current.updateContent((current) => ({ ...current, updatedAt: 2000 }));
+    });
+    let transitioning!: Promise<void>;
+    act(() => {
+      transitioning = result.current.runServerTransition(operation);
+    });
+
+    expect(result.current.isTransitioning).toBe(true);
+    expect(repository.save).toHaveBeenCalledWith(
+      "workspace-a",
+      expect.objectContaining({ updatedAt: 2000 }),
+    );
+    expect(operation).not.toHaveBeenCalled();
+
+    saveDeferred.resolve();
+    await act(async () => {
+      await transitioning;
+    });
+
+    expect(operation).toHaveBeenCalledTimes(1);
+    expect(result.current.snapshot).toEqual(workspaceB);
+    expect(result.current.catalog).toEqual(nextCatalog);
+    expect(result.current.isTransitioning).toBe(false);
+  });
+
   it("does not let a stale save overwrite a newly loaded readonly status", async () => {
     const workspaceA = createSnapshot("workspace-a", "Alpha", "owner", 1000);
     const workspaceB = createSnapshot("workspace-b", "Beta", "viewer", 1000);

@@ -38,6 +38,13 @@ describe("apiClient", () => {
       .resolves.toEqual({ id: "workspace-1" });
   });
 
+  it("returns undefined for a successful no-content response", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
+
+    await expect(requestJson<void>("/api/test", { method: "DELETE" }))
+      .resolves.toBeUndefined();
+  });
+
   it.each([
     ["malformed JSON", new Response("not-json", { status: 503 })],
     ["a non-contract error payload", jsonResponse({ message: "unknown failure" }, 503)],

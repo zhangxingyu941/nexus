@@ -12,6 +12,7 @@ import {
   type WorkspaceSnapshot,
   type WorkspaceSummary,
 } from "../../../shared/workspace";
+import type { WorkspaceTransitionResponse } from "../../../shared/workspaceApi";
 import type { EditorWorkspace } from "../model/block";
 import type { WorkspaceRepository } from "../persistence/workspaceRepository";
 
@@ -32,6 +33,9 @@ export interface WorkspaceSessionController {
   isTransitioning: boolean;
   updateContent(updater: (current: EditorWorkspace) => EditorWorkspace): void;
   flushSave(): Promise<void>;
+  runServerTransition(
+    operation: () => Promise<WorkspaceTransitionResponse>,
+  ): Promise<void>;
   switchWorkspace(workspaceId: string): Promise<void>;
   createWorkspace(name: string): Promise<void>;
   renameWorkspace(workspaceId: string, name: string): Promise<void>;
@@ -255,6 +259,32 @@ export function useWorkspaceSession(
     }
   }, [flushSave, installSnapshot, repository]);
 
+  const runServerTransition = useCallback(async (
+    operation: () => Promise<WorkspaceTransitionResponse>,
+  ) => {
+    if (transitionRef.current) {
+      return;
+    }
+
+    transitionRef.current = true;
+    setIsTransitioning(true);
+    setError("");
+    try {
+      await flushSave();
+      const transition = await operation();
+      installSnapshot(transition.catalog, transition.workspace);
+    } catch (transitionError) {
+      if (mountedRef.current) {
+        setError(errorMessage(transitionError));
+      }
+    } finally {
+      transitionRef.current = false;
+      if (mountedRef.current) {
+        setIsTransitioning(false);
+      }
+    }
+  }, [flushSave, installSnapshot]);
+
   const createWorkspace = useCallback(async (name: string) => {
     if (transitionRef.current) {
       return;
@@ -323,6 +353,7 @@ export function useWorkspaceSession(
     isTransitioning,
     updateContent,
     flushSave,
+    runServerTransition,
     switchWorkspace,
     createWorkspace,
     renameWorkspace,

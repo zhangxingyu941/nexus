@@ -22,6 +22,10 @@ export async function requestJson<T>(url: string, init: RequestInit): Promise<T>
     throw new ApiRequestError("工作区服务请求失败", "service_unavailable");
   }
 
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
   const payload = await response.json().catch(() => INVALID_JSON) as unknown;
 
   if (payload === INVALID_JSON && response.ok) {
