@@ -5,6 +5,7 @@ import type { EditorCommandDefinition } from "../commands/editorCommands";
 import type { CollaborationDocument } from "../collaboration/collaborationTypes";
 import type { Block, BlockData, BlockStatus, BlockType, HeadingLevel, MoveDirection } from "../model/block";
 import type { EditorSessionUser } from "../session/sessionTypes";
+import { getCursorColor } from "../collaboration/remoteCursorColors";
 import { useMentionSearchContext } from "./MentionSearchContext";
 import { AttachmentBlockEditor } from "./blocks/AttachmentBlockEditor";
 import { BlockActionBar } from "./blocks/BlockActionBar";
@@ -90,10 +91,42 @@ export function BlockRow({
   const [mentionAnchor, setMentionAnchor] = useState<EditorPopoverAnchor | null>(null);
   const [mentionQuery, setMentionQuery] = useState("");
   const [activeMentionIndex, setActiveMentionIndex] = useState(0);
+  const mentionApiRef = useRef<{ insertMention: (item: MentionItem) => void } | null>(null);
   const rowRef = useRef<HTMLElement | null>(null);
   const slashCommands = useMemo(() => searchEditorCommands(slashQuery), [slashQuery]);
   const searchMentionItems = useMentionSearchContext();
   const mentionItems = useMemo(() => searchMentionItems(mentionQuery), [searchMentionItems, mentionQuery]);
+  const cursorUser = useMemo(
+    () => sessionUser
+      ? { id: sessionUser.id, name: sessionUser.displayName || sessionUser.email, color: getCursorColor(sessionUser.id) }
+      : undefined,
+    [sessionUser],
+  );
+
+  // 从编辑器光标前的文本解析 @query，用于驱动提及菜单显隐与过滤。
+  const syncMentionFromText = (text: string, caret: number) => {
+    const before = text.slice(0, caret);
+    const match = /@([^\s@]*)$/.exec(before);
+
+    if (!match) {
+      if (openMenu === "mention") {
+        setOpenMenu(null);
+      }
+      return;
+    }
+
+    setMentionQuery(match[1]);
+    setActiveMentionIndex(0);
+    if (openMenu !== "mention") {
+      const rowBounds = rowRef.current?.getBoundingClientRect();
+      setMentionAnchor({
+        bottom: rowBounds?.bottom ?? 40,
+        left: (rowBounds?.left ?? 0) + 38,
+        top: rowBounds?.top ?? 20,
+      });
+      setOpenMenu("mention");
+    }
+  };
 
   useEffect(() => {
     if (openMenu !== "slash" && openMenu !== "mention") {
@@ -220,8 +253,7 @@ export function BlockRow({
 
   const handleSelectMention = (item: MentionItem) => {
     setOpenMenu(null);
-    setRestoreEditorFocus(true);
-    document.execCommand("insertText", false, `@${item.label}`);
+    mentionApiRef.current?.insertMention(item);
   };
 
   const handleMentionMenuKeyDown = (event: ReactKeyboardEvent) => {
@@ -262,21 +294,6 @@ export function BlockRow({
       event.stopPropagation();
       setOpenMenu(null);
       return;
-    }
-
-    if (event.key === "Backspace") {
-      event.preventDefault();
-      event.stopPropagation();
-      setActiveMentionIndex(0);
-      setMentionQuery((current) => current.slice(0, -1));
-      return;
-    }
-
-    if (event.key.length === 1 && !event.altKey && !event.ctrlKey && !event.metaKey) {
-      event.preventDefault();
-      event.stopPropagation();
-      setActiveMentionIndex(0);
-      setMentionQuery((current) => `${current}${event.key}`);
     }
   };
 
@@ -376,14 +393,18 @@ export function BlockRow({
             content={block.content}
             focusRequest={focusRequest || restoreEditorFocus}
             isReadOnly={isReadOnly}
-            onChange={(content) => onChangeContent(block.id, content)}
+            onChange={(content) => {
+              syncMentionFromText(content, content.length);
+              onChangeContent(block.id, content);
+            }}
             onEnter={() => onAddAfter(block.id)}
             onFocused={handleEditorFocused}
             onMarkdownShortcut={(type, headingLevel) => onChangeType(block.id, type, headingLevel)}
             onOpenCommandMenu={openSlashMenu}
             onOpenMentionMenu={openMentionMenu}
+            onMentionApiReady={(api) => { mentionApiRef.current = api; }}
             onToggle={() => onToggleTodo(block.id)}
-            sessionUser={sessionUser ?? undefined}
+            sessionUser={cursorUser}
           />
         ) : (
           <RichTextBlockEditor
@@ -392,13 +413,17 @@ export function BlockRow({
             content={block.content}
             focusRequest={focusRequest || restoreEditorFocus}
             isReadOnly={isReadOnly}
-            onChange={(content) => onChangeContent(block.id, content)}
+            onChange={(content) => {
+              syncMentionFromText(content, content.length);
+              onChangeContent(block.id, content);
+            }}
             onEnter={() => onAddAfter(block.id)}
             onFocused={handleEditorFocused}
             onMarkdownShortcut={(type, headingLevel) => onChangeType(block.id, type, headingLevel)}
             onOpenCommandMenu={openSlashMenu}
             onOpenMentionMenu={openMentionMenu}
-            sessionUser={sessionUser ?? undefined}
+            onMentionApiReady={(api) => { mentionApiRef.current = api; }}
+            sessionUser={cursorUser}
             variant={block.type}
           />
         )}

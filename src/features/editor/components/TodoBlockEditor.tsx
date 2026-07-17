@@ -2,6 +2,7 @@ import type { CollaborationDocument } from "../collaboration/collaborationTypes"
 import type { BlockType, HeadingLevel } from "../model/block";
 import type { EditorSessionUser } from "../session/sessionTypes";
 import type { EditorPopoverAnchor } from "./commands/EditorCommandPopover";
+import type { MentionItem } from "./commands/useMentionSearch";
 import { RichTextBlockEditor } from "./RichTextBlockEditor";
 
 interface TodoBlockEditorProps {
@@ -18,6 +19,7 @@ interface TodoBlockEditorProps {
   onMarkdownShortcut: (type: BlockType, headingLevel?: HeadingLevel) => void;
   onOpenCommandMenu: (anchor: EditorPopoverAnchor) => void;
   onOpenMentionMenu?: (anchor: EditorPopoverAnchor) => void;
+  onMentionApiReady?: (api: { insertMention: (item: MentionItem) => void }) => void;
   sessionUser?: { id: string; name: string; color: string };
 }
 
@@ -35,6 +37,7 @@ export function TodoBlockEditor({
   onMarkdownShortcut,
   onOpenCommandMenu,
   onOpenMentionMenu,
+  onMentionApiReady,
   sessionUser,
 }: TodoBlockEditorProps) {
   return (
@@ -60,6 +63,7 @@ export function TodoBlockEditor({
         onMarkdownShortcut={onMarkdownShortcut}
         onOpenCommandMenu={onOpenCommandMenu}
         onOpenMentionMenu={onOpenMentionMenu}
+        onMentionApiReady={onMentionApiReady}
         sessionUser={sessionUser}
         variant="todo"
       />

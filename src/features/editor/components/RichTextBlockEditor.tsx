@@ -11,6 +11,8 @@ import { getBlockCollaborationField } from "../collaboration/yjsWorkspaceMapping
 import type { BlockType, HeadingLevel } from "../model/block";
 import { isSlashCommandTrigger, resolveMarkdownShortcut } from "./markdownShortcuts";
 import type { EditorPopoverAnchor } from "./commands/EditorCommandPopover";
+import type { MentionItem } from "./commands/useMentionSearch";
+import Mention from "../extensions/mention";
 
 interface RichTextBlockEditorProps {
   ariaLabel?: string;
@@ -27,6 +29,7 @@ interface RichTextBlockEditorProps {
   onMarkdownShortcut: (type: BlockType, headingLevel?: HeadingLevel) => void;
   onOpenCommandMenu: (anchor: EditorPopoverAnchor) => void;
   onOpenMentionMenu?: (anchor: EditorPopoverAnchor) => void;
+  onMentionApiReady?: (api: { insertMention: (item: MentionItem) => void }) => void;
 }
 
 export function RichTextBlockEditor({
@@ -44,6 +47,7 @@ export function RichTextBlockEditor({
   onMarkdownShortcut,
   onOpenCommandMenu,
   onOpenMentionMenu,
+  onMentionApiReady,
 }: RichTextBlockEditorProps) {
   const { provider } = useCollaborationSession();
   const placeholder = {
@@ -83,6 +87,7 @@ export function RichTextBlockEditor({
             }),
           ]
         : []),
+      Mention,
       Placeholder.configure({
         placeholder,
       }),
@@ -115,19 +120,19 @@ export function RichTextBlockEditor({
           return true;
         }
 
-        // 输入 / 时打开块插入菜单，并避免把触发符留在正文里。
-        if (event.key === "/") {
+        // 仅当块内容为空时，输入 / 触发块插入菜单；否则按普通字符输入。
+        if (event.key === "/" && view.state.doc.textContent.length === 0) {
           event.preventDefault();
           const caret = view.coordsAtPos(view.state.selection.from);
           onOpenCommandMenu({ bottom: caret.bottom, left: caret.left, top: caret.top });
           return true;
         }
 
+        // 输入 @ 打开提及菜单，但不拦截字符，后续输入作为过滤词留在正文。
         if (event.key === "@" && onOpenMentionMenu) {
-          event.preventDefault();
           const caret = view.coordsAtPos(view.state.selection.from);
           onOpenMentionMenu({ bottom: caret.bottom, left: caret.left, top: caret.top });
-          return true;
+          return false;
         }
 
         // 第一版把 Enter 作为“新增下一个块”，不让 TipTap 在块内继续分段。
@@ -181,6 +186,38 @@ export function RichTextBlockEditor({
     // 外部状态恢复或类型切换后，同步 TipTap 内部文档，避免显示旧内容。
     editor.commands.setContent(content);
   }, [collaborationDocument, content, editor]);
+
+  useEffect(() => {
+    if (!editor || !onMentionApiReady) {
+      return;
+    }
+
+    onMentionApiReady({
+      insertMention(item: MentionItem) {
+        const { state, view } = editor;
+        const from = state.selection.from;
+        const textBefore = state.doc.textBetween(0, from, "\n", "\0");
+        const match = /@([^\s@]*)$/.exec(textBefore);
+
+        if (!match) {
+          return;
+        }
+
+        const start = from - match[0].length;
+        const mentionNode = state.schema.nodes.mention.create({
+          kind: item.kind,
+          label: item.label,
+          targetId: item.id,
+        });
+        const tr = state.tr
+          .delete(start, from)
+          .insert(start, mentionNode)
+          .insertText(" ");
+        view.dispatch(tr);
+        view.focus();
+      },
+    });
+  }, [editor, onMentionApiReady]);
 
   useEffect(() => {
     if (!collaborationDocument) {
