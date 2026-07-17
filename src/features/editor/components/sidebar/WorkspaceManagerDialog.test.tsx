@@ -1,6 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WorkspaceCatalog } from "../../../../shared/workspace";
 import { WorkspaceManagerDialog } from "./WorkspaceManagerDialog";
 
@@ -13,6 +13,10 @@ const catalog: WorkspaceCatalog = {
 };
 
 describe("WorkspaceManagerDialog", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("searches workspaces and exposes role-appropriate actions", async () => {
     const user = userEvent.setup();
     const onSwitch = vi.fn().mockResolvedValue(undefined);
@@ -72,5 +76,37 @@ describe("WorkspaceManagerDialog", () => {
     await user.type(input, "核心团队");
     await user.click(screen.getByRole("button", { name: "保存名称" }));
     expect(onRename).toHaveBeenCalledWith("workspace-a", "核心团队");
+  });
+
+  it("opens owner management details without exposing management to editors", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      members: [
+        { displayName: "林夏", email: "owner@example.com", id: "owner-1", joinedAt: 1000, role: "owner" },
+      ],
+    }), { headers: { "Content-Type": "application/json" }, status: 200 }));
+    render(
+      <WorkspaceManagerDialog
+        catalog={catalog}
+        error=""
+        isTransitioning={false}
+        onClose={vi.fn()}
+        onCreate={vi.fn()}
+        onRename={vi.fn()}
+        onSwitch={vi.fn()}
+        open
+      />,
+    );
+
+    const ownerRow = screen.getByTestId("workspace-row-workspace-a");
+    const editorRow = screen.getByTestId("workspace-row-workspace-b");
+    expect(within(editorRow).queryByRole("button", { name: "管理 研发中心" })).toBeNull();
+    await user.click(within(ownerRow).getByRole("button", { name: "管理 Nexus 工作区" }));
+
+    expect(screen.getByRole("heading", { name: "Nexus 工作区" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "返回工作区列表" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "成员" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "邀请" })).toBeInTheDocument();
+    expect(await screen.findByText("owner@example.com")).toBeInTheDocument();
   });
 });

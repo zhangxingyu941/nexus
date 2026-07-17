@@ -1,12 +1,15 @@
 "use client";
 
-import { ArrowLeft, Pencil, Plus, Search } from "lucide-react";
+import { ArrowLeft, Pencil, Plus, Search, Settings } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { WorkspaceCatalog, WorkspaceSummary } from "../../../../shared/workspace";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { WorkspaceInvitesTab } from "./workspace-manager/WorkspaceInvitesTab";
+import { WorkspaceMembersTab } from "./workspace-manager/WorkspaceMembersTab";
 
 const ROLE_LABELS = { editor: "编辑者", owner: "所有者", viewer: "访客" } as const;
 
@@ -21,7 +24,13 @@ interface WorkspaceManagerDialogProps {
   open: boolean;
 }
 
-type View = { type: "list" } | { type: "create" } | { type: "rename"; workspace: WorkspaceSummary };
+type ManagementTab = "members" | "invites";
+
+type View =
+  | { type: "list" }
+  | { type: "create" }
+  | { type: "rename"; workspace: WorkspaceSummary }
+  | { type: "manage"; workspace: WorkspaceSummary; tab: ManagementTab };
 
 export function WorkspaceManagerDialog({
   catalog,
@@ -60,6 +69,9 @@ export function WorkspaceManagerDialog({
     setName(workspace.name);
     setView({ type: "rename", workspace });
   };
+  const openManage = (workspace: WorkspaceSummary) => {
+    setView({ tab: "members", type: "manage", workspace });
+  };
   const returnToList = () => {
     setName("");
     setView({ type: "list" });
@@ -80,7 +92,7 @@ export function WorkspaceManagerDialog({
     <Dialog onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }} open={open}>
       <DialogContent className="max-h-[min(42rem,calc(100dvh-2rem))] max-w-xl overflow-hidden p-0">
         <DialogHeader className="border-b px-5 py-4 pr-12">
-          <DialogTitle>工作区管理</DialogTitle>
+          <DialogTitle>{view.type === "manage" ? view.workspace.name : "工作区管理"}</DialogTitle>
         </DialogHeader>
         {view.type === "list" ? (
           <div className="grid min-h-0 gap-4 p-5">
@@ -111,9 +123,14 @@ export function WorkspaceManagerDialog({
                       <span className="text-xs text-muted-foreground">{ROLE_LABELS[workspace.role]}</span>
                     </span>
                     {workspace.role === "owner" ? (
-                      <Button aria-label={`重命名 ${workspace.name}`} onClick={() => openRename(workspace)} size="icon" type="button" variant="ghost">
-                        <Pencil aria-hidden="true" className="size-4" />
-                      </Button>
+                      <>
+                        <Button aria-label={`管理 ${workspace.name}`} onClick={() => openManage(workspace)} size="sm" type="button" variant="outline">
+                          <Settings aria-hidden="true" className="size-4" />管理
+                        </Button>
+                        <Button aria-label={`重命名 ${workspace.name}`} onClick={() => openRename(workspace)} size="icon" type="button" variant="ghost">
+                          <Pencil aria-hidden="true" className="size-4" />
+                        </Button>
+                      </>
                     ) : null}
                     {!current ? (
                       <Button disabled={isTransitioning} onClick={() => void onSwitch(workspace.id)} size="sm" type="button" variant="outline">
@@ -129,6 +146,31 @@ export function WorkspaceManagerDialog({
             <Button disabled={isTransitioning} onClick={openCreate} type="button">
               <Plus aria-hidden="true" className="size-4" />新建工作区
             </Button>
+          </div>
+        ) : view.type === "manage" ? (
+          <div className="grid min-h-0 gap-4 overflow-y-auto p-5">
+            <Button aria-label="返回工作区列表" className="w-fit" onClick={returnToList} size="sm" type="button" variant="ghost">
+              <ArrowLeft aria-hidden="true" className="size-4" />返回
+            </Button>
+            <Tabs
+              onValueChange={(tab) => setView({
+                tab: tab as ManagementTab,
+                type: "manage",
+                workspace: view.workspace,
+              })}
+              value={view.tab}
+            >
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="members">成员</TabsTrigger>
+                <TabsTrigger value="invites">邀请</TabsTrigger>
+              </TabsList>
+              <TabsContent className="pt-2" value="members">
+                <WorkspaceMembersTab workspaceId={view.workspace.id} />
+              </TabsContent>
+              <TabsContent className="pt-2" value="invites">
+                <WorkspaceInvitesTab workspaceId={view.workspace.id} />
+              </TabsContent>
+            </Tabs>
           </div>
         ) : (
           <form className="grid gap-5 p-5" onSubmit={(event) => { event.preventDefault(); void submit(); }}>

@@ -10,7 +10,6 @@ import type { WorkspaceActivity, WorkspaceCollaborator } from "../model/workspac
 import type {
   DatabaseWorkspaceMember,
   EditorSessionUser,
-  WorkspaceAccessRole,
 } from "../session/sessionTypes";
 import { BlockList } from "./BlockList";
 import { DocumentContextPanel } from "./DocumentContextPanel";
@@ -36,13 +35,11 @@ interface DocumentEditorProps {
   isWorkspaceNavigationOpen: boolean;
   isReadOnly: boolean;
   onSignOut?: () => void;
-  onInviteMember?: (email: string, role: "editor" | "viewer") => Promise<void>;
   onOpenInvites?: () => void;
   saveStatus: WorkspaceSaveStatus;
   sessionUser: EditorSessionUser | null;
   workspaceMembers: DatabaseWorkspaceMember[];
   workspaceId: string;
-  workspaceRole: WorkspaceAccessRole | null;
   titleFocusRequest: number;
   onAddAfter: (blockId: string) => void;
   onAddBlockComment: (blockId: string, body: string) => void;
@@ -76,13 +73,11 @@ export function DocumentEditor({
   isWorkspaceNavigationOpen,
   isReadOnly,
   onSignOut,
-  onInviteMember,
   onOpenInvites,
   saveStatus,
   sessionUser,
   workspaceMembers,
   workspaceId,
-  workspaceRole,
   titleFocusRequest,
   onAddAfter,
   onAddBlockComment,
@@ -285,9 +280,7 @@ export function DocumentEditor({
           openCommentCount={openCommentCount}
           presence={collaborationPresence}
           workspaceMembers={workspaceMembers}
-          workspaceRole={workspaceRole}
           onClose={() => setIsMembersOpen(false)}
-          onInviteMember={onInviteMember}
         />
       ) : null}
 

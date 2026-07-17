@@ -1,6 +1,5 @@
-import { render, screen, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 import { MembersPopover } from "./MembersPopover";
 
 const collaborators = [
@@ -16,9 +15,7 @@ const collaborators = [
 ];
 
 describe("MembersPopover database access", () => {
-  it("renders persisted members and lets owners grant access", async () => {
-    const user = userEvent.setup();
-    const onInviteMember = vi.fn().mockResolvedValue(undefined);
+  it("renders persisted members without a direct-add form for owners", () => {
     render(
       <MembersPopover
         collaborators={collaborators}
@@ -28,20 +25,13 @@ describe("MembersPopover database access", () => {
         workspaceMembers={[
           { displayName: "林夏", email: "owner@example.com", id: "owner-1", role: "owner" },
         ]}
-        workspaceRole="owner"
         onClose={() => undefined}
-        onInviteMember={onInviteMember}
       />,
     );
 
     expect(screen.getByRole("region", { name: "数据库工作区成员" })).toHaveTextContent("所有者");
-    const form = screen.getByRole("form", { name: "邀请工作区成员" });
-    await user.type(within(form).getByLabelText("成员邮箱"), "editor@example.com");
-    await user.selectOptions(within(form).getByLabelText("成员角色"), "editor");
-    await user.click(within(form).getByRole("button", { name: "添加成员" }));
-
-    expect(onInviteMember).toHaveBeenCalledWith("editor@example.com", "editor");
-    expect(await within(form).findByRole("status")).toHaveTextContent("成员权限已更新");
+    expect(screen.queryByRole("form", { name: "邀请工作区成员" })).not.toBeInTheDocument();
+    expect(screen.queryByText("添加已有身份")).not.toBeInTheDocument();
   });
 
   it("does not expose member management to viewers", () => {
@@ -54,7 +44,6 @@ describe("MembersPopover database access", () => {
         workspaceMembers={[
           { displayName: "访客", email: "viewer@example.com", id: "viewer-1", role: "viewer" },
         ]}
-        workspaceRole="viewer"
         onClose={() => undefined}
       />,
     );

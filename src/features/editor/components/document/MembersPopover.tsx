@@ -1,9 +1,7 @@
 import { X } from "lucide-react";
-import { useState, type FormEvent } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Sheet,
@@ -22,9 +20,7 @@ interface MembersPopoverProps {
   openCommentCount: number;
   presence: CollaborationPresence[];
   workspaceMembers?: DatabaseWorkspaceMember[];
-  workspaceRole?: WorkspaceAccessRole | null;
   onClose: () => void;
-  onInviteMember?: (email: string, role: "editor" | "viewer") => Promise<void>;
 }
 
 const ROLE_LABELS: Record<WorkspaceAccessRole, string> = {
@@ -39,34 +35,8 @@ export function MembersPopover({
   openCommentCount,
   presence,
   workspaceMembers = [],
-  workspaceRole = null,
   onClose,
-  onInviteMember,
 }: MembersPopoverProps) {
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState<"editor" | "viewer">("editor");
-  const [inviteStatus, setInviteStatus] = useState("");
-  const [isInviting, setIsInviting] = useState(false);
-
-  const handleInvite = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!onInviteMember) {
-      return;
-    }
-
-    setInviteStatus("");
-    setIsInviting(true);
-    try {
-      await onInviteMember(inviteEmail.trim(), inviteRole);
-      setInviteEmail("");
-      setInviteStatus("成员权限已更新");
-    } catch (error) {
-      setInviteStatus(error instanceof Error ? error.message : "成员权限更新失败");
-    } finally {
-      setIsInviting(false);
-    }
-  };
-
   return (
     <Sheet defaultOpen onOpenChange={(open) => !open && onClose()}>
       <SheetContent className="w-full gap-0 p-0 sm:max-w-md" showCloseButton={false}>
@@ -122,21 +92,6 @@ export function MembersPopover({
                     ))}
                   </div>
                 </section>
-              ) : null}
-
-              {workspaceRole === "owner" && onInviteMember ? (
-                <form aria-label="邀请工作区成员" className="grid gap-2 rounded-md border p-3" onSubmit={handleInvite}>
-                  <p className="text-xs font-medium text-muted-foreground">添加已有身份</p>
-                  <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_90px_auto]">
-                    <Input aria-label="成员邮箱" className="h-9 min-w-0 text-xs" onChange={(event) => setInviteEmail(event.target.value)} placeholder="member@example.com" required type="email" value={inviteEmail} />
-                    <select aria-label="成员角色" className="h-9 rounded-md border border-input bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/25" onChange={(event) => setInviteRole(event.target.value as "editor" | "viewer")} value={inviteRole}>
-                      <option value="editor">可编辑</option>
-                      <option value="viewer">只读</option>
-                    </select>
-                    <Button className="h-9" disabled={isInviting} size="sm" type="submit">添加成员</Button>
-                  </div>
-                  {inviteStatus ? <span aria-live="polite" className="text-xs text-muted-foreground" role="status">{inviteStatus}</span> : null}
-                </form>
               ) : null}
 
               <section className="grid gap-2">

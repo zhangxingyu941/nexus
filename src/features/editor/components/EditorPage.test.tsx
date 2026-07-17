@@ -9,12 +9,14 @@ import { EditorPage } from "./EditorPage";
 
 async function renderEditor({
   inviteCount = 0,
+  membersEnabled = false,
   onOpenInvites,
   role = "owner",
   seedFixture = true,
   workspace,
 }: {
   inviteCount?: number;
+  membersEnabled?: boolean;
   onOpenInvites?: () => void;
   role?: "owner" | "editor" | "viewer";
   seedFixture?: boolean;
@@ -26,7 +28,7 @@ async function renderEditor({
     return (
       <EditorPage
         inviteCount={inviteCount}
-        membersEnabled={false}
+        membersEnabled={membersEnabled}
         onManageWorkspaces={vi.fn()}
         onOpenInvites={onOpenInvites}
         onWorkspaceChange={(updater) => setCurrent(updater)}
@@ -568,7 +570,11 @@ describe("EditorPage", () => {
 
   it("opens a member panel with collaborator workload and activity", async () => {
     const user = userEvent.setup();
-    await renderEditor();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ members: [] }), {
+      headers: { "Content-Type": "application/json" },
+      status: 200,
+    }));
+    await renderEditor({ membersEnabled: true });
 
     await user.click(screen.getByRole("button", { name: "成员 3" }));
     const memberPanel = screen.getByRole("dialog", { name: "成员与协作" });
@@ -578,6 +584,7 @@ describe("EditorPage", () => {
     expect(within(memberPanel).getAllByText("未在线").length).toBeGreaterThan(0);
     expect(within(memberPanel).getAllByText("正在编辑 需求 PRD").length).toBeGreaterThan(0);
     expect(within(memberPanel).getByText("1 条待处理评论")).toBeInTheDocument();
+    expect(within(memberPanel).queryByRole("form", { name: "邀请工作区成员" })).not.toBeInTheDocument();
   });
 
   it("edits the document title and mirrors it in navigation", async () => {

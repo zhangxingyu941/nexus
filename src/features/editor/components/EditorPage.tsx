@@ -40,10 +40,7 @@ import {
   updateDocumentBlockStatus,
   updateActiveDocument,
 } from "../model/workspaceOperations";
-import {
-  addWorkspaceMember,
-  loadWorkspaceMembers,
-} from "../persistence/workspaceMemberRepository";
+import { loadWorkspaceMembers } from "../persistence/workspaceMemberRepository";
 import type {
   DatabaseWorkspaceMember,
   EditorSessionUser,
@@ -402,10 +399,6 @@ export function EditorPage({
     );
   }, []);
 
-  const handleInviteMember = useCallback(async (email: string, role: "editor" | "viewer") => {
-    setWorkspaceMembers(await addWorkspaceMember(workspaceId, email, role));
-  }, [workspaceId]);
-
   const handleAddBlockComment = useCallback(
     (blockId: string, body: string) => {
       applyActiveDocumentChange((current) => addBlockComment(current, blockId, "我", body, Date.now()));
@@ -487,7 +480,6 @@ export function EditorPage({
         inviteCount={inviteCount}
         isWorkspaceNavigationOpen={isSidebarOpen}
         isReadOnly={workspaceRole === "viewer"}
-        onInviteMember={membersEnabled && workspaceRole === "owner" ? handleInviteMember : undefined}
         onOpenInvites={onOpenInvites}
         onSignOut={onSignOut}
         onAddAfter={handleAddAfter}
@@ -512,7 +504,6 @@ export function EditorPage({
         sessionUser={sessionUser}
         workspaceMembers={workspaceMembers}
         workspaceId={workspaceId}
-        workspaceRole={workspaceRole}
         titleFocusRequest={titleFocusRequest}
       />
       {undoDeleteNotice ? (
