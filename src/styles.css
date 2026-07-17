@@ -1834,6 +1834,36 @@ textarea:focus-visible {
   box-shadow: 0 16px 36px rgba(24, 24, 27, 0.14), 0 2px 8px rgba(24, 24, 27, 0.08);
 }
 
+.mention-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 2px 7px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid #e4e4e7;
+}
+
+.mention-tab {
+  flex: 1 1 auto;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: #52525b;
+  font-size: 0.74rem;
+  font-weight: 600;
+  background: transparent;
+  cursor: pointer;
+}
+
+.mention-tab:hover {
+  background: #f4f4f5;
+}
+
+.mention-tab.active {
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
 .editor-command-query {
   margin: 0 2px 5px;
   padding: 6px 8px;
@@ -3227,6 +3257,210 @@ textarea:focus-visible {
   white-space: nowrap;
   pointer-events: none;
   z-index: 10;
+}
+
+.ProseMirror .collaboration-cursor__selection {
+  border-radius: 2px;
+}
+
+.ProseMirror .collaboration-cursor__caret[data-edge="right"] .collaboration-cursor__label {
+  left: auto;
+  right: -1px;
+}
+
+.selection-toolbar {
+  position: fixed;
+  z-index: 90;
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  padding: 3px;
+  border: 1px solid #27272a;
+  border-radius: 7px;
+  background: #18181b;
+  box-shadow: 0 8px 24px rgba(24, 24, 27, 0.28);
+}
+
+.selection-toolbar-button {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 5px;
+  color: #fafafa;
+  font-size: 0.8rem;
+  background: transparent;
+  cursor: pointer;
+}
+
+.selection-toolbar-button:hover:not(:disabled) {
+  background: #3f3f46;
+}
+
+.selection-toolbar-button:disabled {
+  color: #71717a;
+  cursor: not-allowed;
+}
+
+.selection-toolbar-divider {
+  width: 1px;
+  height: 18px;
+  margin: 0 2px;
+  background: #52525b;
+}
+
+/* Divider / List / Toggle / Formula / LinkCard 块 */
+.divider-block {
+  padding: 8px 0;
+}
+
+.divider-block hr {
+  border: none;
+  border-top: 1px solid #e4e4e7;
+}
+
+.list-block ul,
+.list-block ol {
+  margin: 0;
+  padding-left: 22px;
+}
+
+.list-block li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.list-block li input {
+  flex: 1 1 auto;
+  border: none;
+  background: transparent;
+  font: inherit;
+  padding: 2px 0;
+}
+
+.list-block li input:focus {
+  outline: none;
+}
+
+.list-block-add,
+.list-block-enter {
+  margin-top: 4px;
+  border: none;
+  background: transparent;
+  color: #2563eb;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.toggle-block summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.toggle-block textarea {
+  width: 100%;
+  min-height: 60px;
+  margin-top: 6px;
+  border: 1px solid #e4e4e7;
+  border-radius: 6px;
+  font: inherit;
+  padding: 8px;
+  resize: vertical;
+}
+
+.formula-block {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.formula-block-prefix {
+  color: #71717a;
+  font-style: italic;
+}
+
+.formula-block input {
+  flex: 1 1 auto;
+  border: 1px solid #e4e4e7;
+  border-radius: 6px;
+  font: inherit;
+  padding: 6px 8px;
+}
+
+.formula-block-render {
+  padding: 4px 10px;
+  border: 1px dashed #c4b5fd;
+  border-radius: 6px;
+  background: #f5f3ff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.link-card-block {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid #e4e4e7;
+  border-radius: 8px;
+  text-decoration: none;
+  color: inherit;
+}
+
+.link-card-meta {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.link-card-url {
+  color: #71717a;
+  font-size: 0.78rem;
+}
+
+.link-card-editor {
+  display: flex;
+  gap: 8px;
+}
+
+.link-card-editor input {
+  flex: 1 1 auto;
+  border: 1px solid #e4e4e7;
+  border-radius: 6px;
+  font: inherit;
+  padding: 6px 8px;
+}
+
+.link-card-editor button {
+  border: 1px solid #2563eb;
+  border-radius: 6px;
+  background: #2563eb;
+  color: #fff;
+  cursor: pointer;
+  padding: 0 12px;
+}
+
+.block-row[data-draggable="true"] {
+  cursor: default;
+}
+
+.block-row.drag-over-before::before,
+.block-row.drag-over-after::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  height: 2px;
+  border-radius: 2px;
+  background: #2563eb;
+}
+
+.block-row.drag-over-before {
+  box-shadow: inset 0 2px 0 #2563eb;
+}
+
+.block-row.drag-over-after {
+  box-shadow: inset 0 -2px 0 #2563eb;
 }
 
 /* ===== Mention 标签 ===== */

@@ -21,7 +21,7 @@ describe("editor commands", () => {
   });
 
   it("groups commands and searches labels, aliases, descriptions, and markdown triggers", () => {
-    expect(getEditorCommandsByCategory("media").map((command) => command.label)).toEqual(["Image", "File"]);
+    expect(getEditorCommandsByCategory("media").map((command) => command.label)).toEqual(["Image", "File", "Link Card"]);
     expect(searchEditorCommands("表格").map((command) => command.id)).toEqual(["table"]);
     expect(searchEditorCommands("task").map((command) => command.id)).toContain("todo");
     expect(searchEditorCommands("一级标题").map((command) => command.id)).toContain("heading-1");

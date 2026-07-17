@@ -3,7 +3,7 @@ import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
 import Placeholder from "@tiptap/extension-placeholder";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useCollaborationSession } from "../collaboration/CollaborationSessionContext";
 import { getCursorColor } from "../collaboration/remoteCursorColors";
 import type { CollaborationDocument } from "../collaboration/collaborationTypes";
@@ -12,6 +12,7 @@ import type { BlockType, HeadingLevel } from "../model/block";
 import { isSlashCommandTrigger, resolveMarkdownShortcut } from "./markdownShortcuts";
 import type { EditorPopoverAnchor } from "./commands/EditorCommandPopover";
 import type { MentionItem } from "./commands/useMentionSearch";
+import { SelectionToolbar } from "./commands/SelectionToolbar";
 import Mention from "../extensions/mention";
 
 interface RichTextBlockEditorProps {
@@ -30,6 +31,7 @@ interface RichTextBlockEditorProps {
   onOpenCommandMenu: (anchor: EditorPopoverAnchor) => void;
   onOpenMentionMenu?: (anchor: EditorPopoverAnchor) => void;
   onMentionApiReady?: (api: { insertMention: (item: MentionItem) => void }) => void;
+  onComment?: (selectedText: string) => void;
 }
 
 export function RichTextBlockEditor({
@@ -48,8 +50,10 @@ export function RichTextBlockEditor({
   onOpenCommandMenu,
   onOpenMentionMenu,
   onMentionApiReady,
+  onComment,
 }: RichTextBlockEditorProps) {
   const { provider } = useCollaborationSession();
+  const [selectionAnchor, setSelectionAnchor] = useState<{ left: number; top: number } | null>(null);
   const placeholder = {
     code: "输入代码",
     heading: "标题",
@@ -80,9 +84,36 @@ export function RichTextBlockEditor({
         ? [
             CollaborationCursor.configure({
               provider,
+              render: (user) => {
+                const color = (user?.color as string) ?? "#2563eb";
+                const isLocal = typeof user?.clientId === "number" && user.clientId === provider.awareness.clientID;
+
+                const cursor = document.createElement("span");
+                cursor.classList.add("collaboration-cursor__caret");
+                cursor.style.borderColor = color;
+
+                if (!isLocal) {
+                  const label = document.createElement("div");
+                  label.classList.add("collaboration-cursor__label");
+                  label.style.backgroundColor = color;
+                  label.textContent = (user?.name as string) || "";
+                  cursor.appendChild(label);
+                }
+
+                return cursor;
+              },
+              selectionRender: (user) => {
+                const color = (user?.color as string) ?? "#2563eb";
+
+                return {
+                  class: "collaboration-cursor__selection",
+                  style: `background-color: ${color}33`,
+                };
+              },
               user: {
-                name: sessionUser.name,
+                clientId: provider.awareness.clientID,
                 color: getCursorColor(sessionUser.id),
+                name: sessionUser.name,
               },
             }),
           ]
@@ -170,6 +201,26 @@ export function RichTextBlockEditor({
 
       // MVP 只持久化纯文本，为后续块模型和协同层保留简单边界。
       onChange(text);
+    },
+    onSelectionUpdate({ editor: activeEditor }) {
+      if (isReadOnly) {
+        setSelectionAnchor(null);
+        return;
+      }
+
+      const { from, to, empty } = activeEditor.state.selection;
+
+      if (empty || from === to) {
+        setSelectionAnchor(null);
+        return;
+      }
+
+      const start = activeEditor.view.coordsAtPos(from);
+      const end = activeEditor.view.coordsAtPos(to);
+      const left = (start.left + end.left) / 2;
+      const top = Math.min(start.top, end.top) - 8;
+
+      setSelectionAnchor({ left, top });
     },
   }, [blockId, collaborationDocument, isReadOnly]);
 
@@ -260,5 +311,32 @@ export function RichTextBlockEditor({
     onFocused();
   }, [editor, focusRequest, isReadOnly, onFocused]);
 
-  return <EditorContent editor={editor} />;
+  return (
+    <>
+      <EditorContent editor={editor} />
+      <SelectionToolbar
+        anchor={selectionAnchor}
+        canLink={!isReadOnly}
+        onBold={() => editor?.chain().focus().toggleBold().run()}
+        onComment={onComment ? () => onComment(editor?.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, " ") ?? "") : undefined}
+        onItalic={() => editor?.chain().focus().toggleItalic().run()}
+        onLink={() => {
+          const previous = editor?.getAttributes("link").href as string | undefined;
+          const href = typeof window !== "undefined" ? window.prompt("链接地址", previous ?? "https://") : null;
+
+          if (href === null) {
+            return;
+          }
+
+          if (href === "") {
+            editor?.chain().focus().extendMarkRange("link").unsetLink().run();
+            return;
+          }
+
+          editor?.chain().focus().extendMarkRange("link").setLink({ href }).run();
+        }}
+        onStrike={() => editor?.chain().focus().toggleStrike().run()}
+      />
+    </>
+  );
 }

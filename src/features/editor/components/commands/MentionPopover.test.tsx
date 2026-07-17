@@ -36,8 +36,8 @@ describe("MentionPopover", () => {
       />,
     );
 
-    expect(screen.getByText("人员")).toBeVisible();
-    expect(screen.getByText("文档")).toBeVisible();
+    expect(screen.getByRole("region", { name: "人员分组" })).toBeVisible();
+    expect(screen.getByRole("region", { name: "文档分组" })).toBeVisible();
     expect(screen.getByRole("option", { name: /Alice/ })).toBeVisible();
     expect(screen.getByRole("option", { name: /设计文档/ })).toBeVisible();
   });
@@ -94,5 +94,42 @@ describe("MentionPopover", () => {
     fireEvent.click(option);
 
     expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders the category tabs with 全部 active by default", () => {
+    render(
+      <MentionPopover
+        activeIndex={0}
+        anchor={{ bottom: 140, left: 80, top: 120 }}
+        items={items}
+        onSelect={vi.fn()}
+        query=""
+      />,
+    );
+
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs).toHaveLength(5);
+    expect(tabs[0]).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("filters by tab when a category is chosen", () => {
+    const onTabChange = vi.fn();
+    render(
+      <MentionPopover
+        activeIndex={0}
+        activeTab="document"
+        anchor={{ bottom: 140, left: 80, top: 120 }}
+        items={items}
+        onSelect={vi.fn()}
+        onTabChange={onTabChange}
+        query=""
+      />,
+    );
+
+    expect(screen.queryByRole("option", { name: /Alice/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /设计文档/ })).toBeVisible();
+
+    fireEvent.click(screen.getByRole("tab", { name: "人员" }));
+    expect(onTabChange).toHaveBeenCalledWith("person");
   });
 });

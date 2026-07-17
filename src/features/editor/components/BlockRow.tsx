@@ -1,4 +1,4 @@
-import type { CSSProperties, FocusEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
+import type { CSSProperties, DragEvent as ReactDragEvent, FocusEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { searchEditorCommands } from "../commands/editorCommands";
 import type { EditorCommandDefinition } from "../commands/editorCommands";
@@ -15,9 +15,17 @@ import { BlockControls } from "./blocks/BlockControls";
 import { BlockMetaStrip } from "./blocks/BlockMetaStrip";
 import { KanbanBlockEditor } from "./blocks/KanbanBlockEditor";
 import { TableBlockEditor } from "./blocks/TableBlockEditor";
+import {
+  DividerEditor,
+  FormulaBlockEditor,
+  LinkCardBlockEditor,
+  ListBlockEditor,
+  ToggleBlockEditor,
+} from "./blocks/ExtraBlockEditors";
 import { EditorCommandPopover } from "./commands/EditorCommandPopover";
 import type { EditorPopoverAnchor } from "./commands/EditorCommandPopover";
 import { MentionPopover } from "./commands/MentionPopover";
+import type { MentionTab } from "./commands/MentionPopover";
 import type { MentionItem } from "./commands/useMentionSearch";
 import { RichTextBlockEditor } from "./RichTextBlockEditor";
 import { TodoBlockEditor } from "./TodoBlockEditor";
@@ -47,6 +55,7 @@ interface BlockRowProps {
   onOutdent: (blockId: string) => void;
   onResolveBlockComment: (blockId: string, commentId: string) => void;
   onToggleTodo: (blockId: string) => void;
+  onReorder?: (fromId: string, toId: string, position: "before" | "after") => void;
   sessionUser: EditorSessionUser | null;
   workspaceId: string;
 }
@@ -78,6 +87,7 @@ export function BlockRow({
   onOutdent,
   onResolveBlockComment,
   onToggleTodo,
+  onReorder,
   sessionUser,
   workspaceId,
 }: BlockRowProps) {
@@ -90,7 +100,9 @@ export function BlockRow({
   const [slashQuery, setSlashQuery] = useState("");
   const [mentionAnchor, setMentionAnchor] = useState<EditorPopoverAnchor | null>(null);
   const [mentionQuery, setMentionQuery] = useState("");
+  const [mentionTab, setMentionTab] = useState<MentionTab>("all");
   const [activeMentionIndex, setActiveMentionIndex] = useState(0);
+  const [dragOverPosition, setDragOverPosition] = useState<"before" | "after" | null>(null);
   const mentionApiRef = useRef<{ insertMention: (item: MentionItem) => void } | null>(null);
   const rowRef = useRef<HTMLElement | null>(null);
   const slashCommands = useMemo(() => searchEditorCommands(slashQuery), [slashQuery]);
@@ -243,6 +255,7 @@ export function BlockRow({
     const rowBounds = rowRef.current?.getBoundingClientRect();
     setActiveMentionIndex(0);
     setMentionQuery("");
+    setMentionTab("all");
     setMentionAnchor(anchor ?? {
       bottom: rowBounds?.bottom ?? 40,
       left: (rowBounds?.left ?? 0) + 38,
@@ -250,6 +263,11 @@ export function BlockRow({
     });
     setOpenMenu("mention");
   };
+
+  const mentionItemsVisible = useMemo(
+    () => mentionTab === "all" ? mentionItems : mentionItems.filter((item) => item.kind === mentionTab),
+    [mentionItems, mentionTab],
+  );
 
   const handleSelectMention = (item: MentionItem) => {
     setOpenMenu(null);
@@ -264,8 +282,8 @@ export function BlockRow({
     if (event.key === "ArrowDown") {
       event.preventDefault();
       event.stopPropagation();
-      if (mentionItems.length > 0) {
-        setActiveMentionIndex((current) => (current + 1) % mentionItems.length);
+      if (mentionItemsVisible.length > 0) {
+        setActiveMentionIndex((current) => (current + 1) % mentionItemsVisible.length);
       }
       return;
     }
@@ -273,8 +291,8 @@ export function BlockRow({
     if (event.key === "ArrowUp") {
       event.preventDefault();
       event.stopPropagation();
-      if (mentionItems.length > 0) {
-        setActiveMentionIndex((current) => (current - 1 + mentionItems.length) % mentionItems.length);
+      if (mentionItemsVisible.length > 0) {
+        setActiveMentionIndex((current) => (current - 1 + mentionItemsVisible.length) % mentionItemsVisible.length);
       }
       return;
     }
@@ -282,7 +300,7 @@ export function BlockRow({
     if (event.key === "Enter") {
       event.preventDefault();
       event.stopPropagation();
-      const item = mentionItems[activeMentionIndex];
+      const item = mentionItemsVisible[activeMentionIndex];
       if (item) {
         handleSelectMention(item);
       }
@@ -324,14 +342,56 @@ export function BlockRow({
     setCommentDraft("");
   };
 
+  const handleDragStart = (event: ReactDragEvent) => {
+    if (!onReorder) {
+      return;
+    }
+    event.dataTransfer.setData("application/x-block-id", block.id);
+    event.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragOver = (event: ReactDragEvent) => {
+    if (!onReorder) {
+      return;
+    }
+    event.preventDefault();
+    const rect = rowRef.current?.getBoundingClientRect();
+    if (!rect) {
+      return;
+    }
+    const offset = event.clientY - rect.top;
+    setDragOverPosition(offset < rect.height / 2 ? "before" : "after");
+  };
+
+  const handleDragLeave = () => {
+    setDragOverPosition(null);
+  };
+
+  const handleDrop = (event: ReactDragEvent) => {
+    if (!onReorder) {
+      return;
+    }
+    const fromId = event.dataTransfer.getData("application/x-block-id");
+    if (fromId && dragOverPosition) {
+      onReorder(fromId, block.id, dragOverPosition);
+    }
+    setDragOverPosition(null);
+  };
+
   return (
     <article
-      className={`block-row block-row-${block.type}${openMenu ? " block-row-menu-open" : ""}`}
+      className={`block-row block-row-${block.type}${openMenu ? " block-row-menu-open" : ""}${dragOverPosition ? ` drag-over drag-over-${dragOverPosition}` : ""}`}
       data-active={isActive || openMenu !== null}
       data-block-depth={depth}
+      data-draggable={onReorder ? "true" : "false"}
       data-heading-level={block.headingLevel}
       data-testid={`block-row-${block.id}`}
+      draggable={onReorder ? true : undefined}
       onBlurCapture={handleBlur}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDragStart={handleDragStart}
+      onDrop={handleDrop}
       onFocusCapture={() => setIsActive(true)}
       onKeyDownCapture={(event) => {
         handleSlashMenuKeyDown(event);
@@ -385,6 +445,38 @@ export function BlockRow({
               onChange={(data) => onChangeBlockData(block.id, data)}
             />
           ) : null
+        ) : block.type === "divider" ? (
+          <DividerEditor isReadOnly={isReadOnly} />
+        ) : block.type === "bulletedList" || block.type === "numberedList" ? (
+          <ListBlockEditor
+            content={block.content}
+            isReadOnly={isReadOnly}
+            onChange={(content) => onChangeContent(block.id, content)}
+            onEnter={() => onAddAfter(block.id)}
+            type={block.type}
+          />
+        ) : block.type === "toggle" ? (
+          <ToggleBlockEditor
+            content={block.content}
+            data={block.data}
+            isReadOnly={isReadOnly}
+            onChange={(content) => onChangeContent(block.id, content)}
+            onChangeData={(data) => onChangeBlockData(block.id, data)}
+          />
+        ) : block.type === "formula" ? (
+          <FormulaBlockEditor
+            content={block.content}
+            isReadOnly={isReadOnly}
+            onChange={(content) => onChangeContent(block.id, content)}
+          />
+        ) : block.type === "linkCard" ? (
+          <LinkCardBlockEditor
+            content={block.content}
+            data={block.data}
+            isReadOnly={isReadOnly}
+            onChange={(content) => onChangeContent(block.id, content)}
+            onChangeData={(data) => onChangeBlockData(block.id, data)}
+          />
         ) : block.type === "todo" ? (
           <TodoBlockEditor
             blockId={block.id}
@@ -423,6 +515,13 @@ export function BlockRow({
             onOpenCommandMenu={openSlashMenu}
             onOpenMentionMenu={openMentionMenu}
             onMentionApiReady={(api) => { mentionApiRef.current = api; }}
+            onComment={(selectedText) => {
+              if (!selectedText) {
+                return;
+              }
+              setCommentDraft(selectedText);
+              setOpenMenu("comments");
+            }}
             sessionUser={cursorUser}
             variant={block.type}
           />
@@ -472,9 +571,14 @@ export function BlockRow({
         {openMenu === "mention" && mentionAnchor ? (
           <MentionPopover
             activeIndex={activeMentionIndex}
+            activeTab={mentionTab}
             anchor={mentionAnchor}
             items={mentionItems}
             onSelect={handleSelectMention}
+            onTabChange={(tab) => {
+              setMentionTab(tab);
+              setActiveMentionIndex(0);
+            }}
             query={mentionQuery}
           />
         ) : null}

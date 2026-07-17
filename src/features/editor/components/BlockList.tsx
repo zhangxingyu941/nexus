@@ -26,6 +26,7 @@ interface BlockListProps {
   onOutdent: (blockId: string) => void;
   onResolveBlockComment: (blockId: string, commentId: string) => void;
   onToggleTodo: (blockId: string) => void;
+  onReorder?: (fromId: string, toId: string, position: "before" | "after") => void;
   scrollElementRef: RefObject<HTMLElement | null>;
   sessionUser: EditorSessionUser | null;
   workspaceId: string;
@@ -69,6 +70,7 @@ export function BlockList({
   onOutdent,
   onResolveBlockComment,
   onToggleTodo,
+  onReorder,
   scrollElementRef,
   sessionUser,
   workspaceId,
@@ -172,6 +174,7 @@ export function BlockList({
       onOutdent={onOutdent}
       onResolveBlockComment={onResolveBlockComment}
       onToggleTodo={onToggleTodo}
+      onReorder={onReorder}
       sessionUser={sessionUser}
       workspaceId={workspaceId}
     />;

@@ -8,6 +8,7 @@ import {
   indentBlock,
   moveBlock,
   outdentBlock,
+  reorderBlock,
   restoreBlock,
   resolveBlockComment,
   setBlockAssignee,
@@ -320,6 +321,28 @@ describe("document operations", () => {
 
     const unchanged = moveBlock(movedDown, ids[1], "down", 6000);
     expect(unchanged.blocks.map((block) => block.id)).toEqual([ids[2], ids[0], ids[1]]);
+  });
+
+  it("reorders a block before and after a target block", () => {
+    const first = createDefaultDocument(1000);
+    const second = insertBlockAfter(first, first.blocks[0].id, 2000, "block-2");
+    const third = insertBlockAfter(second, "block-2", 3000, "block-3");
+    const ids = third.blocks.map((block) => block.id);
+
+    const before = reorderBlock(third, ids[2], ids[0], "before", 4000);
+    expect(before.blocks.map((block) => block.id)).toEqual([ids[2], ids[0], ids[1]]);
+
+    const after = reorderBlock(third, ids[0], ids[2], "after", 5000);
+    expect(after.blocks.map((block) => block.id)).toEqual([ids[1], ids[2], ids[0]]);
+  });
+
+  it("ignores reordering a block into its own subtree", () => {
+    const first = createDefaultDocument(1000);
+    const second = insertBlockAfter(first, first.blocks[0].id, 2000, "block-2");
+    const nested = indentBlock(second, "block-2", 3000);
+
+    const result = reorderBlock(nested, nested.blocks[0].id, "block-2", "before", 4000);
+    expect(result.blocks.map((block) => block.id)).toEqual(nested.blocks.map((block) => block.id));
   });
 
   it("indents blocks under the previous block and supports nested levels", () => {

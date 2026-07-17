@@ -598,3 +598,51 @@ export function moveBlock(
 
   return touchDocument(document, blocks, now);
 }
+
+export type ReorderPosition = "before" | "after";
+
+export function reorderBlock(
+  document: EditorDocument,
+  fromId: string,
+  toId: string,
+  position: ReorderPosition = "before",
+  now = Date.now(),
+): EditorDocument {
+  if (fromId === toId) {
+    return document;
+  }
+
+  const fromIndex = document.blocks.findIndex((block) => block.id === fromId);
+  if (fromIndex === -1) {
+    return document;
+  }
+
+  const movingBlock = document.blocks[fromIndex];
+  const movingIds = new Set([fromId, ...getDescendantIds(document.blocks, fromId)]);
+
+  // 不允许把块拖入其自身子树内。
+  if (movingIds.has(toId)) {
+    return document;
+  }
+
+  const withoutMoving = document.blocks.filter((block) => !movingIds.has(block.id));
+  const toIndex = withoutMoving.findIndex((block) => block.id === toId);
+  if (toIndex === -1) {
+    return document;
+  }
+
+  const insertIndex = position === "before" ? toIndex : toIndex + 1;
+  const movingSubtree = document.blocks.filter((block) => movingIds.has(block.id));
+  const blocks = [
+    ...withoutMoving.slice(0, insertIndex),
+    ...movingSubtree,
+    ...withoutMoving.slice(insertIndex),
+  ].map((block) => {
+    if (movingIds.has(block.id)) {
+      return { ...block, parentId: movingBlock.parentId, updatedAt: now };
+    }
+    return block;
+  });
+
+  return touchDocument(document, blocks, now);
+}

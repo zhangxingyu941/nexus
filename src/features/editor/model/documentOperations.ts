@@ -17,6 +17,7 @@ export {
   indentBlock,
   moveBlock,
   outdentBlock,
+  reorderBlock,
   resolveBlockComment,
   restoreBlock,
   setBlockAssignee,

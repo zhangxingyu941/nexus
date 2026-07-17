@@ -15,6 +15,7 @@ import {
   indentBlock,
   moveBlock,
   outdentBlock,
+  reorderBlock,
   resolveBlockComment,
   restoreBlock,
   setBlockAssignee,
@@ -375,6 +376,13 @@ export function EditorPage({
     [applyActiveDocumentChange],
   );
 
+  const handleReorder = useCallback(
+    (fromId: string, toId: string, position: "before" | "after") => {
+      applyActiveDocumentChange((current) => reorderBlock(current, fromId, toId, position, Date.now()));
+    },
+    [applyActiveDocumentChange],
+  );
+
   const handleToggleTodo = useCallback(
     (blockId: string) => {
       applyActiveDocumentChange((current) => toggleTodo(current, blockId, Date.now()));
@@ -508,6 +516,7 @@ export function EditorPage({
         onDelete={handleDelete}
         onMove={handleMove}
         onOutdent={handleOutdent}
+        onReorder={handleReorder}
         onResolveBlockComment={handleResolveBlockComment}
         onRestoreDocumentVersion={handleRestoreDocumentVersion}
         onToggleTodo={handleToggleTodo}

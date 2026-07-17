@@ -57,6 +57,7 @@ interface DocumentEditorProps {
   onIndent: (blockId: string) => void;
   onMove: (blockId: string, direction: MoveDirection) => void;
   onOutdent: (blockId: string) => void;
+  onReorder?: (fromId: string, toId: string, position: "before" | "after") => void;
   onResolveBlockComment: (blockId: string, commentId: string) => void;
   onRestoreDocumentVersion: (document: EditorDocument) => void;
   onToggleTodo: (blockId: string) => void;
@@ -95,6 +96,7 @@ export function DocumentEditor({
   onIndent,
   onMove,
   onOutdent,
+  onReorder,
   onResolveBlockComment,
   onRestoreDocumentVersion,
   onToggleTodo,
@@ -250,6 +252,7 @@ export function DocumentEditor({
               onIndent={onIndent}
               onMove={onMove}
               onOutdent={onOutdent}
+              onReorder={onReorder}
               onResolveBlockComment={onResolveBlockComment}
               onToggleTodo={onToggleTodo}
               scrollElementRef={documentScrollRef}

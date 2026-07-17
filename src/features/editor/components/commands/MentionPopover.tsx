@@ -2,13 +2,25 @@ import { useEffect, useRef } from "react";
 import type { CSSProperties } from "react";
 import type { MentionItem } from "./useMentionSearch";
 
+export type MentionTab = "all" | MentionItem["kind"];
+
 export interface MentionPopoverProps {
   activeIndex: number;
+  activeTab?: MentionTab;
   anchor: { bottom: number; left: number; top: number };
   items: MentionItem[];
   onSelect: (item: MentionItem) => void;
+  onTabChange?: (tab: MentionTab) => void;
   query: string;
 }
+
+const MENTION_TABS: Array<{ kind: MentionTab; label: string }> = [
+  { kind: "all", label: "全部" },
+  { kind: "person", label: "人员" },
+  { kind: "document", label: "文档" },
+  { kind: "task", label: "任务" },
+  { kind: "date", label: "日期" },
+];
 
 const MENTION_GROUPS: Array<{ kind: MentionItem["kind"]; label: string }> = [
   { kind: "person", label: "人员" },
@@ -19,9 +31,11 @@ const MENTION_GROUPS: Array<{ kind: MentionItem["kind"]; label: string }> = [
 
 export function MentionPopover({
   activeIndex,
+  activeTab = "all",
   anchor,
   items,
   onSelect,
+  onTabChange,
   query,
 }: MentionPopoverProps) {
   const listboxRef = useRef<HTMLDivElement>(null);
@@ -32,6 +46,8 @@ export function MentionPopover({
       active.scrollIntoView({ block: "nearest" });
     }
   }, [activeIndex]);
+
+  const visibleItems = activeTab === "all" ? items : items.filter((item) => item.kind === activeTab);
 
   const viewportHeight = typeof window === "undefined" ? 768 : window.innerHeight;
   const viewportWidth = typeof window === "undefined" ? 1024 : window.innerWidth;
@@ -51,19 +67,33 @@ export function MentionPopover({
       role="listbox"
       style={style}
     >
+      <div className="mention-tabs" role="tablist">
+        {MENTION_TABS.map((tab) => (
+          <button
+            aria-selected={tab.kind === activeTab}
+            className={`mention-tab${tab.kind === activeTab ? " active" : ""}`}
+            key={tab.kind}
+            onClick={() => onTabChange?.(tab.kind)}
+            role="tab"
+            type="button"
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
       {query ? <div className="editor-command-query">@{query}</div> : null}
-      {MENTION_GROUPS.map((group) => {
-        const groupItems = items.filter((item) => item.kind === group.kind);
+      {MENTION_GROUPS.filter((group) => activeTab === "all" || group.kind === activeTab).map((group) => {
+        const groupItems = visibleItems.filter((item) => item.kind === group.kind);
 
         if (groupItems.length === 0) {
           return null;
         }
 
         return (
-          <section className="editor-command-group" key={group.kind}>
+          <section aria-label={`${group.label}分组`} className="editor-command-group" key={group.kind}>
             <div className="editor-command-group-label">{group.label}</div>
             {groupItems.map((item) => {
-              const index = items.indexOf(item);
+              const index = visibleItems.indexOf(item);
 
               return (
                 <button
@@ -86,7 +116,7 @@ export function MentionPopover({
           </section>
         );
       })}
-      {items.length === 0 ? <div className="editor-command-empty">无匹配结果</div> : null}
+      {visibleItems.length === 0 ? <div className="editor-command-empty">无匹配结果</div> : null}
     </div>
   );
 }

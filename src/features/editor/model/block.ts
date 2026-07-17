@@ -7,7 +7,13 @@ export type BlockType =
   | "image"
   | "file"
   | "table"
-  | "kanban";
+  | "kanban"
+  | "divider"
+  | "bulletedList"
+  | "numberedList"
+  | "toggle"
+  | "formula"
+  | "linkCard";
 
 export type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -47,7 +53,30 @@ export interface KanbanBlockData {
   }>;
 }
 
-export type BlockData = AttachmentBlockData | TableBlockData | KanbanBlockData;
+export interface ToggleBlockData {
+  kind: "toggle";
+  collapsed: boolean;
+}
+
+export interface FormulaBlockData {
+  kind: "formula";
+  latex: string;
+}
+
+export interface LinkCardBlockData {
+  kind: "linkCard";
+  url: string;
+  title: string;
+  description: string;
+}
+
+export type BlockData =
+  | AttachmentBlockData
+  | TableBlockData
+  | KanbanBlockData
+  | ToggleBlockData
+  | FormulaBlockData
+  | LinkCardBlockData;
 
 export interface Block {
   id: string;
