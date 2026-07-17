@@ -1,5 +1,5 @@
 import type { Pool } from "pg";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createDefaultWorkspace, createWorkspaceDocument } from "../features/editor/model/workspaceOperations";
 import { createPgMemPool } from "../test/pgMemDatabase";
 import { migrateDatabase } from "./database/migrations";
@@ -57,7 +57,7 @@ describe("PostgresWorkspaceStore", () => {
     });
     await multiWorkspaceStore.ensurePersonalWorkspace("owner-1", "Owner workspace");
     await multiWorkspaceStore.ensurePersonalWorkspace("owner-2", "Second workspace");
-    await multiWorkspaceStore.addMember("owner-2", "workspace-2", "owner@example.com", "editor");
+    await seedMembership(pool, "workspace-2", "owner-1", "editor", 3000);
 
     await expect(multiWorkspaceStore.listWorkspaces("owner-1")).resolves.toEqual({
       currentWorkspaceId: "workspace-1",
@@ -88,7 +88,7 @@ describe("PostgresWorkspaceStore", () => {
     expect(created.content.documents).toHaveLength(1);
     expect((await multiWorkspaceStore.listWorkspaces("owner-1")).currentWorkspaceId).toBe("workspace-3");
 
-    await multiWorkspaceStore.addMember("owner-1", "workspace-3", "editor@example.com", "editor");
+    await seedMembership(pool, "workspace-3", "editor-1", "editor", 3000);
     await expect(
       multiWorkspaceStore.renameWorkspace("editor-1", "workspace-3", "越权名称"),
     ).rejects.toBeInstanceOf(WorkspacePermissionError);
@@ -116,7 +116,7 @@ describe("PostgresWorkspaceStore", () => {
     );
     workspace.activeDocumentId = workspace.documents[0].id;
     await store.saveWorkspace("owner-1", "workspace-test", workspace);
-    await store.addMember("owner-1", "workspace-test", "editor@example.com", "editor");
+    await seedMembership(pool, "workspace-test", "editor-1", "editor", 3000);
     await store.loadWorkspace("editor-1", "workspace-test");
     await pool.query(
       `UPDATE workspace_document_preferences
@@ -145,7 +145,7 @@ describe("PostgresWorkspaceStore", () => {
     });
     await multiWorkspaceStore.ensurePersonalWorkspace("owner-1", "Owner workspace");
     await multiWorkspaceStore.ensurePersonalWorkspace("owner-2", "Second workspace");
-    await multiWorkspaceStore.addMember("owner-2", "workspace-2", "owner@example.com", "editor");
+    await seedMembership(pool, "workspace-2", "owner-1", "editor", 3000);
     const secondWorkspace = await multiWorkspaceStore.loadWorkspace("owner-1", "workspace-2");
     const updatedContent = {
       ...secondWorkspace.content,
@@ -177,7 +177,7 @@ describe("PostgresWorkspaceStore", () => {
     });
     await multiWorkspaceStore.ensurePersonalWorkspace("owner-1", "Owner workspace");
     await multiWorkspaceStore.ensurePersonalWorkspace("owner-2", "Second workspace");
-    await multiWorkspaceStore.addMember("owner-2", "workspace-2", "owner@example.com", "editor");
+    await seedMembership(pool, "workspace-2", "owner-1", "editor", 3000);
     const secondWorkspace = await multiWorkspaceStore.loadWorkspace("owner-1", "workspace-2");
     const secondDocumentId = secondWorkspace.content.activeDocumentId;
 
@@ -269,7 +269,7 @@ describe("PostgresWorkspaceStore", () => {
     await store.ensurePersonalWorkspace("owner-1", "林夏的工作区");
     const workspace = createDefaultWorkspace(1000);
     await store.saveWorkspace("owner-1", "workspace-test", workspace);
-    await store.addMember("owner-1", "workspace-test", "viewer@example.com", "viewer");
+    await seedMembership(pool, "workspace-test", "viewer-1", "viewer", 3000);
 
     await expect(store.loadWorkspace("viewer-1", "workspace-test")).resolves.toMatchObject({
       content: workspace,
@@ -280,63 +280,18 @@ describe("PostgresWorkspaceStore", () => {
     ).rejects.toBeInstanceOf(WorkspacePermissionError);
   });
 
-  it("lets owners grant editor access and lists real workspace members", async () => {
+  it("lets editors write shared workspaces", async () => {
     await seedUser(pool, "owner-1", "owner@example.com", "林夏");
     await seedUser(pool, "editor-1", "editor@example.com", "周宁");
     await store.ensurePersonalWorkspace("owner-1", "团队知识库");
 
-    await store.addMember("owner-1", "workspace-test", "editor@example.com", "editor");
-    const members = await store.listMembers("owner-1", "workspace-test");
-
-    expect(members).toEqual([
-      expect.objectContaining({ displayName: "林夏", email: "owner@example.com", role: "owner" }),
-      expect.objectContaining({ displayName: "周宁", email: "editor@example.com", role: "editor" }),
-    ]);
+    await seedMembership(pool, "workspace-test", "editor-1", "editor", 3000);
     await expect(
       store.saveWorkspace("editor-1", "workspace-test", createDefaultWorkspace(5000)),
     ).resolves.toBeDefined();
   });
 
-  it("locks the workspace row before granting direct membership", async () => {
-    const query = vi.fn(async (text: string) => {
-      if (text === "BEGIN" || text === "COMMIT") {
-        return { rows: [] };
-      }
-      if (text.includes("FROM editor_workspaces")) {
-        return { rows: [{ id: "workspace-test" }] };
-      }
-      if (text.includes("FROM workspace_members")) {
-        return { rows: [{ role: "owner", workspace_id: "workspace-test" }] };
-      }
-      if (text.includes("FROM app_users")) {
-        return { rows: [{ id: "editor-1" }] };
-      }
-      if (text.includes("INSERT INTO workspace_members")) {
-        return { rows: [] };
-      }
-      throw new Error(`Unexpected query: ${text}`);
-    });
-    const client = { query, release: vi.fn() };
-    const lockTestStore = new PostgresWorkspaceStore({
-      connect: vi.fn().mockResolvedValue(client),
-    } as unknown as Pool, { now: () => 3_000 });
-
-    await lockTestStore.addMember(
-      "owner-1",
-      "workspace-test",
-      "editor@example.com",
-      "editor",
-    );
-
-    expect(query).toHaveBeenNthCalledWith(
-      2,
-      expect.stringContaining("FROM editor_workspaces"),
-      ["workspace-test"],
-    );
-    expect(String(query.mock.calls[1]?.[0])).toContain("FOR UPDATE");
-  });
-
-  it("rejects member and history access when workspace and resource ids do not match", async () => {
+  it("rejects history access when workspace and resource ids do not match", async () => {
     await seedUser(pool, "owner-1", "owner@example.com", "Owner");
     let workspaceSequence = 0;
     const scopedStore = new PostgresWorkspaceStore(pool, {
@@ -348,35 +303,9 @@ describe("PostgresWorkspaceStore", () => {
     await scopedStore.saveWorkspace("owner-1", "workspace-1", workspaceA);
     await scopedStore.createWorkspace("owner-1", "Workspace B");
 
-    await expect(scopedStore.listMembers("owner-1", "missing-workspace"))
-      .rejects.toBeInstanceOf(WorkspaceNotFoundError);
     await expect(
       scopedStore.listDocumentVersions("owner-1", "workspace-2", workspaceA.activeDocumentId),
     ).rejects.toBeInstanceOf(WorkspaceNotFoundError);
-  });
-
-  it("does not change an added member's selected workspace", async () => {
-    await seedUser(pool, "owner-1", "owner@example.com", "Owner");
-    await seedUser(pool, "editor-1", "editor@example.com", "Editor");
-    let workspaceSequence = 0;
-    const multiWorkspaceStore = new PostgresWorkspaceStore(pool, {
-      idFactory: () => `workspace-${++workspaceSequence}`,
-      now: () => 3000 + workspaceSequence,
-    });
-    await multiWorkspaceStore.ensurePersonalWorkspace("owner-1", "Owner workspace");
-    await multiWorkspaceStore.ensurePersonalWorkspace("editor-1", "Editor workspace");
-    const selectedBefore = await pool.query(
-      "SELECT selected_workspace_id FROM workspace_preferences WHERE user_id = $1",
-      ["editor-1"],
-    );
-
-    await multiWorkspaceStore.addMember("owner-1", "workspace-1", "editor@example.com", "editor");
-
-    const selectedAfter = await pool.query(
-      "SELECT selected_workspace_id FROM workspace_preferences WHERE user_id = $1",
-      ["editor-1"],
-    );
-    expect(selectedAfter.rows).toEqual(selectedBefore.rows);
   });
 
   it("preserves another member's active document until the document is removed", async () => {
@@ -389,7 +318,7 @@ describe("PostgresWorkspaceStore", () => {
       "Second document",
     );
     await store.saveWorkspace("owner-1", "workspace-test", workspace);
-    await store.addMember("owner-1", "workspace-test", "editor@example.com", "editor");
+    await seedMembership(pool, "workspace-test", "editor-1", "editor", 3000);
     await store.loadWorkspace("editor-1", "workspace-test");
     const memberActiveDocumentId = workspace.documents[1].id;
     await pool.query(
@@ -437,7 +366,7 @@ describe("PostgresWorkspaceStore", () => {
     await store.ensurePersonalWorkspace("owner-1", "团队知识库");
     const workspace = createDefaultWorkspace(1000);
     await store.saveWorkspace("owner-1", "workspace-test", workspace);
-    await store.addMember("owner-1", "workspace-test", "editor@example.com", "editor");
+    await seedMembership(pool, "workspace-test", "editor-1", "editor", 3000);
 
     await expect(
       store.getDocumentAccess("editor-1", "workspace-test", workspace.activeDocumentId),
@@ -530,7 +459,7 @@ describe("PostgresWorkspaceStore", () => {
     await store.ensurePersonalWorkspace("owner-1", "林夏的工作区");
     const workspace = createDefaultWorkspace(1000);
     await store.saveWorkspace("owner-1", "workspace-test", workspace);
-    await store.addMember("owner-1", "workspace-test", "viewer@example.com", "viewer");
+    await seedMembership(pool, "workspace-test", "viewer-1", "viewer", 3000);
     const versions = await store.listDocumentVersions(
       "viewer-1",
       "workspace-test",
@@ -553,6 +482,20 @@ async function seedUser(pool: Pool, id: string, email: string, displayName: stri
   await pool.query(
     "INSERT INTO app_users (id, email, display_name, created_at) VALUES ($1, $2, $3, $4)",
     [id, email, displayName, 1000],
+  );
+}
+
+async function seedMembership(
+  pool: Pool,
+  workspaceId: string,
+  userId: string,
+  role: "owner" | "editor" | "viewer",
+  createdAt: number,
+) {
+  await pool.query(
+    `INSERT INTO workspace_members (workspace_id, user_id, role, created_at)
+     VALUES ($1, $2, $3, $4)`,
+    [workspaceId, userId, role, createdAt],
   );
 }
 

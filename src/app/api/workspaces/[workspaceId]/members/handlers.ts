@@ -1,21 +1,18 @@
 import { NextResponse } from "next/server";
+import { workspaceErrorResponse } from "@/app/api/workspaceErrorResponse";
 import type { PostgresAuthStore } from "@/server/postgresAuthStore";
-import type { PostgresWorkspaceStore } from "@/server/postgresWorkspaceStore";
-import {
-  WorkspaceMemberNotFoundError,
-  WorkspaceNotFoundError,
-  WorkspacePermissionError,
-} from "@/server/postgresWorkspaceStore";
+import type { PostgresWorkspaceMemberStore } from "@/server/postgresWorkspaceMemberStore";
 import { getSessionToken } from "@/server/sessionCookie";
+import { WorkspaceDomainError } from "@/server/workspaceErrors";
 
 interface WorkspaceMemberRouteDependencies {
-  authStore: PostgresAuthStore;
-  workspaceStore: PostgresWorkspaceStore;
+  authStore: Pick<PostgresAuthStore, "getUserBySessionToken">;
+  memberStore: Pick<PostgresWorkspaceMemberStore, "listMembers">;
 }
 
 export function createWorkspaceMemberRouteHandlers({
   authStore,
-  workspaceStore,
+  memberStore,
 }: WorkspaceMemberRouteDependencies) {
   async function authenticate(request: Request) {
     return authStore.getUserBySessionToken(getSessionToken(request));
@@ -28,40 +25,8 @@ export function createWorkspaceMemberRouteHandlers({
 
       try {
         return NextResponse.json({
-          members: await workspaceStore.listMembers(user.id, workspaceId),
+          members: await memberStore.listMembers(user.id, workspaceId),
         });
-      } catch (error) {
-        return mapMemberError(error);
-      }
-    },
-
-    async POST(request: Request, workspaceId: string) {
-      const user = await authenticate(request);
-      if (!user) return unauthorizedResponse();
-
-      let payload: unknown;
-      try {
-        payload = await request.json();
-      } catch {
-        return NextResponse.json({ error: "请求 JSON 格式不正确" }, { status: 400 });
-      }
-
-      const input = payload && typeof payload === "object"
-        ? payload as { email?: unknown; role?: unknown }
-        : {};
-      const email = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
-      const role = input.role;
-
-      if (!email || (role !== "editor" && role !== "viewer")) {
-        return NextResponse.json({ error: "成员邮箱或角色不正确" }, { status: 400 });
-      }
-
-      try {
-        await workspaceStore.addMember(user.id, workspaceId, email, role);
-        return NextResponse.json(
-          { members: await workspaceStore.listMembers(user.id, workspaceId) },
-          { status: 201 },
-        );
       } catch (error) {
         return mapMemberError(error);
       }
@@ -70,15 +35,14 @@ export function createWorkspaceMemberRouteHandlers({
 }
 
 function unauthorizedResponse() {
-  return NextResponse.json({ error: "请先进入工作区" }, { status: 401 });
+  return workspaceErrorResponse(new WorkspaceDomainError(
+    "authentication_required",
+    "Authentication required",
+  ))!;
 }
 
 function mapMemberError(error: unknown) {
-  if (error instanceof WorkspaceNotFoundError || error instanceof WorkspaceMemberNotFoundError) {
-    return NextResponse.json({ error: error.message }, { status: 404 });
-  }
-  if (error instanceof WorkspacePermissionError) {
-    return NextResponse.json({ error: error.message }, { status: 403 });
-  }
+  const response = workspaceErrorResponse(error);
+  if (response) return response;
   throw error;
 }

@@ -2,6 +2,7 @@ import type { Pool } from "pg";
 import { getDatabasePool } from "./database/pool";
 import { PostgresAuthStore } from "./postgresAuthStore";
 import { PostgresWorkspaceInviteStore } from "./postgresWorkspaceInviteStore";
+import { PostgresWorkspaceMemberStore } from "./postgresWorkspaceMemberStore";
 import { PostgresWorkspaceStore } from "./postgresWorkspaceStore";
 import { getRedisSessionCache } from "./redisSessionCache";
 import { createWorkspaceInviteMailerFromEnvironment } from "./workspaceInviteMailer";
@@ -22,6 +23,7 @@ export function createPostgresServices(pool: Pool = getDatabasePool()) {
   const workspaceInviteStore = new PostgresWorkspaceInviteStore(pool, {
     tokenService: workspaceInviteTokenService,
   });
+  const workspaceMemberStore = new PostgresWorkspaceMemberStore(pool);
   const authStore = new PostgresAuthStore(pool, workspaceStore, {
     authCodeSecret: process.env.AUTH_HASH_SECRET,
     sessionCache: getRedisSessionCache(),
@@ -39,6 +41,7 @@ export function createPostgresServices(pool: Pool = getDatabasePool()) {
     workspaceInviteMailer,
     workspaceInviteStore,
     workspaceInviteTokenService,
+    workspaceMemberStore,
     workspaceStore,
   };
 }

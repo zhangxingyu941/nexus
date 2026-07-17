@@ -42,7 +42,7 @@ describe("workspace resource route", () => {
     const owner = await authStore.createSession({ displayName: "Owner", email: "owner@example.com" });
     const editor = await authStore.createSession({ displayName: "Editor", email: "editor@example.com" });
     const workspaceId = (await workspaceStore.listWorkspaces(owner.user.id)).currentWorkspaceId;
-    await workspaceStore.addMember(owner.user.id, workspaceId, "editor@example.com", "editor");
+    await seedMembership(pool, workspaceId, editor.user.id, "editor");
     const response = await handlers.rename(
       new Request(`http://localhost/api/workspaces/${workspaceId}`, {
         body: JSON.stringify({ name: "越权名称" }),
@@ -108,7 +108,7 @@ describe("workspace resource route", () => {
     const owner = await authStore.createSession({ displayName: "Owner", email: "owner@example.com" });
     const viewer = await authStore.createSession({ displayName: "Viewer", email: "viewer@example.com" });
     const workspaceId = (await workspaceStore.listWorkspaces(owner.user.id)).currentWorkspaceId;
-    await workspaceStore.addMember(owner.user.id, workspaceId, "viewer@example.com", "viewer");
+    await seedMembership(pool, workspaceId, viewer.user.id, "viewer");
     const viewerResponse = await handlers.save(
       new Request(`http://localhost/api/workspaces/${workspaceId}`, {
         body: JSON.stringify({ content: createDefaultWorkspace(5000) }),
@@ -138,3 +138,16 @@ describe("workspace resource route", () => {
     await expect(invalidResponse.json()).resolves.toEqual({ error: "工作区数据格式不正确" });
   });
 });
+
+async function seedMembership(
+  pool: Pool,
+  workspaceId: string,
+  userId: string,
+  role: "editor" | "viewer",
+) {
+  await pool.query(
+    `INSERT INTO workspace_members (workspace_id, user_id, role, created_at)
+     VALUES ($1, $2, $3, $4)`,
+    [workspaceId, userId, role, 3000],
+  );
+}

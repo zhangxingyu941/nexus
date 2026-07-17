@@ -114,12 +114,11 @@ describe("workspace owner invite routes", () => {
   });
 
   it("does not allow non-owners to inspect a workspace's invitations", async () => {
-    const workspaceStore = new PostgresWorkspaceStore(pool, { now: () => now });
     const editor = await authStore.createSession({
       displayName: "Editor",
       email: "editor@example.com",
     });
-    await workspaceStore.addMember(owner.user.id, workspaceId, editor.user.email, "editor");
+    await seedMembership(pool, workspaceId, editor.user.id, "editor", now);
     const handlers = createHandlers();
 
     const response = await handlers.GET(
@@ -132,12 +131,11 @@ describe("workspace owner invite routes", () => {
   });
 
   it("does not consume an invitation quota before verifying owner access", async () => {
-    const workspaceStore = new PostgresWorkspaceStore(pool, { now: () => now });
     const editor = await authStore.createSession({
       displayName: "Editor",
       email: "editor@example.com",
     });
-    await workspaceStore.addMember(owner.user.id, workspaceId, editor.user.email, "editor");
+    await seedMembership(pool, workspaceId, editor.user.id, "editor", now);
     const limiter: WorkspaceInviteRateLimiter = {
       consume: vi.fn().mockResolvedValue({
         allowed: true,
@@ -261,4 +259,18 @@ function jsonRequest(payload: unknown, token: string) {
     },
     method: "POST",
   });
+}
+
+async function seedMembership(
+  pool: Pool,
+  workspaceId: string,
+  userId: string,
+  role: "editor" | "viewer",
+  createdAt: number,
+) {
+  await pool.query(
+    `INSERT INTO workspace_members (workspace_id, user_id, role, created_at)
+     VALUES ($1, $2, $3, $4)`,
+    [workspaceId, userId, role, createdAt],
+  );
 }

@@ -17,14 +17,6 @@ import {
 } from "../shared/workspace";
 
 export type WorkspaceRole = SharedWorkspaceRole;
-export type AssignableWorkspaceRole = Exclude<WorkspaceRole, "owner">;
-
-export interface WorkspaceMember {
-  id: string;
-  displayName: string;
-  email: string;
-  role: WorkspaceRole;
-}
 
 export interface DocumentVersionSummary {
   id: string;
@@ -55,13 +47,6 @@ export class WorkspaceNotFoundError extends Error {
   constructor() {
     super("工作区不存在");
     this.name = "WorkspaceNotFoundError";
-  }
-}
-
-export class WorkspaceMemberNotFoundError extends Error {
-  constructor() {
-    super("该邮箱尚未创建用户身份");
-    this.name = "WorkspaceMemberNotFoundError";
   }
 }
 
@@ -604,91 +589,6 @@ export class PostgresWorkspaceStore {
     } finally {
       client.release();
     }
-  }
-
-  async addMember(
-    ownerUserId: string,
-    workspaceId: string,
-    email: string,
-    role: AssignableWorkspaceRole,
-  ) {
-    const client = await this.pool.connect();
-
-    try {
-      await client.query("BEGIN");
-
-      const workspace = await client.query(
-        `SELECT id
-         FROM editor_workspaces
-         WHERE id = $1
-         FOR UPDATE`,
-        [workspaceId],
-      );
-      if (!workspace.rows[0]) {
-        throw new WorkspaceNotFoundError();
-      }
-
-      const access = await this.findAccess(client, ownerUserId, workspaceId);
-
-      if (!access) {
-        throw new WorkspaceNotFoundError();
-      }
-      if (access.role !== "owner") {
-        throw new WorkspacePermissionError("只有工作区所有者可以管理成员");
-      }
-
-      const userResult = await client.query(
-        "SELECT id FROM app_users WHERE email = $1",
-        [email.trim().toLowerCase()],
-      );
-      const userId = userResult.rows[0]?.id;
-
-      if (!userId) {
-        throw new WorkspaceMemberNotFoundError();
-      }
-
-      await client.query(
-        `INSERT INTO workspace_members (workspace_id, user_id, role, created_at)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (workspace_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
-        [workspaceId, String(userId), role, this.now()],
-      );
-
-      await client.query("COMMIT");
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
-  async listMembers(
-    userId: string,
-    workspaceId: string,
-  ): Promise<WorkspaceMember[]> {
-    const access = await this.findAccess(this.pool, userId, workspaceId);
-
-    if (!access) {
-      throw new WorkspaceNotFoundError();
-    }
-
-    const result = await this.pool.query(
-      `SELECT users.id, users.email, users.display_name, members.role
-       FROM workspace_members members
-       INNER JOIN app_users users ON users.id = members.user_id
-       WHERE members.workspace_id = $1
-       ORDER BY CASE members.role WHEN 'owner' THEN 0 WHEN 'editor' THEN 1 ELSE 2 END,
-                users.created_at ASC`,
-      [workspaceId],
-    );
-
-    return result.rows.map((row) => ({
-      displayName: String(row.display_name),
-      email: String(row.email),
-      id: String(row.id),
-      role: row.role as WorkspaceRole,
-    }));
   }
 
   async getWorkspaceAccess(userId: string, workspaceId: string) {
