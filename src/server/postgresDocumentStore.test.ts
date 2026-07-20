@@ -79,6 +79,35 @@ describe("PostgresDocumentStore", () => {
     });
   });
 
+  it("records document saves as versions and allows an explicit editor to restore one", async () => {
+    const initial = await store.loadDocument("owner-1", "public-document-1");
+    const firstVersionDocument = {
+      ...initial.document,
+      blocks: [{ ...initial.document.blocks[0], content: "First version", updatedAt: 2000 }],
+      updatedAt: 2000,
+    };
+    await store.saveDocument("owner-1", "public-document-1", firstVersionDocument);
+    const secondVersionDocument = {
+      ...firstVersionDocument,
+      blocks: [{ ...firstVersionDocument.blocks[0], content: "Second version", updatedAt: 3000 }],
+      updatedAt: 3000,
+    };
+    await store.saveDocument("owner-1", "public-document-1", secondVersionDocument);
+    await store.replaceDocumentPolicy("owner-1", "public-document-1", {
+      accessMode: "private",
+      permissions: [{ role: "editor", userId: "editor-1" }],
+    });
+
+    const versions = await store.listDocumentVersions("editor-1", "public-document-1");
+    await store.restoreDocumentVersion("editor-1", "public-document-1", versions[1].id);
+
+    await expect(store.loadDocument("editor-1", "public-document-1")).resolves.toMatchObject({
+      document: {
+        blocks: [expect.objectContaining({ content: "First version" })],
+      },
+    });
+  });
+
   it("loads and replaces a managed document policy", async () => {
     await expect(store.loadDocumentPolicy("owner-1", "public-document-1")).resolves.toMatchObject({
       access: { canManage: true, publicId: "public-document-1" },

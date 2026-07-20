@@ -4,7 +4,7 @@ import {
   type DocumentAuthorizationService,
 } from "@/server/documentAuthorization";
 import type { PostgresAuthStore } from "@/server/postgresAuthStore";
-import type { PostgresWorkspaceStore } from "@/server/postgresWorkspaceStore";
+import type { PostgresDocumentStore } from "@/server/postgresDocumentStore";
 import {
   WorkspaceNotFoundError,
   WorkspacePermissionError,
@@ -14,8 +14,8 @@ import { getSessionToken } from "@/server/sessionCookie";
 interface DocumentHistoryRouteDependencies {
   authStore: Pick<PostgresAuthStore, "getUserBySessionToken">;
   documentAuthorization: Pick<DocumentAuthorizationService, "requireWorkspaceDocumentAction">;
-  workspaceStore: Pick<
-    PostgresWorkspaceStore,
+  documentStore: Pick<
+    PostgresDocumentStore,
     "listDocumentVersions" | "restoreDocumentVersion"
   >;
 }
@@ -23,7 +23,7 @@ interface DocumentHistoryRouteDependencies {
 export function createDocumentHistoryRouteHandlers({
   authStore,
   documentAuthorization,
-  workspaceStore,
+  documentStore,
 }: DocumentHistoryRouteDependencies) {
   async function authenticate(request: Request) {
     return authStore.getUserBySessionToken(getSessionToken(request));
@@ -35,14 +35,14 @@ export function createDocumentHistoryRouteHandlers({
       if (!user) return unauthorizedResponse();
 
       try {
-        await documentAuthorization.requireWorkspaceDocumentAction(
+        const access = await documentAuthorization.requireWorkspaceDocumentAction(
           user.id,
           workspaceId,
           documentId,
           "read",
         );
         return NextResponse.json({
-          versions: await workspaceStore.listDocumentVersions(user.id, workspaceId, documentId),
+          versions: await documentStore.listDocumentVersions(user.id, access.publicId),
         });
       } catch (error) {
         return mapHistoryError(error);
@@ -68,19 +68,18 @@ export function createDocumentHistoryRouteHandlers({
       }
 
       try {
-        await documentAuthorization.requireWorkspaceDocumentAction(
+        const access = await documentAuthorization.requireWorkspaceDocumentAction(
           user.id,
           workspaceId,
           documentId,
           "write",
         );
         return NextResponse.json({
-          document: await workspaceStore.restoreDocumentVersion(
+          document: (await documentStore.restoreDocumentVersion(
             user.id,
-            workspaceId,
-            documentId,
+            access.publicId,
             versionId,
-          ),
+          )).document,
           restored: true,
         });
       } catch (error) {

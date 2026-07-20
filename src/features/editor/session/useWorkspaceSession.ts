@@ -27,6 +27,7 @@ export type WorkspaceSaveStatus =
 
 export interface WorkspaceSessionController {
   catalog: WorkspaceCatalog | null;
+  activeDocumentCanWrite: boolean;
   snapshot: WorkspaceSnapshot | null;
   saveStatus: WorkspaceSaveStatus;
   error: string;
@@ -44,6 +45,7 @@ export interface WorkspaceSessionController {
 }
 
 interface CurrentWorkspaceState {
+  canWrite: boolean;
   content: EditorWorkspace;
   documentPublicIds: Record<string, string>;
   generation: number;
@@ -67,6 +69,7 @@ export function useWorkspaceSession(
   documentRepository?: DocumentRepository,
 ): WorkspaceSessionController {
   const [catalog, setCatalog] = useState<WorkspaceCatalog | null>(null);
+  const [activeDocumentCanWrite, setActiveDocumentCanWrite] = useState(false);
   const [snapshot, setSnapshot] = useState<WorkspaceSnapshot | null>(null);
   const [saveStatus, setSaveStatus] = useState<WorkspaceSaveStatus>(repository.target);
   const [error, setError] = useState("");
@@ -93,7 +96,10 @@ export function useWorkspaceSession(
     nextSnapshot: WorkspaceSnapshot,
   ) => {
     generationRef.current += 1;
+    const canWrite = nextSnapshot.activeDocumentAccess?.canWrite
+      ?? nextSnapshot.summary.role !== "viewer";
     currentRef.current = {
+      canWrite,
       content: nextSnapshot.content,
       documentPublicIds: nextSnapshot.documentPublicIds ?? {},
       generation: generationRef.current,
@@ -105,13 +111,14 @@ export function useWorkspaceSession(
     catalogRef.current = nextCatalog;
     setCatalog(nextCatalog);
     setSnapshot(nextSnapshot);
-    setSaveStatus(nextSnapshot.summary.role === "viewer" ? "readonly" : repository.target);
+    setActiveDocumentCanWrite(canWrite);
+    setSaveStatus(canWrite ? repository.target : "readonly");
     setError("");
   }, [repository.target]);
 
   const startSave = useCallback(() => {
     const current = currentRef.current;
-    if (!current || current.role === "viewer" || current.savedRevision >= current.revision) {
+    if (!current || !current.canWrite || current.savedRevision >= current.revision) {
       return Promise.resolve();
     }
     if (inFlightSaveRef.current) {
@@ -193,7 +200,7 @@ export function useWorkspaceSession(
       }
 
       const current = currentRef.current;
-      if (!current || current.role === "viewer" || current.savedRevision >= current.revision) {
+      if (!current || !current.canWrite || current.savedRevision >= current.revision) {
         return;
       }
 
@@ -213,13 +220,20 @@ export function useWorkspaceSession(
     updater: (current: EditorWorkspace) => EditorWorkspace,
   ) => {
     const current = currentRef.current;
-    if (!current || current.role === "viewer") {
+    if (!current || !current.canWrite) {
       return;
     }
 
     const content = updater(current.content);
+    const activeDocumentChanged = content.activeDocumentId !== current.content.activeDocumentId;
+    const selectedDocumentPublicId = current.documentPublicIds[content.activeDocumentId];
+    const shouldLoadSelectedDocument = activeDocumentChanged
+      && repository.target === "remote"
+      && Boolean(documentRepository)
+      && Boolean(selectedDocumentPublicId);
     currentRef.current = {
       ...current,
+      canWrite: shouldLoadSelectedDocument ? false : current.canWrite,
       content,
       revision: current.revision + 1,
     };
@@ -228,8 +242,43 @@ export function useWorkspaceSession(
       : currentSnapshot);
     setSaveStatus("unsaved");
     setError("");
+    if (shouldLoadSelectedDocument && documentRepository && selectedDocumentPublicId) {
+      setActiveDocumentCanWrite(false);
+      setSaveStatus("readonly");
+      void documentRepository.load(selectedDocumentPublicId).then(
+        (selected) => {
+          const latest = currentRef.current;
+          if (!latest
+            || latest.generation !== current.generation
+            || latest.workspaceId !== current.workspaceId
+            || latest.content.activeDocumentId !== selected.document.id) {
+            return;
+          }
+          const selectedContent = replaceWorkspaceDocument(latest.content, selected.document);
+          currentRef.current = {
+            ...latest,
+            canWrite: selected.access.canWrite,
+            content: selectedContent,
+          };
+          if (mountedRef.current) {
+            setActiveDocumentCanWrite(selected.access.canWrite);
+            setSnapshot((currentSnapshot) => currentSnapshot?.summary.id === latest.workspaceId
+              ? { ...currentSnapshot, activeDocumentAccess: selected.access, content: selectedContent }
+              : currentSnapshot);
+            setSaveStatus(selected.access.canWrite ? repository.target : "readonly");
+          }
+        },
+        (loadError) => {
+          if (currentRef.current?.generation === current.generation && mountedRef.current) {
+            setSaveStatus("failed");
+            setError(errorMessage(loadError));
+          }
+        },
+      );
+      return;
+    }
     scheduleSave();
-  }, [scheduleSave]);
+  }, [documentRepository, repository.target, scheduleSave]);
 
   const reload = useCallback(async () => {
     const sequence = ++loadSequenceRef.current;
@@ -377,6 +426,7 @@ export function useWorkspaceSession(
   }, [clearSaveTimer, reload]);
 
   return {
+    activeDocumentCanWrite,
     catalog,
     snapshot,
     saveStatus,
@@ -442,9 +492,10 @@ async function hydrateRemoteDocument(
     throw new Error("文档公开标识缺失");
   }
 
-  const { document } = await documentRepository.load(publicId);
+  const { access, document } = await documentRepository.load(publicId);
   return {
     ...snapshot,
+    activeDocumentAccess: access,
     content: replaceWorkspaceDocument(snapshot.content, document),
   };
 }

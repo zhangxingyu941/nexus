@@ -103,6 +103,37 @@ describe("useWorkspaceSession", () => {
       },
       document: firstDocument,
     });
+    vi.mocked(documentRepository.load).mockImplementation((publicId) => Promise.resolve(
+      publicId === "public-document-b"
+        ? {
+            access: {
+              accessMode: "workspace" as const,
+              canManage: true,
+              canRead: true,
+              canWrite: true,
+              documentId: secondDocument.id,
+              publicId,
+              role: "owner" as const,
+              source: "workspace-owner" as const,
+              workspaceId: "workspace-a",
+            },
+            document: secondDocument,
+          }
+        : {
+            access: {
+              accessMode: "workspace" as const,
+              canManage: true,
+              canRead: true,
+              canWrite: true,
+              documentId: firstDocument.id,
+              publicId,
+              role: "owner" as const,
+              source: "workspace-owner" as const,
+              workspaceId: "workspace-a",
+            },
+            document: firstDocument,
+          },
+    ));
     const { result } = renderHook(() => useWorkspaceSession(repository, documentRepository));
     await waitFor(() => expect(result.current.snapshot?.summary.id).toBe("workspace-a"));
 
@@ -110,6 +141,13 @@ describe("useWorkspaceSession", () => {
       result.current.updateContent((current) => ({
         ...current,
         activeDocumentId: secondDocument.id,
+      }));
+    });
+    await waitFor(() => expect(documentRepository.load).toHaveBeenCalledWith("public-document-b"));
+    await waitFor(() => expect(result.current.saveStatus).toBe("remote"));
+    act(() => {
+      result.current.updateContent((current) => ({
+        ...current,
         documents: current.documents.map((item) => item.id === secondDocument.id
           ? { ...item, title: "Updated second document", updatedAt: 2000 }
           : item),
@@ -123,6 +161,52 @@ describe("useWorkspaceSession", () => {
     expect(documentRepository.save).toHaveBeenCalledWith(
       "public-document-b",
       expect.objectContaining({ id: secondDocument.id, updatedAt: 2000 }),
+    );
+  });
+
+  it("allows an explicit document editor to save from a viewer workspace role", async () => {
+    const workspace = createSnapshot("workspace-a", "Alpha", "viewer", 1000);
+    const document = workspace.content.documents[0];
+    workspace.documentPublicIds = { [document.id]: "public-document-a" };
+    const repository = createRepository({
+      catalog: createCatalog(workspace.summary),
+      snapshots: { "workspace-a": workspace },
+      target: "remote",
+    });
+    const documentRepository = createDocumentRepository({
+      access: {
+        accessMode: "private",
+        canManage: false,
+        canRead: true,
+        canWrite: true,
+        documentId: document.id,
+        publicId: "public-document-a",
+        role: "editor",
+        source: "explicit",
+        workspaceId: "workspace-a",
+      },
+      document,
+    });
+    const { result } = renderHook(() => useWorkspaceSession(repository, documentRepository));
+    await waitFor(() => expect(result.current.snapshot?.summary.id).toBe("workspace-a"));
+
+    act(() => {
+      result.current.updateContent((current) => ({
+        ...current,
+        documents: current.documents.map((item) => item.id === document.id
+          ? { ...item, title: "Editor update", updatedAt: 2000 }
+          : item),
+        updatedAt: 2000,
+      }));
+    });
+    await act(async () => {
+      await result.current.flushSave();
+    });
+
+    expect(result.current.saveStatus).toBe("remote");
+    expect(documentRepository.save).toHaveBeenCalledWith(
+      "public-document-a",
+      expect.objectContaining({ title: "Editor update" }),
     );
   });
 

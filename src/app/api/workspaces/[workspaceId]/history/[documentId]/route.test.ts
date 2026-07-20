@@ -9,6 +9,7 @@ import {
   PostgresDocumentAuthorizationRecords,
 } from "@/server/documentAuthorization";
 import { PostgresAuthStore } from "@/server/postgresAuthStore";
+import { PostgresDocumentStore } from "@/server/postgresDocumentStore";
 import { PostgresWorkspaceStore } from "@/server/postgresWorkspaceStore";
 import { createDocumentHistoryRouteHandlers } from "./handlers";
 
@@ -16,6 +17,7 @@ describe("explicit workspace history route", () => {
   let pool: Pool;
   let authStore: PostgresAuthStore;
   let documentAuthorization: DocumentAuthorizationService;
+  let documentStore: PostgresDocumentStore;
   let workspaceStore: PostgresWorkspaceStore;
   let handlers: ReturnType<typeof createDocumentHistoryRouteHandlers>;
 
@@ -31,10 +33,11 @@ describe("explicit workspace history route", () => {
     documentAuthorization = new DocumentAuthorizationService(
       new PostgresDocumentAuthorizationRecords(pool),
     );
+    documentStore = new PostgresDocumentStore(pool, documentAuthorization);
     handlers = createDocumentHistoryRouteHandlers({
       authStore,
       documentAuthorization,
-      workspaceStore,
+      documentStore,
     });
   });
 
@@ -79,11 +82,11 @@ describe("explicit workspace history route", () => {
     const documentAuthorization = {
       requireWorkspaceDocumentAction: vi.fn().mockRejectedValue(new DocumentNotFoundError()),
     };
-    const workspaceStore = { listDocumentVersions: vi.fn(), restoreDocumentVersion: vi.fn() };
+    const documentStore = { listDocumentVersions: vi.fn(), restoreDocumentVersion: vi.fn() };
     const deniedHandlers = createDocumentHistoryRouteHandlers({
       authStore: { getUserBySessionToken: vi.fn().mockResolvedValue({ id: "editor-1" }) },
       documentAuthorization,
-      workspaceStore,
+      documentStore,
     });
 
     const response = await deniedHandlers.GET(
@@ -93,12 +96,49 @@ describe("explicit workspace history route", () => {
     );
 
     expect(response.status).toBe(404);
-    expect(workspaceStore.listDocumentVersions).not.toHaveBeenCalled();
+    expect(documentStore.listDocumentVersions).not.toHaveBeenCalled();
     expect(documentAuthorization.requireWorkspaceDocumentAction).toHaveBeenCalledWith(
       "editor-1",
       "workspace-1",
       "document-1",
       "read",
+    );
+  });
+
+  it("restores through document persistence using the authorized public id", async () => {
+    const restoredDocument = createDefaultWorkspace(1000).documents[0];
+    const documentAuthorization = {
+      requireWorkspaceDocumentAction: vi.fn().mockResolvedValue({
+        documentId: "document-1",
+        publicId: "public-document-1",
+        workspaceId: "workspace-1",
+      }),
+    };
+    const documentStore = {
+      listDocumentVersions: vi.fn(),
+      restoreDocumentVersion: vi.fn().mockResolvedValue({ document: restoredDocument }),
+    };
+    const handlers = createDocumentHistoryRouteHandlers({
+      authStore: { getUserBySessionToken: vi.fn().mockResolvedValue({ id: "editor-1" }) },
+      documentAuthorization,
+      documentStore,
+    });
+
+    const response = await handlers.POST(
+      new Request("http://localhost/api/workspaces/workspace-1/history/document-1", {
+        body: JSON.stringify({ versionId: "version-1" }),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      }),
+      "workspace-1",
+      "document-1",
+    );
+
+    expect(response.status).toBe(200);
+    expect(documentStore.restoreDocumentVersion).toHaveBeenCalledWith(
+      "editor-1",
+      "public-document-1",
+      "version-1",
     );
   });
 });

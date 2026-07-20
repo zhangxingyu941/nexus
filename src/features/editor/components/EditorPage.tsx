@@ -78,6 +78,7 @@ interface EditorPageProps {
   onSignOut?: () => void;
   onWorkspaceChange: (updater: (current: EditorWorkspace) => EditorWorkspace) => void;
   documentPublicId?: string;
+  documentCanWrite?: boolean;
   saveStatus: WorkspaceSaveStatus;
   sessionUser?: EditorSessionUser | null;
   workspace: EditorWorkspace;
@@ -93,6 +94,7 @@ export function EditorPage({
   onSignOut,
   onWorkspaceChange,
   documentPublicId,
+  documentCanWrite,
   saveStatus,
   sessionUser = null,
   workspace,
@@ -105,6 +107,7 @@ export function EditorPage({
   const [undoDeleteNotice, setUndoDeleteNotice] = useState<UndoDeleteNotice | null>(null);
   const [focusBlockId, setFocusBlockId] = useState<string | null>(null);
   const workspaceRole = workspaceSummary.role;
+  const canWriteActiveDocument = documentCanWrite ?? workspaceRole !== "viewer";
 
   useEffect(() => {
     if (!membersEnabled) {
@@ -169,7 +172,7 @@ export function EditorPage({
   );
   const collaboration = useDocumentCollaboration({
     document: activeDocument,
-    enabled: workspaceRole !== "viewer",
+    enabled: canWriteActiveDocument,
     onRemoteDocumentStructurePatch: handleRemoteDocumentStructurePatch,
     onRemotePatches: handleRemotePatches,
     workspaceId,
@@ -463,7 +466,7 @@ export function EditorPage({
       <WorkspaceSidebar
         activeDocumentId={workspace.activeDocumentId}
         documents={workspace.documents}
-        isReadOnly={workspaceRole === "viewer"}
+        isReadOnly={!canWriteActiveDocument}
         onCreateDocument={handleCreateDocument}
         onDeleteDocument={handleDeleteDocument}
         onDuplicateDocument={handleDuplicateDocument}
@@ -502,7 +505,7 @@ export function EditorPage({
         focusBlockId={focusBlockId}
         inviteCount={inviteCount}
         isWorkspaceNavigationOpen={isSidebarOpen}
-        isReadOnly={workspaceRole === "viewer"}
+        isReadOnly={!canWriteActiveDocument}
         onOpenInvites={onOpenInvites}
         onSignOut={onSignOut}
         onAddAfter={handleAddAfter}

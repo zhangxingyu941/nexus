@@ -1,4 +1,5 @@
 import type { EditorWorkspace } from "../features/editor/model/block";
+import type { DocumentAccess } from "./documentAccess";
 
 export const WORKSPACE_NAME_MAX_LENGTH = 80;
 
@@ -20,6 +21,7 @@ export interface WorkspaceCatalog {
 export interface WorkspaceSnapshot {
   summary: WorkspaceSummary;
   content: EditorWorkspace;
+  activeDocumentAccess?: DocumentAccess;
   documentPublicIds?: Record<string, string>;
 }
 

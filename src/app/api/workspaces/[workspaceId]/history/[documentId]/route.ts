@@ -18,7 +18,7 @@ export async function GET(request: Request, context: DocumentHistoryRouteContext
   return createDocumentHistoryRouteHandlers({
     authStore: services.authStore,
     documentAuthorization: services.documentAuthorization,
-    workspaceStore: services.workspaceStore,
+    documentStore: services.documentStore,
   }).GET(
     request,
     workspaceId,
@@ -33,7 +33,7 @@ export async function POST(request: Request, context: DocumentHistoryRouteContex
   return createDocumentHistoryRouteHandlers({
     authStore: services.authStore,
     documentAuthorization: services.documentAuthorization,
-    workspaceStore: services.workspaceStore,
+    documentStore: services.documentStore,
   }).POST(
     request,
     workspaceId,

@@ -1,4 +1,5 @@
-import type { Pool } from "pg";
+import { createHash, randomUUID } from "node:crypto";
+import type { Pool, PoolClient } from "pg";
 import type {
   Block,
   BlockComment,
@@ -20,6 +21,14 @@ export interface DocumentSnapshot {
 export interface DocumentPolicySnapshot {
   access: DocumentAccess;
   policy: DocumentPolicy;
+}
+
+export interface DocumentVersionSummary {
+  createdAt: number;
+  createdBy: string;
+  documentId: string;
+  id: string;
+  title: string;
 }
 
 export class DocumentPolicyMemberError extends Error {
@@ -230,6 +239,7 @@ export class PostgresDocumentStore {
         "UPDATE editor_workspaces SET updated_at = $1 WHERE id = $2",
         [document.updatedAt, access.workspaceId],
       );
+      await this.insertDocumentVersion(client, access.workspaceId, userId, document);
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK");
@@ -239,6 +249,57 @@ export class PostgresDocumentStore {
     }
 
     return this.loadDocument(userId, publicId);
+  }
+
+  async listDocumentVersions(
+    userId: string,
+    publicId: string,
+  ): Promise<DocumentVersionSummary[]> {
+    const access = await this.authorization.requireUserAction(userId, publicId, "read");
+    const result = await this.pool.query(
+      `SELECT versions.id, versions.document_id, versions.title, versions.created_at,
+              users.display_name AS created_by_name
+       FROM document_versions versions
+       LEFT JOIN app_users users ON users.id = versions.created_by
+       WHERE versions.workspace_id = $1 AND versions.document_id = $2
+       ORDER BY versions.created_at DESC, versions.id DESC`,
+      [access.workspaceId, access.documentId],
+    );
+
+    return result.rows.map((row) => ({
+      createdAt: Number(row.created_at),
+      createdBy: row.created_by_name ? String(row.created_by_name) : "团队成员",
+      documentId: String(row.document_id),
+      id: String(row.id),
+      title: String(row.title),
+    }));
+  }
+
+  async restoreDocumentVersion(
+    userId: string,
+    publicId: string,
+    versionId: string,
+  ): Promise<DocumentSnapshot> {
+    const access = await this.authorization.requireUserAction(userId, publicId, "write");
+    const version = await this.pool.query(
+      `SELECT snapshot
+       FROM document_versions
+       WHERE workspace_id = $1 AND document_id = $2 AND id = $3`,
+      [access.workspaceId, access.documentId, versionId],
+    );
+    const snapshot = version.rows[0]?.snapshot;
+    if (!snapshot || typeof snapshot !== "object") {
+      throw new DocumentNotFoundError();
+    }
+
+    const restored = snapshot as EditorDocument;
+    const updatedAt = Date.now();
+    return this.saveDocument(userId, publicId, {
+      ...restored,
+      blocks: restored.blocks.map((block) => ({ ...block, updatedAt })),
+      id: access.documentId,
+      updatedAt,
+    });
   }
 
   async loadDocumentPolicy(userId: string, publicId: string): Promise<DocumentPolicySnapshot> {
@@ -349,5 +410,42 @@ export class PostgresDocumentStore {
         userId: String(permission.user_id),
       })),
     };
+  }
+
+  private async insertDocumentVersion(
+    client: PoolClient,
+    workspaceId: string,
+    userId: string,
+    document: EditorDocument,
+  ) {
+    const snapshot = JSON.stringify(document);
+    const snapshotHash = createHash("sha256").update(snapshot).digest("hex");
+    const latest = await client.query(
+      `SELECT snapshot_hash
+       FROM document_versions
+       WHERE workspace_id = $1 AND document_id = $2
+       ORDER BY created_at DESC, id DESC
+       LIMIT 1`,
+      [workspaceId, document.id],
+    );
+    if (latest.rows[0]?.snapshot_hash === snapshotHash) {
+      return;
+    }
+
+    await client.query(
+      `INSERT INTO document_versions
+       (workspace_id, id, document_id, title, snapshot, snapshot_hash, created_by, created_at)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)`,
+      [
+        workspaceId,
+        `version-${randomUUID()}`,
+        document.id,
+        document.title,
+        snapshot,
+        snapshotHash,
+        userId,
+        document.updatedAt,
+      ],
+    );
   }
 }

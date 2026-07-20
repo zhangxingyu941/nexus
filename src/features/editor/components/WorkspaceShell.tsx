@@ -117,6 +117,7 @@ export function WorkspaceShell({ mode, sessionUser, onSignOut }: WorkspaceShellP
         onSignOut={onSignOut}
         onWorkspaceChange={session.updateContent}
         documentPublicId={session.snapshot.documentPublicIds?.[session.snapshot.content.activeDocumentId]}
+        documentCanWrite={session.activeDocumentCanWrite}
         saveStatus={session.saveStatus}
         sessionUser={sessionUser}
         workspace={session.snapshot.content}
