@@ -112,6 +112,32 @@ describe("authentication database migration", () => {
     )).rejects.toThrow();
   });
 
+  it("backfills document authors from the earliest workspace owner and creates constrained grants", async () => {
+    await createPreDocumentPermissionsFixture(pool);
+
+    await migrateDatabase(pool);
+    await migrateDatabase(pool);
+
+    expect(await columnNames(pool, "editor_documents")).toEqual(expect.arrayContaining([
+      "access_mode",
+      "created_by",
+    ]));
+    await expect(pool.query(
+      `SELECT created_by, access_mode
+       FROM editor_documents
+       WHERE workspace_id = $1 AND id = $2`,
+      ["workspace-1", "document-1"],
+    )).resolves.toMatchObject({
+      rows: [{ access_mode: "workspace", created_by: "owner-early" }],
+    });
+    await expect(pool.query(
+      `INSERT INTO document_permissions
+         (workspace_id, document_id, user_id, role, created_by, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $6)`,
+      ["workspace-1", "document-1", "editor-1", "owner-early", "owner-early", 3000],
+    )).rejects.toThrow();
+  });
+
   it("enforces provider account uniqueness", async () => {
     await migrateDatabase(pool);
     await pool.query(
@@ -337,6 +363,84 @@ async function createLegacyMultiWorkspaceFixture(pool: Pool) {
      VALUES
        ('owner-1', 'workspace-1'),
        ('member-1', 'workspace-1')`,
+  );
+}
+
+async function createPreDocumentPermissionsFixture(pool: Pool) {
+  const statements = [
+    `CREATE TABLE app_users (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      display_name TEXT NOT NULL,
+      created_at BIGINT NOT NULL
+    )`,
+    `CREATE TABLE schema_migrations (
+      id TEXT PRIMARY KEY,
+      applied_at BIGINT NOT NULL
+    )`,
+    `CREATE TABLE editor_workspaces (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      deleted_at BIGINT,
+      updated_at BIGINT NOT NULL,
+      created_at BIGINT NOT NULL
+    )`,
+    `CREATE TABLE workspace_members (
+      workspace_id TEXT NOT NULL REFERENCES editor_workspaces(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+      role TEXT NOT NULL CHECK (role IN ('owner', 'editor', 'viewer')),
+      created_at BIGINT NOT NULL,
+      PRIMARY KEY (workspace_id, user_id)
+    )`,
+    `CREATE TABLE editor_documents (
+      id TEXT NOT NULL UNIQUE,
+      workspace_id TEXT NOT NULL REFERENCES editor_workspaces(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      position INTEGER NOT NULL,
+      updated_at BIGINT NOT NULL,
+      PRIMARY KEY (workspace_id, id)
+    )`,
+  ];
+
+  for (const statement of statements) {
+    await pool.query(statement);
+  }
+
+  await pool.query(
+    `INSERT INTO schema_migrations (id, applied_at)
+     VALUES
+       ('__migration_lock__', 0),
+       ('2026-07-10-workspace-scoped-content-keys', 1000),
+       ('2026-07-10-complex-block-data', 1000),
+       ('2026-07-13-production-authentication', 1000),
+       ('2026-07-13-yjs-persistence', 1000),
+       ('2026-07-15-multi-workspace-foundation', 1000),
+       ('2026-07-16-orphaned-user-workspaces', 1000),
+       ('2026-07-16-workspace-invitations-audit', 1000),
+       ('2026-07-17-editor-heading-level', 1000),
+       ('2026-07-16-workspace-soft-deletion', 1000)`,
+  );
+  await pool.query(
+    `INSERT INTO app_users (id, email, display_name, created_at)
+     VALUES
+       ('owner-early', 'early@example.com', 'Early owner', 1000),
+       ('owner-late', 'late@example.com', 'Late owner', 1000),
+       ('editor-1', 'editor@example.com', 'Editor', 1000)`,
+  );
+  await pool.query(
+    `INSERT INTO editor_workspaces (id, name, deleted_at, updated_at, created_at)
+     VALUES ('workspace-1', 'Workspace', NULL, 2000, 1000)`,
+  );
+  await pool.query(
+    `INSERT INTO workspace_members (workspace_id, user_id, role, created_at)
+     VALUES
+       ('workspace-1', 'owner-late', 'owner', 2000),
+       ('workspace-1', 'owner-early', 'owner', 1000),
+       ('workspace-1', 'editor-1', 'editor', 1500)`,
+  );
+  await pool.query(
+    `INSERT INTO editor_documents (id, workspace_id, title, position, updated_at)
+     VALUES ('document-1', 'workspace-1', 'Legacy document', 0, 2000)`,
   );
 }
 

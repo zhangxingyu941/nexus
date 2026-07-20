@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 
 const INITIAL_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS app_users (
@@ -106,6 +106,7 @@ const WORKSPACE_INVITATIONS_AUDIT_MIGRATION_ID =
 const HEADING_LEVEL_MIGRATION_ID = "2026-07-17-editor-heading-level";
 const WORKSPACE_SOFT_DELETION_MIGRATION_ID =
   "2026-07-16-workspace-soft-deletion";
+const DOCUMENT_PERMISSIONS_MIGRATION_ID = "2026-07-20-document-permissions";
 const MIGRATION_LOCK_ID = "__migration_lock__";
 
 const WORKSPACE_SCOPED_CONTENT_SCHEMA = [
@@ -311,6 +312,73 @@ const WORKSPACE_SOFT_DELETION_SCHEMA = [
    WHERE deleted_at IS NOT NULL`,
 ];
 
+const DOCUMENT_PERMISSIONS_SCHEMA = [
+  "ALTER TABLE editor_documents ADD COLUMN created_by TEXT",
+  "ALTER TABLE editor_documents ADD COLUMN access_mode TEXT NOT NULL DEFAULT 'workspace' CHECK (access_mode IN ('workspace', 'private', 'link'))",
+];
+
+const DOCUMENT_PERMISSIONS_FINAL_SCHEMA = [
+  "ALTER TABLE editor_documents ALTER COLUMN created_by SET NOT NULL",
+  `ALTER TABLE editor_documents
+   ADD CONSTRAINT editor_documents_created_by_fkey
+   FOREIGN KEY (created_by) REFERENCES app_users(id)`,
+  `CREATE TABLE document_permissions (
+    workspace_id TEXT NOT NULL,
+    document_id TEXT NOT NULL,
+    user_id TEXT NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+    role TEXT NOT NULL CHECK (role IN ('editor', 'viewer')),
+    created_by TEXT NOT NULL REFERENCES app_users(id),
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT NOT NULL,
+    PRIMARY KEY (workspace_id, document_id, user_id),
+    FOREIGN KEY (workspace_id, document_id)
+      REFERENCES editor_documents(workspace_id, id)
+      ON DELETE CASCADE
+  )`,
+  "CREATE INDEX document_permissions_user_idx ON document_permissions(user_id, workspace_id, document_id)",
+];
+
+async function migrateDocumentPermissions(client: PoolClient) {
+  for (const statement of DOCUMENT_PERMISSIONS_SCHEMA) {
+    await client.query(statement);
+  }
+
+  const documents = await client.query(
+    `SELECT workspace_id, id
+     FROM editor_documents
+     WHERE created_by IS NULL`,
+  );
+
+  for (const document of documents.rows) {
+    const workspaceId = String(document.workspace_id);
+    const documentId = String(document.id);
+    const owner = await client.query(
+      `SELECT user_id
+       FROM workspace_members
+       WHERE workspace_id = $1 AND role = 'owner'
+       ORDER BY created_at ASC, user_id ASC
+       LIMIT 1`,
+      [workspaceId],
+    );
+    const ownerId = owner.rows[0]?.user_id;
+
+    if (!ownerId) {
+      throw new Error(`Cannot backfill document author for workspace ${workspaceId}`);
+    }
+
+    await client.query(
+      `UPDATE editor_documents
+       SET created_by = $1
+       WHERE workspace_id = $2 AND id = $3`,
+      [String(ownerId), workspaceId, documentId],
+    );
+  }
+
+  for (const statement of DOCUMENT_PERMISSIONS_FINAL_SCHEMA) {
+    await client.query(statement);
+  }
+}
+
 export async function migrateDatabase(pool: Pool) {
   const client = await pool.connect();
 
@@ -502,6 +570,20 @@ export async function migrateDatabase(pool: Pool) {
       await client.query(
         "INSERT INTO schema_migrations (id, applied_at) VALUES ($1, $2)",
         [WORKSPACE_SOFT_DELETION_MIGRATION_ID, Date.now()],
+      );
+    }
+
+    const documentPermissionsResult = await client.query(
+      "SELECT id FROM schema_migrations WHERE id = $1",
+      [DOCUMENT_PERMISSIONS_MIGRATION_ID],
+    );
+
+    if (documentPermissionsResult.rows.length === 0) {
+      await migrateDocumentPermissions(client);
+
+      await client.query(
+        "INSERT INTO schema_migrations (id, applied_at) VALUES ($1, $2)",
+        [DOCUMENT_PERMISSIONS_MIGRATION_ID, Date.now()],
       );
     }
 

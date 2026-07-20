@@ -63,7 +63,7 @@
 
 在 `editor_documents` 增加：
 
-- `created_by TEXT NOT NULL REFERENCES app_users(id)`：私有文档的作者；历史数据回填为所属工作区 owner。
+- `created_by TEXT NOT NULL REFERENCES app_users(id)`：私有文档的作者；历史数据按 `workspace_members.created_at, user_id` 回填为所属工作区最早加入的 owner。工作区仍以 `workspace_members` 支持多个 owner，不恢复单一 `owner_id`。
 - `access_mode TEXT NOT NULL DEFAULT 'workspace'`，约束为 `workspace`、`private`、`link`。
 
 新增 `document_permissions`：
@@ -142,7 +142,7 @@
 
 ## 7. 错误处理、迁移与兼容
 
-- 所有新表和列通过幂等迁移创建，并为旧文档回填 `created_by` 与 `access_mode = 'workspace'`。
+- 所有新表和列通过幂等迁移创建，并为旧文档按最早 owner 回填 `created_by` 与 `access_mode = 'workspace'`。
 - 迁移前导出数据库和对象存储清单；迁移后检查每篇文档都有作者、每条权限/分享记录的复合外键有效。
 - 权限策略更改使用事务，提交后发布协作权限失效事件；发布失败记录可重试审计，不回滚已提交的授权数据。
 - 分享令牌生成使用至少 256 bit 的加密随机数。比较采用恒定时间语义，由 HMAC 查找避免保存明文。
