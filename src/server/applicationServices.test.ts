@@ -2,6 +2,7 @@ import type { Pool } from "pg";
 import { describe, expect, it } from "vitest";
 import { createPostgresServices } from "./applicationServices";
 import { DocumentAuthorizationService } from "./documentAuthorization";
+import { PostgresDocumentStore } from "./postgresDocumentStore";
 
 describe("application services", () => {
   it("reuses the workspace invitation limiter across service construction", () => {
@@ -17,5 +18,6 @@ describe("application services", () => {
     const services = createPostgresServices({} as Pool);
 
     expect(services.documentAuthorization).toBeInstanceOf(DocumentAuthorizationService);
+    expect(services.documentStore).toBeInstanceOf(PostgresDocumentStore);
   });
 });
