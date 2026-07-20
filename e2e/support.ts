@@ -146,6 +146,67 @@ export function expireWorkspaceInvite(email: string) {
   updatePendingWorkspaceInvite(email, "expires_at = 0");
 }
 
+export function runSql(sql: string, variables: Record<string, string | number> = {}) {
+  return dockerCompose([
+    "exec",
+    "-T",
+    "postgres",
+    "psql",
+    "-v",
+    "ON_ERROR_STOP=1",
+    ...psqlVariables(variables),
+    "-U",
+    "postgres",
+    "-d",
+    "notion_block_editor",
+    "-c",
+    sql,
+  ]);
+}
+
+export function queryScalar(sql: string, variables: Record<string, string | number> = {}) {
+  return dockerCompose([
+    "exec",
+    "-T",
+    "postgres",
+    "psql",
+    "-v",
+    "ON_ERROR_STOP=1",
+    ...psqlVariables(variables),
+    "-U",
+    "postgres",
+    "-d",
+    "notion_block_editor",
+    "-A",
+    "-t",
+    "-c",
+    sql,
+  ]).trim();
+}
+
+export function setWorkspacePurgeAfter(workspaceId: string, purgeAfter = Date.now() - 1) {
+  runSql(
+    `UPDATE editor_workspaces
+     SET deleted_at = :'purge_after'::bigint - 604800000,
+         purge_after = :'purge_after'::bigint
+     WHERE id = :'workspace_id'`,
+    { purge_after: purgeAfter, workspace_id: workspaceId },
+  );
+}
+
+export function setUploadsDirectoryMode(mode: "read-only" | "writable") {
+  dockerCompose([
+    "exec",
+    "-T",
+    "--user",
+    "0",
+    "web",
+    "chmod",
+    mode === "read-only" ? "0555" : "0755",
+    "/app/server/data/uploads",
+  ]);
+}
+
 export function cleanupAcceptanceData() {
   dockerCompose([
     "exec",
@@ -157,7 +218,7 @@ export function cleanupAcceptanceData() {
     "-d",
     "notion_block_editor",
     "-c",
-    "DELETE FROM auth_audit_events WHERE user_id IN (SELECT id FROM app_users WHERE email LIKE 'e2e-%@example.com' OR email LIKE 'collab-%@example.com' OR email LIKE 'workspace-%@example.com' OR email LIKE 'members-%@example.com'); DELETE FROM workspace_members WHERE user_id IN (SELECT id FROM app_users WHERE email LIKE 'members-%@example.com'); DELETE FROM editor_workspaces WHERE id IN (SELECT members.workspace_id FROM workspace_members members INNER JOIN app_users users ON users.id = members.user_id WHERE members.role = 'owner' AND (users.email LIKE 'e2e-%@example.com' OR users.email LIKE 'collab-%@example.com' OR users.email LIKE 'workspace-%@example.com')); DELETE FROM app_users WHERE email LIKE 'e2e-%@example.com' OR email LIKE 'collab-%@example.com' OR email LIKE 'workspace-%@example.com' OR email LIKE 'members-%@example.com';",
+    "DELETE FROM auth_audit_events WHERE user_id IN (SELECT id FROM app_users WHERE email LIKE 'e2e-%@example.com' OR email LIKE 'collab-%@example.com' OR email LIKE 'workspace-%@example.com' OR email LIKE 'members-%@example.com' OR email LIKE 'deletion-%@example.com'); DELETE FROM workspace_members WHERE user_id IN (SELECT id FROM app_users WHERE email LIKE 'members-%@example.com'); DELETE FROM editor_workspaces WHERE id IN (SELECT members.workspace_id FROM workspace_members members INNER JOIN app_users users ON users.id = members.user_id WHERE members.role = 'owner' AND (users.email LIKE 'e2e-%@example.com' OR users.email LIKE 'collab-%@example.com' OR users.email LIKE 'workspace-%@example.com' OR users.email LIKE 'deletion-%@example.com')); DELETE FROM app_users WHERE email LIKE 'e2e-%@example.com' OR email LIKE 'collab-%@example.com' OR email LIKE 'workspace-%@example.com' OR email LIKE 'members-%@example.com' OR email LIKE 'deletion-%@example.com';",
   ]);
   dockerCompose([
     "exec",
@@ -210,6 +271,10 @@ function updatePendingWorkspaceInvite(email: string, assignment: string) {
   if (!output.includes("UPDATE 1")) {
     throw new Error(`No pending workspace invitation for ${email}`);
   }
+}
+
+function psqlVariables(variables: Record<string, string | number>) {
+  return Object.entries(variables).flatMap(([name, value]) => ["-v", `${name}=${value}`]);
 }
 
 function parseCredentialChallenge(payload: unknown) {
