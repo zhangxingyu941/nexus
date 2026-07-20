@@ -7,6 +7,7 @@ export class ApiRequestError extends Error {
     message: string,
     readonly code: string,
     readonly retryAfterSeconds?: number,
+    readonly status?: number,
   ) {
     super(message);
     this.name = "ApiRequestError";
@@ -38,7 +39,7 @@ export async function requestJson<T>(url: string, init: RequestInit): Promise<T>
       : isLegacyErrorPayload(payload)
         ? { code: "service_unavailable", error: payload.error }
       : { code: "service_unavailable", error: "工作区服务请求失败" };
-    throw new ApiRequestError(error.error, error.code, error.retryAfterSeconds);
+    throw new ApiRequestError(error.error, error.code, error.retryAfterSeconds, response.status);
   }
 
   return payload as T;

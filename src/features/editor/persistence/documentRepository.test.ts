@@ -69,6 +69,15 @@ describe("document repository", () => {
       expect.objectContaining({ body: JSON.stringify(policy), method: "PATCH" }),
     );
   });
+
+  it("keeps an HTTP status for direct-route error handling", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(jsonResponse({
+      error: "文档不存在或无权访问",
+    }, 404)));
+    const repository = createDocumentRepository();
+
+    await expect(repository.load("private-document")).rejects.toMatchObject({ status: 404 });
+  });
 });
 
 function jsonResponse(payload: unknown, status = 200) {

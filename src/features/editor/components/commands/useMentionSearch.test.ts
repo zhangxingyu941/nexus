@@ -9,7 +9,7 @@ const members: DatabaseWorkspaceMember[] = [
 ];
 
 const documents: EditorDocument[] = [
-  { id: "doc-1", title: "设计文档", blocks: [], createdAt: 0, updatedAt: 0, parentId: null },
+  { id: "doc-1", title: "设计文档", blocks: [], updatedAt: 0 },
 ];
 
 const tasks: Block[] = [
