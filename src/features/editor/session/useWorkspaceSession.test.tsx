@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { WorkspaceCatalog, WorkspaceSnapshot, WorkspaceSummary } from "../../../shared/workspace";
 import { createDefaultWorkspace } from "../model/workspaceOperations";
 import type { WorkspaceRepository } from "../persistence/workspaceRepository";
+import type { DocumentRepository } from "../persistence/documentRepository";
 import { useWorkspaceSession } from "./useWorkspaceSession";
 
 describe("useWorkspaceSession", () => {
@@ -22,6 +23,107 @@ describe("useWorkspaceSession", () => {
     expect(result.current.snapshot).toEqual(workspaceA);
     expect(result.current.saveStatus).toBe("remote");
     expect(result.current.error).toBe("");
+  });
+
+  it("saves a remote active document through the document endpoint", async () => {
+    const workspace = createSnapshot("workspace-a", "Alpha", "owner", 1000);
+    const document = workspace.content.documents[0];
+    workspace.documentPublicIds = { [document.id]: "public-document-a" };
+    const repository = createRepository({
+      catalog: createCatalog(workspace.summary),
+      snapshots: { "workspace-a": workspace },
+      target: "remote",
+    });
+    const documentRepository = createDocumentRepository({
+      access: {
+        accessMode: "workspace",
+        canManage: true,
+        canRead: true,
+        canWrite: true,
+        documentId: document.id,
+        publicId: "public-document-a",
+        role: "owner",
+        source: "workspace-owner",
+        workspaceId: "workspace-a",
+      },
+      document,
+    });
+    const { result } = renderHook(() => useWorkspaceSession(repository, documentRepository));
+    await waitFor(() => expect(result.current.snapshot?.summary.id).toBe("workspace-a"));
+
+    act(() => {
+      result.current.updateContent((current) => ({
+        ...current,
+        documents: current.documents.map((item) => item.id === document.id
+          ? { ...item, title: "Updated", updatedAt: 2000 }
+          : item),
+        updatedAt: 2000,
+      }));
+    });
+    await act(async () => {
+      await result.current.flushSave();
+    });
+
+    expect(documentRepository.load).toHaveBeenCalledWith("public-document-a");
+    expect(documentRepository.save).toHaveBeenCalledWith(
+      "public-document-a",
+      expect.objectContaining({ id: document.id, updatedAt: 2000 }),
+    );
+    expect(repository.save).not.toHaveBeenCalled();
+  });
+
+  it("uses the selected document public id when saving a remote workspace", async () => {
+    const workspace = createSnapshot("workspace-a", "Alpha", "owner", 1000);
+    const firstDocument = workspace.content.documents[0];
+    const secondDocument = { ...firstDocument, id: "document-b", title: "Second document" };
+    workspace.content = {
+      ...workspace.content,
+      documents: [firstDocument, secondDocument],
+    };
+    workspace.documentPublicIds = {
+      [firstDocument.id]: "public-document-a",
+      [secondDocument.id]: "public-document-b",
+    };
+    const repository = createRepository({
+      catalog: createCatalog(workspace.summary),
+      snapshots: { "workspace-a": workspace },
+      target: "remote",
+    });
+    const documentRepository = createDocumentRepository({
+      access: {
+        accessMode: "workspace",
+        canManage: true,
+        canRead: true,
+        canWrite: true,
+        documentId: firstDocument.id,
+        publicId: "public-document-a",
+        role: "owner",
+        source: "workspace-owner",
+        workspaceId: "workspace-a",
+      },
+      document: firstDocument,
+    });
+    const { result } = renderHook(() => useWorkspaceSession(repository, documentRepository));
+    await waitFor(() => expect(result.current.snapshot?.summary.id).toBe("workspace-a"));
+
+    act(() => {
+      result.current.updateContent((current) => ({
+        ...current,
+        activeDocumentId: secondDocument.id,
+        documents: current.documents.map((item) => item.id === secondDocument.id
+          ? { ...item, title: "Updated second document", updatedAt: 2000 }
+          : item),
+        updatedAt: 2000,
+      }));
+    });
+    await act(async () => {
+      await result.current.flushSave();
+    });
+
+    expect(documentRepository.save).toHaveBeenCalledWith(
+      "public-document-b",
+      expect.objectContaining({ id: secondDocument.id, updatedAt: 2000 }),
+    );
   });
 
   it("keeps the snapshot empty when the initial catalog load fails", async () => {
@@ -297,6 +399,17 @@ function createRepository({
     rename: vi.fn(),
     select: vi.fn((workspaceId: string) => Promise.resolve(snapshots[workspaceId])),
     save: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+function createDocumentRepository(
+  snapshot: Awaited<ReturnType<DocumentRepository["load"]>>,
+): DocumentRepository {
+  return {
+    load: vi.fn().mockResolvedValue(snapshot),
+    loadPolicy: vi.fn(),
+    save: vi.fn().mockResolvedValue(snapshot),
+    updatePolicy: vi.fn(),
   };
 }
 

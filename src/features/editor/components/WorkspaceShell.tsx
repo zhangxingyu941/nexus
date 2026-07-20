@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { ReceivedWorkspaceInvite } from "@/shared/workspaceInvites";
 import { createLocalWorkspaceRepository } from "../persistence/localWorkspaceRepository";
+import { createDocumentRepository } from "../persistence/documentRepository";
 import { createRemoteWorkspaceRepository } from "../persistence/remoteWorkspaceRepository";
 import { workspaceInviteRepository } from "../persistence/workspaceInviteRepository";
 import type { EditorSessionUser } from "../session/sessionTypes";
@@ -28,7 +29,11 @@ export function WorkspaceShell({ mode, sessionUser, onSignOut }: WorkspaceShellP
     () => mode === "database" ? createRemoteWorkspaceRepository() : createLocalWorkspaceRepository(),
     [mode],
   );
-  const session = useWorkspaceSession(repository);
+  const documentRepository = useMemo(
+    () => mode === "database" ? createDocumentRepository() : undefined,
+    [mode],
+  );
+  const session = useWorkspaceSession(repository, documentRepository);
 
   const refreshInvites = useCallback(async () => {
     const sequence = ++inviteLoadSequence.current;

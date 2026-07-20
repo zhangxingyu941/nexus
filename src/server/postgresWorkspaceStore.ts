@@ -314,7 +314,7 @@ export class PostgresWorkspaceStore {
     }
 
     const documentResult = await this.pool.query(
-      `SELECT id, created_by, access_mode, title, template_id, pinned, updated_at
+      `SELECT id, public_id, created_by, access_mode, title, template_id, pinned, updated_at
        FROM editor_documents
        WHERE workspace_id = $1
        ORDER BY position ASC`,
@@ -479,6 +479,9 @@ export class PostgresWorkspaceStore {
     );
     return {
       content,
+      documentPublicIds: Object.fromEntries(
+        visibleDocumentRows.map((row) => [String(row.id), String(row.public_id)]),
+      ),
       summary: toWorkspaceSummary({
         ...summaryResult.rows[0],
         role: access.role,

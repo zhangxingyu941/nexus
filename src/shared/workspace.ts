@@ -20,6 +20,7 @@ export interface WorkspaceCatalog {
 export interface WorkspaceSnapshot {
   summary: WorkspaceSummary;
   content: EditorWorkspace;
+  documentPublicIds?: Record<string, string>;
 }
 
 export class WorkspaceNameValidationError extends Error {

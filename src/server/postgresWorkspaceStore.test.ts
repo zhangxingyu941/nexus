@@ -140,6 +140,19 @@ describe("PostgresWorkspaceStore", () => {
     expect(editorWorkspace.content.documents).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ title: "Private budget" })]),
     );
+    expect(editorWorkspace.documentPublicIds).not.toHaveProperty(privateDocumentId);
+  });
+
+  it("returns public ids for documents that are visible in a workspace snapshot", async () => {
+    await seedUser(pool, "owner-1", "owner@example.com", "Owner");
+    await store.ensurePersonalWorkspace("owner-1", "Owner workspace");
+
+    const workspace = await store.loadWorkspace("owner-1", "workspace-test");
+    const documentId = workspace.content.activeDocumentId;
+
+    expect(workspace.documentPublicIds).toEqual({
+      [documentId]: expect.stringMatching(/^document-/),
+    });
   });
 
   it("lists every accessible workspace with the selected workspace first", async () => {

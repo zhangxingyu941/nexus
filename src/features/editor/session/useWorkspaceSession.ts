@@ -13,7 +13,8 @@ import {
   type WorkspaceSummary,
 } from "../../../shared/workspace";
 import type { WorkspaceTransitionResponse } from "../../../shared/workspaceApi";
-import type { EditorWorkspace } from "../model/block";
+import type { EditorDocument, EditorWorkspace } from "../model/block";
+import type { DocumentRepository } from "../persistence/documentRepository";
 import type { WorkspaceRepository } from "../persistence/workspaceRepository";
 
 export type WorkspaceSaveStatus =
@@ -44,6 +45,7 @@ export interface WorkspaceSessionController {
 
 interface CurrentWorkspaceState {
   content: EditorWorkspace;
+  documentPublicIds: Record<string, string>;
   generation: number;
   revision: number;
   role: WorkspaceSummary["role"];
@@ -53,6 +55,8 @@ interface CurrentWorkspaceState {
 
 interface SaveRequest {
   content: EditorWorkspace;
+  document: EditorDocument | null;
+  documentPublicId: string | null;
   generation: number;
   revision: number;
   workspaceId: string;
@@ -60,6 +64,7 @@ interface SaveRequest {
 
 export function useWorkspaceSession(
   repository: WorkspaceRepository,
+  documentRepository?: DocumentRepository,
 ): WorkspaceSessionController {
   const [catalog, setCatalog] = useState<WorkspaceCatalog | null>(null);
   const [snapshot, setSnapshot] = useState<WorkspaceSnapshot | null>(null);
@@ -90,6 +95,7 @@ export function useWorkspaceSession(
     generationRef.current += 1;
     currentRef.current = {
       content: nextSnapshot.content,
+      documentPublicIds: nextSnapshot.documentPublicIds ?? {},
       generation: generationRef.current,
       revision: 0,
       role: nextSnapshot.summary.role,
@@ -114,6 +120,10 @@ export function useWorkspaceSession(
 
     const request: SaveRequest = {
       content: current.content,
+      document: current.content.documents.find(
+        (document) => document.id === current.content.activeDocumentId,
+      ) ?? null,
+      documentPublicId: current.documentPublicIds[current.content.activeDocumentId] ?? null,
       generation: current.generation,
       revision: current.revision,
       workspaceId: current.workspaceId,
@@ -124,17 +134,28 @@ export function useWorkspaceSession(
 
     const saving = (async () => {
       try {
-        await repository.save(request.workspaceId, request.content);
+        const savedDocument = repository.target === "remote" && documentRepository
+          ? await saveRemoteDocument(documentRepository, request)
+          : (await repository.save(request.workspaceId, request.content), null);
         const latest = currentRef.current;
         if (latest?.workspaceId !== request.workspaceId
           || latest.generation !== request.generation) {
           return;
         }
 
+        const content = savedDocument && latest.content.activeDocumentId === savedDocument.id
+          ? replaceWorkspaceDocument(latest.content, savedDocument)
+          : latest.content;
         currentRef.current = {
           ...latest,
+          content,
           savedRevision: Math.max(latest.savedRevision, request.revision),
         };
+        if (content !== latest.content && mountedRef.current) {
+          setSnapshot((currentSnapshot) => currentSnapshot?.summary.id === request.workspaceId
+            ? { ...currentSnapshot, content }
+            : currentSnapshot);
+        }
         if (latest.revision === request.revision && mountedRef.current) {
           setSaveStatus(repository.target);
           setError("");
@@ -160,7 +181,7 @@ export function useWorkspaceSession(
       },
     );
     return saving;
-  }, [repository]);
+  }, [documentRepository, repository]);
 
   const flushSave = useCallback(async () => {
     clearSaveTimer();
@@ -219,7 +240,11 @@ export function useWorkspaceSession(
 
     try {
       const nextCatalog = await repository.list();
-      const nextSnapshot = await repository.load(nextCatalog.currentWorkspaceId);
+      const nextSnapshot = await loadWorkspaceSnapshot(
+        repository,
+        documentRepository,
+        nextCatalog.currentWorkspaceId,
+      );
       if (mountedRef.current && loadSequenceRef.current === sequence) {
         installSnapshot(nextCatalog, nextSnapshot);
       }
@@ -232,7 +257,7 @@ export function useWorkspaceSession(
         setIsLoading(false);
       }
     }
-  }, [installSnapshot, repository]);
+  }, [documentRepository, installSnapshot, repository]);
 
   const switchWorkspace = useCallback(async (workspaceId: string) => {
     if (transitionRef.current || currentRef.current?.workspaceId === workspaceId) {
@@ -244,7 +269,7 @@ export function useWorkspaceSession(
     setError("");
     try {
       await flushSave();
-      const nextSnapshot = await repository.select(workspaceId);
+      const nextSnapshot = await selectWorkspaceSnapshot(repository, documentRepository, workspaceId);
       const nextCatalog = catalogForSnapshot(catalogRef.current, nextSnapshot);
       installSnapshot(nextCatalog, nextSnapshot);
     } catch (transitionError) {
@@ -257,7 +282,7 @@ export function useWorkspaceSession(
         setIsTransitioning(false);
       }
     }
-  }, [flushSave, installSnapshot, repository]);
+  }, [documentRepository, flushSave, installSnapshot, repository]);
 
   const runServerTransition = useCallback(async (
     operation: () => Promise<WorkspaceTransitionResponse>,
@@ -272,7 +297,10 @@ export function useWorkspaceSession(
     try {
       await flushSave();
       const transition = await operation();
-      installSnapshot(transition.catalog, transition.workspace);
+      installSnapshot(
+        transition.catalog,
+        await hydrateRemoteDocument(repository, documentRepository, transition.workspace),
+      );
     } catch (transitionError) {
       if (mountedRef.current) {
         setError(errorMessage(transitionError));
@@ -283,7 +311,7 @@ export function useWorkspaceSession(
         setIsTransitioning(false);
       }
     }
-  }, [flushSave, installSnapshot]);
+  }, [documentRepository, flushSave, installSnapshot, repository]);
 
   const createWorkspace = useCallback(async (name: string) => {
     if (transitionRef.current) {
@@ -295,7 +323,11 @@ export function useWorkspaceSession(
     setError("");
     try {
       await flushSave();
-      const nextSnapshot = await repository.create(name);
+      const nextSnapshot = await hydrateRemoteDocument(
+        repository,
+        documentRepository,
+        await repository.create(name),
+      );
       const nextCatalog = catalogForSnapshot(catalogRef.current, nextSnapshot);
       installSnapshot(nextCatalog, nextSnapshot);
     } catch (transitionError) {
@@ -308,7 +340,7 @@ export function useWorkspaceSession(
         setIsTransitioning(false);
       }
     }
-  }, [flushSave, installSnapshot, repository]);
+  }, [documentRepository, flushSave, installSnapshot, repository]);
 
   const renameWorkspace = useCallback(async (workspaceId: string, name: string) => {
     setError("");
@@ -378,4 +410,67 @@ function catalogForSnapshot(
 
 function errorMessage(error: unknown) {
   return error instanceof Error && error.message ? error.message : "工作区操作失败";
+}
+
+async function loadWorkspaceSnapshot(
+  repository: WorkspaceRepository,
+  documentRepository: DocumentRepository | undefined,
+  workspaceId: string,
+) {
+  return hydrateRemoteDocument(repository, documentRepository, await repository.load(workspaceId));
+}
+
+async function selectWorkspaceSnapshot(
+  repository: WorkspaceRepository,
+  documentRepository: DocumentRepository | undefined,
+  workspaceId: string,
+) {
+  return hydrateRemoteDocument(repository, documentRepository, await repository.select(workspaceId));
+}
+
+async function hydrateRemoteDocument(
+  repository: WorkspaceRepository,
+  documentRepository: DocumentRepository | undefined,
+  snapshot: WorkspaceSnapshot,
+): Promise<WorkspaceSnapshot> {
+  if (repository.target !== "remote" || !documentRepository) {
+    return snapshot;
+  }
+
+  const publicId = snapshot.documentPublicIds?.[snapshot.content.activeDocumentId];
+  if (!publicId) {
+    throw new Error("文档公开标识缺失");
+  }
+
+  const { document } = await documentRepository.load(publicId);
+  return {
+    ...snapshot,
+    content: replaceWorkspaceDocument(snapshot.content, document),
+  };
+}
+
+async function saveRemoteDocument(
+  documentRepository: DocumentRepository,
+  request: SaveRequest,
+) {
+  if (!request.document || !request.documentPublicId) {
+    throw new Error("文档公开标识缺失");
+  }
+  const saved = await documentRepository.save(request.documentPublicId, request.document);
+  return saved.document;
+}
+
+function replaceWorkspaceDocument(
+  workspace: EditorWorkspace,
+  document: EditorDocument,
+): EditorWorkspace {
+  if (!workspace.documents.some((item) => item.id === document.id)) {
+    return workspace;
+  }
+
+  return {
+    ...workspace,
+    documents: workspace.documents.map((item) => item.id === document.id ? document : item),
+    updatedAt: Math.max(workspace.updatedAt, document.updatedAt),
+  };
 }
