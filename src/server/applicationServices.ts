@@ -6,10 +6,12 @@ import { PostgresWorkspaceLifecycleStore } from "./postgresWorkspaceLifecycleSto
 import { PostgresWorkspaceMemberStore } from "./postgresWorkspaceMemberStore";
 import { PostgresWorkspaceStore } from "./postgresWorkspaceStore";
 import { getRedisSessionCache } from "./redisSessionCache";
+import { createObjectStorage } from "./objectStorage";
 import { createWorkspaceInviteMailerFromEnvironment } from "./workspaceInviteMailer";
 import { createWorkspaceInviteRateLimiter } from "./workspaceInviteRateLimiter";
 import type { WorkspaceInviteRateLimiter } from "./workspaceInviteRateLimiter";
 import { WorkspaceInviteTokenService } from "./workspaceInviteTokens";
+import { WorkspacePurgeService } from "./workspacePurgeService";
 
 let workspaceInviteLimiter: WorkspaceInviteRateLimiter | null = null;
 
@@ -26,6 +28,10 @@ export function createPostgresServices(pool: Pool = getDatabasePool()) {
   });
   const workspaceMemberStore = new PostgresWorkspaceMemberStore(pool);
   const workspaceLifecycleStore = new PostgresWorkspaceLifecycleStore(pool);
+  const workspacePurgeService = new WorkspacePurgeService({
+    lifecycleStore: workspaceLifecycleStore,
+    objectStorage: createObjectStorage(),
+  });
   const authStore = new PostgresAuthStore(pool, workspaceStore, {
     authCodeSecret: process.env.AUTH_HASH_SECRET,
     sessionCache: getRedisSessionCache(),
@@ -45,6 +51,7 @@ export function createPostgresServices(pool: Pool = getDatabasePool()) {
     workspaceInviteTokenService,
     workspaceLifecycleStore,
     workspaceMemberStore,
+    workspacePurgeService,
     workspaceStore,
   };
 }

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createPostgresServices } from "@/server/applicationServices";
 import { hasDatabaseConfiguration } from "@/server/database/pool";
 import { GET } from "./route";
+import { scheduleWorkspacePurge } from "../purgeScheduler";
 
 vi.mock("@/server/applicationServices", () => ({
   createPostgresServices: vi.fn(),
@@ -9,6 +10,10 @@ vi.mock("@/server/applicationServices", () => ({
 
 vi.mock("@/server/database/pool", () => ({
   hasDatabaseConfiguration: vi.fn(),
+}));
+
+vi.mock("../purgeScheduler", () => ({
+  scheduleWorkspacePurge: vi.fn(),
 }));
 
 describe("workspace trash route", () => {
@@ -28,6 +33,9 @@ describe("workspace trash route", () => {
       workspaceLifecycleStore: {
         listTrash: vi.fn().mockResolvedValue(workspaces),
       },
+      workspacePurgeService: {
+        purgeExpired: vi.fn().mockResolvedValue(undefined),
+      },
       workspaceStore: {},
     } as never);
 
@@ -37,5 +45,6 @@ describe("workspace trash route", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ workspaces });
+    expect(scheduleWorkspacePurge).toHaveBeenCalledWith(expect.any(Function));
   });
 });

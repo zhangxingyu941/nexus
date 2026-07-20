@@ -4,13 +4,17 @@ import {
   createWorkspaceRouteHandlers,
   workspaceServiceUnavailableResponse,
 } from "./handlers";
+import { scheduleWorkspacePurge } from "./purgeScheduler";
 
 export async function GET(request: Request) {
   if (!hasDatabaseConfiguration()) {
     return workspaceServiceUnavailableResponse();
   }
 
-  return createWorkspaceRouteHandlers(createPostgresServices()).list(request);
+  const services = createPostgresServices();
+  const response = await createWorkspaceRouteHandlers(services).list(request);
+  scheduleWorkspacePurge(() => services.workspacePurgeService.purgeExpired(3));
+  return response;
 }
 
 export async function POST(request: Request) {

@@ -30,6 +30,17 @@ interface OwnedWorkspace {
   name: string;
 }
 
+export interface ExpiredWorkspacePurgeCandidate {
+  id: string;
+  name: string;
+}
+
+export interface WorkspacePurgeClaim {
+  candidate: ExpiredWorkspacePurgeCandidate;
+  purgeDatabaseRow: () => Promise<boolean>;
+  release: () => Promise<void>;
+}
+
 export class PostgresWorkspaceLifecycleStore {
   private readonly auditStore: WorkspaceAuditStore;
   private readonly now: () => number;
@@ -256,6 +267,139 @@ export class PostgresWorkspaceLifecycleStore {
       throw error;
     } finally {
       client.release();
+    }
+  }
+
+  async listExpiredPurgeCandidates(limit: number): Promise<ExpiredWorkspacePurgeCandidate[]> {
+    const result = await this.pool.query(
+      `SELECT id, name
+       FROM editor_workspaces
+       WHERE deleted_at IS NOT NULL AND purge_after <= $1
+       ORDER BY purge_after ASC, id ASC
+       LIMIT $2`,
+      [this.now(), limit],
+    );
+
+    return result.rows.map((row) => ({
+      id: String(row.id),
+      name: String(row.name),
+    }));
+  }
+
+  async claimExpiredWorkspace(workspaceId: string): Promise<WorkspacePurgeClaim | null> {
+    const client = await this.pool.connect();
+    const lockName = `workspace-purge:${workspaceId}`;
+    let advisoryLockHeld = false;
+    let transactionOpen = false;
+
+    try {
+      const lockResult = await client.query(
+        "SELECT pg_try_advisory_lock(hashtext($1)) AS locked",
+        [lockName],
+      );
+      if (!lockResult.rows[0]?.locked) {
+        client.release();
+        return null;
+      }
+      advisoryLockHeld = true;
+
+      await client.query("BEGIN");
+      transactionOpen = true;
+      const candidateResult = await client.query(
+        `SELECT id, name
+         FROM editor_workspaces
+         WHERE id = $1 AND deleted_at IS NOT NULL AND purge_after <= $2
+         FOR UPDATE`,
+        [workspaceId, this.now()],
+      );
+      const candidate = candidateResult.rows[0];
+      if (!candidate) {
+        await client.query("ROLLBACK");
+        transactionOpen = false;
+        await client.query("SELECT pg_advisory_unlock(hashtext($1))", [lockName]);
+        advisoryLockHeld = false;
+        client.release();
+        return null;
+      }
+
+      let released = false;
+      let databaseRowPurged = false;
+      const release = async () => {
+        if (released) return;
+        released = true;
+
+        try {
+          if (transactionOpen) {
+            await client.query("ROLLBACK");
+            transactionOpen = false;
+          }
+        } finally {
+          try {
+            if (advisoryLockHeld) {
+              await client.query("SELECT pg_advisory_unlock(hashtext($1))", [lockName]);
+              advisoryLockHeld = false;
+            }
+          } finally {
+            client.release();
+          }
+        }
+      };
+
+      return {
+        candidate: {
+          id: String(candidate.id),
+          name: String(candidate.name),
+        },
+        purgeDatabaseRow: async () => {
+          if (released || databaseRowPurged) return false;
+
+          const recheck = await client.query(
+            `SELECT id, name
+             FROM editor_workspaces
+             WHERE id = $1 AND deleted_at IS NOT NULL AND purge_after <= $2
+             FOR UPDATE`,
+            [workspaceId, this.now()],
+          );
+          const stillExpired = recheck.rows[0];
+          if (!stillExpired) {
+            return false;
+          }
+
+          await this.auditStore.write(client, {
+            actorUserId: null,
+            eventType: "workspace_purged",
+            metadata: { purgedAt: this.now() },
+            targetId: String(stillExpired.id),
+            targetType: "workspace",
+            workspaceId: String(stillExpired.id),
+            workspaceName: String(stillExpired.name),
+          });
+          const deleted = await client.query(
+            "DELETE FROM editor_workspaces WHERE id = $1",
+            [workspaceId],
+          );
+          await client.query("COMMIT");
+          transactionOpen = false;
+          databaseRowPurged = true;
+          return deleted.rowCount === 1;
+        },
+        release,
+      };
+    } catch (error) {
+      try {
+        if (transactionOpen) {
+          await client.query("ROLLBACK");
+        }
+      } finally {
+        try {
+          if (advisoryLockHeld) {
+            await client.query("SELECT pg_advisory_unlock(hashtext($1))", [lockName]);
+          }
+        } finally {
+          client.release();
+        }
+      }
+      throw error;
     }
   }
 

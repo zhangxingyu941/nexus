@@ -1,11 +1,21 @@
 import type { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { migrateDatabase } from "../../../server/database/migrations";
+import { createPostgresServices } from "../../../server/applicationServices";
 import { PostgresAuthStore } from "../../../server/postgresAuthStore";
 import { PostgresWorkspaceStore } from "../../../server/postgresWorkspaceStore";
 import { createPgMemPool } from "../../../test/pgMemDatabase";
 import { createWorkspaceRouteHandlers } from "./handlers";
+import { scheduleWorkspacePurge } from "./purgeScheduler";
 import { GET } from "./route";
+
+vi.mock("./purgeScheduler", () => ({
+  scheduleWorkspacePurge: vi.fn(),
+}));
+
+vi.mock("../../../server/applicationServices", () => ({
+  createPostgresServices: vi.fn(),
+}));
 
 describe("workspace catalog route", () => {
   let pool: Pool;
@@ -23,6 +33,7 @@ describe("workspace catalog route", () => {
 
   afterEach(async () => {
     vi.unstubAllEnvs();
+    vi.clearAllMocks();
     await pool.end();
   });
 
@@ -87,5 +98,23 @@ describe("workspace catalog route", () => {
     expect(catalog.currentWorkspaceId).toBe(created.summary.id);
     expect(catalog.workspaces).toHaveLength(2);
     expect(catalog.workspaces[0]).toMatchObject({ id: created.summary.id, name: "产品团队" });
+  });
+
+  it("schedules an expired workspace purge after the catalog response", async () => {
+    vi.stubEnv("DATABASE_URL", "postgres://example.test/workspaces");
+    const purgeExpired = vi.fn().mockResolvedValue(undefined);
+
+    vi.mocked(createPostgresServices).mockReturnValue({
+      authStore: { getUserBySessionToken: vi.fn().mockResolvedValue(null) },
+      workspacePurgeService: { purgeExpired },
+      workspaceStore: {},
+    } as never);
+
+    await GET(new Request("http://localhost/api/workspaces"));
+
+    expect(scheduleWorkspacePurge).toHaveBeenCalledWith(expect.any(Function));
+    const purge = vi.mocked(scheduleWorkspacePurge).mock.calls[0]?.[0];
+    await purge?.();
+    expect(purgeExpired).toHaveBeenCalledWith(3);
   });
 });
