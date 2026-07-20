@@ -21,6 +21,21 @@ function getCssRule(css: string, selector: string) {
   return matchedBodies.join("\n");
 }
 
+function getFirstCssRule(css: string, selector: string) {
+  const rules = css.matchAll(/(?<selectors>[^{}]+)\{(?<body>[^}]*)\}/g);
+
+  for (const rule of rules) {
+    const selectorText = rule.groups?.selectors.replace(/\/\*[\s\S]*?\*\//g, "") ?? "";
+    const selectors = selectorText.split(",").map((item) => item.trim());
+
+    if (selectors.includes(selector)) {
+      return rule.groups?.body ?? "";
+    }
+  }
+
+  return "";
+}
+
 describe("global layering styles", () => {
   it("uses the shadcn border token as the default border color", () => {
     const css = readFileSync(join(currentDir, "styles.css"), "utf8");
@@ -68,5 +83,35 @@ describe("global layering styles", () => {
     expect(activityDialogRule).toMatch(/overflow:\s*hidden\b/);
     expect(activityListRule).toMatch(/min-height:\s*0\b/);
     expect(activityListRule).toMatch(/max-height:\s*none\b/);
+  });
+
+  it("keeps the desktop document context panel closed until it is explicitly opened", () => {
+    const css = readFileSync(join(currentDir, "styles.css"), "utf8");
+    const contextPanelRule = getFirstCssRule(css, ".document-context-panel");
+    const openPanelRule = getCssRule(css, ".document-context-panel-open");
+
+    expect(contextPanelRule).toMatch(/position:\s*fixed\b/);
+    expect(contextPanelRule).toMatch(/opacity:\s*0\b/);
+    expect(contextPanelRule).toMatch(/pointer-events:\s*none\b/);
+    expect(openPanelRule).toMatch(/opacity:\s*1\b/);
+    expect(openPanelRule).toMatch(/pointer-events:\s*auto\b/);
+  });
+
+  it("uses an above-block action bar without reserving a right-side editor column", () => {
+    const css = readFileSync(join(currentDir, "styles.css"), "utf8");
+    const editorShellRule = getFirstCssRule(css, ".block-editor-shell");
+    const actionBarRule = getFirstCssRule(css, ".block-action-bar");
+
+    expect(editorShellRule).toMatch(/display:\s*grid\b/);
+    expect(editorShellRule).not.toMatch(/padding-right:\s*116px\b/);
+    expect(actionBarRule).toMatch(/grid-row:\s*1\b/);
+    expect(actionBarRule).toMatch(/position:\s*relative\b/);
+  });
+
+  it("uses the blue focus semantic for native controls", () => {
+    const css = readFileSync(join(currentDir, "styles.css"), "utf8");
+    const focusRule = getCssRule(css, "button:focus-visible");
+
+    expect(focusRule).toMatch(/rgba\(37,\s*99,\s*235,/);
   });
 });

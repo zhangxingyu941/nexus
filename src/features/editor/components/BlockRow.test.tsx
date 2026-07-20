@@ -4,7 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { BlockRow } from "./BlockRow";
 import { MentionSearchProvider } from "./MentionSearchContext";
 import type { Block } from "../model/block";
-import type { DatabaseWorkspaceMember } from "../../../server/databaseWorkspaceMembers";
+import type { DatabaseWorkspaceMember } from "../session/sessionTypes";
 
 const baseBlock: Block = {
   id: "block-1",

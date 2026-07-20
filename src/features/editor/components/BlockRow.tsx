@@ -419,116 +419,6 @@ export function BlockRow({
       ) : <span aria-hidden="true" className="readonly-block-gutter" />}
 
       <div className="block-editor-shell">
-        {block.type === "image" || block.type === "file" ? (
-          <AttachmentBlockEditor
-            content={block.content}
-            data={block.data?.kind === block.type ? block.data : null}
-            isReadOnly={isReadOnly}
-            kind={block.type}
-            onChangeContent={(content) => onChangeContent(block.id, content)}
-            onChangeData={(data) => onChangeBlockData(block.id, data)}
-            workspaceId={workspaceId}
-          />
-        ) : block.type === "table" ? (
-          block.data?.kind === "table" ? (
-            <TableBlockEditor
-              data={block.data}
-              isReadOnly={isReadOnly}
-              onChange={(data) => onChangeBlockData(block.id, data)}
-            />
-          ) : null
-        ) : block.type === "kanban" ? (
-          block.data?.kind === "kanban" ? (
-            <KanbanBlockEditor
-              data={block.data}
-              isReadOnly={isReadOnly}
-              onChange={(data) => onChangeBlockData(block.id, data)}
-            />
-          ) : null
-        ) : block.type === "divider" ? (
-          <DividerEditor isReadOnly={isReadOnly} />
-        ) : block.type === "bulletedList" || block.type === "numberedList" ? (
-          <ListBlockEditor
-            content={block.content}
-            isReadOnly={isReadOnly}
-            onChange={(content) => onChangeContent(block.id, content)}
-            onEnter={() => onAddAfter(block.id)}
-            type={block.type}
-          />
-        ) : block.type === "toggle" ? (
-          <ToggleBlockEditor
-            content={block.content}
-            data={block.data}
-            isReadOnly={isReadOnly}
-            onChange={(content) => onChangeContent(block.id, content)}
-            onChangeData={(data) => onChangeBlockData(block.id, data)}
-          />
-        ) : block.type === "formula" ? (
-          <FormulaBlockEditor
-            content={block.content}
-            isReadOnly={isReadOnly}
-            onChange={(content) => onChangeContent(block.id, content)}
-          />
-        ) : block.type === "linkCard" ? (
-          <LinkCardBlockEditor
-            content={block.content}
-            data={block.data}
-            isReadOnly={isReadOnly}
-            onChange={(content) => onChangeContent(block.id, content)}
-            onChangeData={(data) => onChangeBlockData(block.id, data)}
-          />
-        ) : block.type === "todo" ? (
-          <TodoBlockEditor
-            blockId={block.id}
-            checked={block.checked}
-            collaborationDocument={collaborationDocument}
-            content={block.content}
-            focusRequest={focusRequest || restoreEditorFocus}
-            isReadOnly={isReadOnly}
-            onChange={(content) => {
-              syncMentionFromText(content, content.length);
-              onChangeContent(block.id, content);
-            }}
-            onEnter={() => onAddAfter(block.id)}
-            onFocused={handleEditorFocused}
-            onMarkdownShortcut={(type, headingLevel) => onChangeType(block.id, type, headingLevel)}
-            onOpenCommandMenu={openSlashMenu}
-            onOpenMentionMenu={openMentionMenu}
-            onMentionApiReady={(api) => { mentionApiRef.current = api; }}
-            onToggle={() => onToggleTodo(block.id)}
-            sessionUser={cursorUser}
-          />
-        ) : (
-          <RichTextBlockEditor
-            blockId={block.id}
-            collaborationDocument={collaborationDocument}
-            content={block.content}
-            focusRequest={focusRequest || restoreEditorFocus}
-            isReadOnly={isReadOnly}
-            onChange={(content) => {
-              syncMentionFromText(content, content.length);
-              onChangeContent(block.id, content);
-            }}
-            onEnter={() => onAddAfter(block.id)}
-            onFocused={handleEditorFocused}
-            onMarkdownShortcut={(type, headingLevel) => onChangeType(block.id, type, headingLevel)}
-            onOpenCommandMenu={openSlashMenu}
-            onOpenMentionMenu={openMentionMenu}
-            onMentionApiReady={(api) => { mentionApiRef.current = api; }}
-            onComment={(selectedText) => {
-              if (!selectedText) {
-                return;
-              }
-              setCommentDraft(selectedText);
-              setOpenMenu("comments");
-            }}
-            sessionUser={cursorUser}
-            variant={block.type}
-          />
-        )}
-
-        {block.type === "code" ? <span className="code-block-label">代码片段</span> : null}
-
         <BlockActionBar
           block={block}
           collabContent={(
@@ -556,7 +446,119 @@ export function BlockRow({
           onCommentsOpenChange={(open) => setOpenMenu(open ? "comments" : null)}
         />
 
-        <BlockMetaStrip block={block} />
+        <div className="block-editor-content">
+          {block.type === "image" || block.type === "file" ? (
+            <AttachmentBlockEditor
+              content={block.content}
+              data={block.data?.kind === block.type ? block.data : null}
+              isReadOnly={isReadOnly}
+              kind={block.type}
+              onChangeContent={(content) => onChangeContent(block.id, content)}
+              onChangeData={(data) => onChangeBlockData(block.id, data)}
+              workspaceId={workspaceId}
+            />
+          ) : block.type === "table" ? (
+            block.data?.kind === "table" ? (
+              <TableBlockEditor
+                data={block.data}
+                isReadOnly={isReadOnly}
+                onChange={(data) => onChangeBlockData(block.id, data)}
+              />
+            ) : null
+          ) : block.type === "kanban" ? (
+            block.data?.kind === "kanban" ? (
+              <KanbanBlockEditor
+                data={block.data}
+                isReadOnly={isReadOnly}
+                onChange={(data) => onChangeBlockData(block.id, data)}
+              />
+            ) : null
+          ) : block.type === "divider" ? (
+            <DividerEditor isReadOnly={isReadOnly} />
+          ) : block.type === "bulletedList" || block.type === "numberedList" ? (
+            <ListBlockEditor
+              content={block.content}
+              isReadOnly={isReadOnly}
+              onChange={(content) => onChangeContent(block.id, content)}
+              onEnter={() => onAddAfter(block.id)}
+              type={block.type}
+            />
+          ) : block.type === "toggle" ? (
+            <ToggleBlockEditor
+              content={block.content}
+              data={block.data}
+              isReadOnly={isReadOnly}
+              onChange={(content) => onChangeContent(block.id, content)}
+              onChangeData={(data) => onChangeBlockData(block.id, data)}
+            />
+          ) : block.type === "formula" ? (
+            <FormulaBlockEditor
+              content={block.content}
+              isReadOnly={isReadOnly}
+              onChange={(content) => onChangeContent(block.id, content)}
+            />
+          ) : block.type === "linkCard" ? (
+            <LinkCardBlockEditor
+              content={block.content}
+              data={block.data}
+              isReadOnly={isReadOnly}
+              onChange={(content) => onChangeContent(block.id, content)}
+              onChangeData={(data) => onChangeBlockData(block.id, data)}
+            />
+          ) : block.type === "todo" ? (
+            <TodoBlockEditor
+              blockId={block.id}
+              checked={block.checked}
+              collaborationDocument={collaborationDocument}
+              content={block.content}
+              focusRequest={focusRequest || restoreEditorFocus}
+              isReadOnly={isReadOnly}
+              onChange={(content) => {
+                syncMentionFromText(content, content.length);
+                onChangeContent(block.id, content);
+              }}
+              onEnter={() => onAddAfter(block.id)}
+              onFocused={handleEditorFocused}
+              onMarkdownShortcut={(type, headingLevel) => onChangeType(block.id, type, headingLevel)}
+              onOpenCommandMenu={openSlashMenu}
+              onOpenMentionMenu={openMentionMenu}
+              onMentionApiReady={(api) => { mentionApiRef.current = api; }}
+              onToggle={() => onToggleTodo(block.id)}
+              sessionUser={cursorUser}
+            />
+          ) : (
+            <RichTextBlockEditor
+              blockId={block.id}
+              collaborationDocument={collaborationDocument}
+              content={block.content}
+              focusRequest={focusRequest || restoreEditorFocus}
+              isReadOnly={isReadOnly}
+              onChange={(content) => {
+                syncMentionFromText(content, content.length);
+                onChangeContent(block.id, content);
+              }}
+              onEnter={() => onAddAfter(block.id)}
+              onFocused={handleEditorFocused}
+              onMarkdownShortcut={(type, headingLevel) => onChangeType(block.id, type, headingLevel)}
+              onOpenCommandMenu={openSlashMenu}
+              onOpenMentionMenu={openMentionMenu}
+              onMentionApiReady={(api) => { mentionApiRef.current = api; }}
+              onComment={(selectedText) => {
+                if (!selectedText) {
+                  return;
+                }
+                setCommentDraft(selectedText);
+                setOpenMenu("comments");
+              }}
+              sessionUser={cursorUser}
+              variant={block.type}
+            />
+          )}
+
+          {block.type === "code" ? <span className="code-block-label">代码片段</span> : null}
+
+          <BlockMetaStrip block={block} />
+        </div>
 
         {openMenu === "slash" && slashAnchor ? (
           <EditorCommandPopover

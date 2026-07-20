@@ -1,5 +1,6 @@
 import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
+import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -71,6 +72,9 @@ export function RichTextBlockEditor({
       StarterKit.configure({
         heading: false,
         history: collaborationDocument ? false : undefined,
+      }),
+      Link.configure({
+        openOnClick: false,
       }),
       ...(collaborationDocument
         ? [
@@ -151,8 +155,8 @@ export function RichTextBlockEditor({
           return true;
         }
 
-        // 仅当块内容为空时，输入 / 触发块插入菜单；否则按普通字符输入。
-        if (event.key === "/" && view.state.doc.textContent.length === 0) {
+        // Keep existing text intact while opening the caret-anchored insert menu.
+        if (event.key === "/") {
           event.preventDefault();
           const caret = view.coordsAtPos(view.state.selection.from);
           onOpenCommandMenu({ bottom: caret.bottom, left: caret.left, top: caret.top });

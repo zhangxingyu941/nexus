@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { useMentionSearch } from "./useMentionSearch";
-import type { Block, EditorDocument } from "../model/block";
-import type { DatabaseWorkspaceMember } from "../../../server/databaseWorkspaceMembers";
+import type { Block, EditorDocument } from "../../model/block";
+import type { DatabaseWorkspaceMember } from "../../session/sessionTypes";
 
 const members: DatabaseWorkspaceMember[] = [
   { id: "user-1", email: "alice@example.com", displayName: "Alice", role: "owner" },

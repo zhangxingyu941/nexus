@@ -1,12 +1,18 @@
 import { useCallback, useMemo } from "react";
-import type { Block, EditorDocument } from "../model/block";
-import type { DatabaseWorkspaceMember } from "../../../server/databaseWorkspaceMembers";
+import type { EditorDocument } from "../../model/block";
+import type { DatabaseWorkspaceMember } from "../../session/sessionTypes";
 
 export interface MentionItem {
   id: string;
   kind: "person" | "document" | "task" | "date";
   label: string;
   subtext?: string;
+}
+
+interface MentionSearchTask {
+  content: string;
+  id: string;
+  status: string;
 }
 
 function formatDate(date: Date): string {
@@ -19,7 +25,7 @@ function searchItems(
   query: string,
   members: DatabaseWorkspaceMember[],
   documents: EditorDocument[],
-  tasks: Block[],
+  tasks: MentionSearchTask[],
 ): MentionItem[] {
   const normalizedQuery = query.toLowerCase().trim();
 
@@ -91,7 +97,7 @@ export function useMentionSearch({
   query: string;
   members: DatabaseWorkspaceMember[];
   documents: EditorDocument[];
-  tasks: Block[];
+  tasks: MentionSearchTask[];
 }): MentionItem[] {
   return useMemo(
     () => searchItems(query, members, documents, tasks),
@@ -106,7 +112,7 @@ export function useMentionSearchFn({
 }: {
   members: DatabaseWorkspaceMember[];
   documents: EditorDocument[];
-  tasks: Block[];
+  tasks: MentionSearchTask[];
 }): (query: string) => MentionItem[] {
   return useCallback(
     (query: string) => searchItems(query, members, documents, tasks),

@@ -111,7 +111,7 @@ button:focus-visible,
 select:focus-visible,
 input:focus-visible,
 textarea:focus-visible {
-  outline: 2px solid rgba(47, 111, 99, 0.42);
+  outline: 2px solid rgba(37, 99, 235, 0.42);
   outline-offset: 2px;
 }
 
@@ -919,7 +919,7 @@ textarea:focus-visible {
 
 .editor-workbench {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 250px;
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
 }
@@ -937,19 +937,32 @@ textarea:focus-visible {
 }
 
 .document-context-panel {
-  position: sticky;
+  position: fixed;
+  z-index: 30;
   top: 56px;
-  align-self: start;
+  right: 0;
   display: grid;
   align-content: start;
   gap: 10px;
-  height: calc(100vh - 56px);
+  width: min(320px, calc(100vw - 48px));
+  height: calc(100dvh - 56px);
   padding: 18px 14px 24px;
   overflow-y: auto;
-  border-left: 1px solid var(--line);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.74), rgba(251, 252, 251, 0.9)),
-    #f7f9f8;
+  border-left: 1px solid #e4e4e7;
+  background: #fafafa;
+  box-shadow: -14px 0 32px rgba(24, 24, 27, 0.1);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(102%);
+  transition:
+    opacity 160ms ease,
+    transform 180ms ease;
+}
+
+.document-context-panel-open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
 }
 
 .mobile-context-header {
@@ -999,8 +1012,8 @@ textarea:focus-visible {
 }
 
 .context-icon-green {
-  color: #2f6f63;
-  background: #e6f0ec;
+  color: #52525b;
+  background: #f4f4f5;
 }
 
 .context-icon-blue {
@@ -1701,22 +1714,38 @@ textarea:focus-visible {
 
 .block-editor-shell {
   grid-column: 2;
-  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 0 minmax(0, auto);
   min-width: 0;
-  padding-right: 116px;
+  transition: grid-template-rows 140ms ease;
+}
+
+.block-row[data-active="true"] .block-editor-shell,
+.block-row-menu-open .block-editor-shell {
+  grid-template-rows: 32px minmax(0, auto);
+}
+
+.block-editor-content {
+  grid-column: 1;
+  grid-row: 2;
+  min-width: 0;
 }
 
 .block-action-bar {
-  position: absolute;
-  z-index: 5;
-  top: 2px;
-  right: 0;
+  grid-column: 1;
+  grid-row: 1;
+  position: relative;
+  align-self: start;
+  justify-self: start;
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  min-height: 29px;
-  padding: 1px 3px 1px 7px;
-  border: 1px solid #e4e4e7;
+  max-height: 0;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid transparent;
   border-radius: 6px;
   background: #ffffff;
   box-shadow: 0 4px 12px rgba(24, 24, 27, 0.08);
@@ -1724,13 +1753,19 @@ textarea:focus-visible {
   pointer-events: none;
   transform: translateY(-2px);
   transition:
+    max-height 140ms ease,
+    padding 140ms ease,
+    border-color 140ms ease,
     opacity 120ms ease,
     transform 120ms ease;
 }
 
-.block-row:hover .block-action-bar,
 .block-row[data-active="true"] .block-action-bar,
 .block-row-menu-open .block-action-bar {
+  max-height: 30px;
+  min-height: 29px;
+  padding: 1px 3px 1px 7px;
+  border-color: #e4e4e7;
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0);
@@ -2926,7 +2961,7 @@ textarea:focus-visible {
 
 @media (max-width: 1180px) {
   .editor-workbench {
-    grid-template-columns: minmax(0, 1fr) 230px;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .document-title-input {
@@ -3127,7 +3162,6 @@ textarea:focus-visible {
 
   .block-editor-shell {
     grid-column: 2;
-    padding-right: 64px;
   }
 
   .title-row {
@@ -3172,31 +3206,8 @@ textarea:focus-visible {
     width: 20px;
   }
 
-  .block-editor-shell {
-    padding-right: 0;
-  }
-
   .block-action-bar {
-    position: static;
-    display: inline-flex;
-    width: fit-content;
-    max-height: 0;
-    margin: 0 0 0 4px;
-    overflow: hidden;
-    opacity: 0;
-    pointer-events: none;
-    transition:
-      max-height 140ms ease,
-      margin 140ms ease,
-      opacity 120ms ease;
-  }
-
-  .block-row[data-active="true"] .block-action-bar,
-  .block-row-menu-open .block-action-bar {
-    max-height: 32px;
-    margin: 4px 0 6px 4px;
-    opacity: 1;
-    pointer-events: auto;
+    max-width: 100%;
   }
 
   .block-menu,

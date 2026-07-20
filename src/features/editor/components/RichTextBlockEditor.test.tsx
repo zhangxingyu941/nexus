@@ -100,6 +100,27 @@ describe("RichTextBlockEditor", () => {
     expect(tiptapMock.useEditor.mock.calls[0][1]).toEqual(["block-1", ydoc, false]);
   });
 
+  it("registers the Link extension for the selection toolbar commands", () => {
+    render(
+      <RichTextBlockEditor
+        blockId="block-1"
+        collaborationDocument={null}
+        content="Initial content"
+        focusRequest={false}
+        onChange={vi.fn()}
+        onEnter={vi.fn()}
+        onFocused={vi.fn()}
+        onMarkdownShortcut={vi.fn()}
+        onOpenCommandMenu={vi.fn()}
+        variant="paragraph"
+      />,
+    );
+
+    const editorOptions = tiptapMock.useEditor.mock.calls[0][0];
+
+    expect(editorOptions.extensions.some((extension) => extension.name === "link")).toBe(true);
+  });
+
   it("reports plain text updates to the workspace state", () => {
     const onChange = vi.fn();
 
@@ -161,6 +182,39 @@ describe("RichTextBlockEditor", () => {
 
     expect(editorOptions.editorProps.handleKeyDown(view, new KeyboardEvent("keydown", { key: "/" }))).toBe(true);
     expect(view.coordsAtPos).toHaveBeenCalledWith(3);
+    expect(onOpenCommandMenu).toHaveBeenCalledWith({ bottom: 220, left: 140, top: 200 });
+  });
+
+  it("opens the command menu without inserting a slash after existing text", () => {
+    const onOpenCommandMenu = vi.fn();
+    render(
+      <RichTextBlockEditor
+        blockId="block-1"
+        collaborationDocument={null}
+        content="Release checklist"
+        focusRequest={false}
+        onChange={vi.fn()}
+        onEnter={vi.fn()}
+        onFocused={vi.fn()}
+        onMarkdownShortcut={vi.fn()}
+        onOpenCommandMenu={onOpenCommandMenu}
+        variant="todo"
+      />,
+    );
+    const editorOptions = tiptapMock.useEditor.mock.calls[0][0];
+    const view = {
+      coordsAtPos: vi.fn(() => ({ bottom: 220, left: 140, top: 200 })),
+      dispatch: vi.fn(),
+      state: {
+        doc: { content: { size: 17 }, textContent: "Release checklist" },
+        selection: { from: 18 },
+        tr: { delete: vi.fn() },
+      },
+    };
+
+    expect(editorOptions.editorProps.handleKeyDown(view, new KeyboardEvent("keydown", { key: "/" }))).toBe(true);
+    expect(view.coordsAtPos).toHaveBeenCalledWith(18);
+    expect(view.dispatch).not.toHaveBeenCalled();
     expect(onOpenCommandMenu).toHaveBeenCalledWith({ bottom: 220, left: 140, top: 200 });
   });
 
