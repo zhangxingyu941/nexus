@@ -178,6 +178,31 @@ describe("workspace resource route", () => {
       workspace: { summary: { name: "Fallback" } },
     });
   });
+
+  it("restores a tombstone and returns its selected catalog transition", async () => {
+    const owner = await authStore.createSession({ displayName: "Owner", email: "owner@example.com" });
+    const workspaceId = (await workspaceStore.listWorkspaces(owner.user.id)).currentWorkspaceId;
+    const deletedWorkspace = await workspaceStore.loadWorkspace(owner.user.id, workspaceId);
+    await lifecycleStore.deleteWorkspace({
+      actorUserId: owner.user.id,
+      confirmationName: deletedWorkspace.summary.name,
+      workspaceId,
+    });
+
+    const response = await lifecycleHandlers.restore(
+      new Request(`http://localhost/api/workspaces/${workspaceId}/restore`, {
+        headers: { Cookie: `notion_editor_session=${owner.token}` },
+        method: "POST",
+      }),
+      workspaceId,
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      catalog: { currentWorkspaceId: workspaceId },
+      workspace: { summary: { id: workspaceId, name: deletedWorkspace.summary.name } },
+    });
+  });
 });
 
 async function seedMembership(

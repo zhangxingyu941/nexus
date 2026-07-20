@@ -156,6 +156,109 @@ export class PostgresWorkspaceLifecycleStore {
     }
   }
 
+  async listTrash(actorUserId: string): Promise<DeletedWorkspaceSummary[]> {
+    const result = await this.pool.query(
+      `SELECT workspaces.id, workspaces.name, workspaces.deleted_at, workspaces.purge_after,
+              deleted_by.id AS deleted_by_id, deleted_by.display_name AS deleted_by_display_name
+       FROM editor_workspaces workspaces
+       INNER JOIN workspace_members members ON members.workspace_id = workspaces.id
+       LEFT JOIN app_users deleted_by ON deleted_by.id = workspaces.deleted_by
+       WHERE members.user_id = $1
+         AND members.role = 'owner'
+         AND workspaces.deleted_at IS NOT NULL
+         AND workspaces.purge_after > $2
+       ORDER BY workspaces.deleted_at DESC, workspaces.id ASC`,
+      [actorUserId, this.now()],
+    );
+
+    return result.rows.map((row) => ({
+      deletedAt: Number(row.deleted_at),
+      deletedBy: row.deleted_by_id
+        ? {
+            displayName: String(row.deleted_by_display_name),
+            id: String(row.deleted_by_id),
+          }
+        : null,
+      id: String(row.id),
+      name: String(row.name),
+      purgeAfter: Number(row.purge_after),
+    }));
+  }
+
+  async restoreWorkspace(actorUserId: string, workspaceId: string): Promise<void> {
+    const client = await this.pool.connect();
+
+    try {
+      await client.query("BEGIN");
+      const workspaceResult = await client.query(
+        `SELECT id, name, deleted_at, purge_after
+         FROM editor_workspaces
+         WHERE id = $1
+         FOR UPDATE`,
+        [workspaceId],
+      );
+      const workspace = workspaceResult.rows[0];
+      if (!workspace || workspace.deleted_at === null || workspace.deleted_at === undefined) {
+        throw new WorkspaceDomainError("workspace_not_found", "Workspace not found");
+      }
+
+      const membershipResult = await client.query(
+        `SELECT role
+         FROM workspace_members
+         WHERE workspace_id = $1 AND user_id = $2
+         LIMIT 1`,
+        [workspaceId, actorUserId],
+      );
+      const membership = membershipResult.rows[0];
+      if (!membership) {
+        throw new WorkspaceDomainError("workspace_not_found", "Workspace not found");
+      }
+      if (membership.role !== "owner") {
+        throw new WorkspaceDomainError(
+          "workspace_forbidden",
+          "Only workspace owners can restore a workspace",
+        );
+      }
+      if (workspace.purge_after === null
+        || workspace.purge_after === undefined
+        || this.now() >= Number(workspace.purge_after)) {
+        throw new WorkspaceDomainError(
+          "workspace_purge_expired",
+          "Workspace can no longer be restored",
+        );
+      }
+
+      await client.query(
+        `UPDATE editor_workspaces
+         SET deleted_at = NULL, deleted_by = NULL, purge_after = NULL
+         WHERE id = $1`,
+        [workspaceId],
+      );
+      await this.auditStore.write(client, {
+        actorUserId,
+        eventType: "workspace_restored",
+        metadata: {},
+        targetId: String(workspace.id),
+        targetType: "workspace",
+        workspaceId: String(workspace.id),
+        workspaceName: String(workspace.name),
+      });
+      await client.query(
+        `INSERT INTO workspace_preferences (user_id, selected_workspace_id)
+         VALUES ($1, $2)
+         ON CONFLICT (user_id) DO UPDATE
+         SET selected_workspace_id = EXCLUDED.selected_workspace_id`,
+        [actorUserId, workspaceId],
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   private async requireOwner(
     executor: Pick<Pool, "query"> | Pick<PoolClient, "query">,
     actorUserId: string,

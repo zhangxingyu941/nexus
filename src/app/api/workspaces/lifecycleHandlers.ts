@@ -10,7 +10,7 @@ interface WorkspaceLifecycleRouteDependencies {
   authStore: Pick<PostgresAuthStore, "getUserBySessionToken">;
   lifecycleStore: Pick<
     PostgresWorkspaceLifecycleStore,
-    "deleteWorkspace" | "getDeletionSummary"
+    "deleteWorkspace" | "getDeletionSummary" | "listTrash" | "restoreWorkspace"
   >;
   workspaceStore: Pick<
     PostgresWorkspaceStore,
@@ -64,6 +64,33 @@ export function createWorkspaceLifecycleRouteHandlers({
           catalog.currentWorkspaceId,
         );
         return NextResponse.json({ catalog, deletedWorkspace, workspace });
+      } catch (error) {
+        return mapLifecycleError(error);
+      }
+    },
+
+    async listTrash(request: Request) {
+      const user = await authenticate(request);
+      if (!user) return authenticationRequiredResponse();
+
+      try {
+        return NextResponse.json({
+          workspaces: await lifecycleStore.listTrash(user.id),
+        });
+      } catch (error) {
+        return mapLifecycleError(error);
+      }
+    },
+
+    async restore(request: Request, workspaceId: string) {
+      const user = await authenticate(request);
+      if (!user) return authenticationRequiredResponse();
+
+      try {
+        await lifecycleStore.restoreWorkspace(user.id, workspaceId);
+        const catalog = await workspaceStore.listWorkspaces(user.id);
+        const workspace = await workspaceStore.loadWorkspace(user.id, workspaceId);
+        return NextResponse.json({ catalog, workspace });
       } catch (error) {
         return mapLifecycleError(error);
       }

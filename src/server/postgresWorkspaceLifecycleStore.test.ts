@@ -87,6 +87,56 @@ describe("PostgresWorkspaceLifecycleStore", () => {
       workspaceId: "workspace-1",
     });
   });
+
+  it("lists owner tombstones and restores a selected workspace before its purge deadline", async () => {
+    await pool.query(
+      `UPDATE editor_workspaces
+       SET deleted_at = $1, deleted_by = $2, purge_after = $3
+       WHERE id = $4`,
+      [3_000, "owner-1", 604_803_000, "workspace-1"],
+    );
+
+    await expect(lifecycleStore.listTrash("owner-1")).resolves.toEqual([
+      {
+        deletedAt: 3_000,
+        deletedBy: { displayName: "Owner", id: "owner-1" },
+        id: "workspace-1",
+        name: "Product centre",
+        purgeAfter: 604_803_000,
+      },
+    ]);
+    await expect(lifecycleStore.listTrash("editor-1")).resolves.toEqual([]);
+    await expect(lifecycleStore.restoreWorkspace("editor-1", "workspace-1"))
+      .rejects.toMatchObject({ code: "workspace_forbidden" });
+
+    await lifecycleStore.restoreWorkspace("owner-1", "workspace-1");
+
+    await expect(pool.query(
+      `SELECT deleted_at, deleted_by, purge_after
+       FROM editor_workspaces
+       WHERE id = $1`,
+      ["workspace-1"],
+    )).resolves.toMatchObject({
+      rows: [{ deleted_at: null, deleted_by: null, purge_after: null }],
+    });
+    await expect(pool.query(
+      "SELECT selected_workspace_id FROM workspace_preferences WHERE user_id = $1",
+      ["owner-1"],
+    )).resolves.toMatchObject({ rows: [{ selected_workspace_id: "workspace-1" }] });
+    await expect(pool.query(
+      "SELECT event_type FROM workspace_audit_events WHERE workspace_id = $1",
+      ["workspace-1"],
+    )).resolves.toMatchObject({ rows: [{ event_type: "workspace_restored" }] });
+
+    await pool.query(
+      `UPDATE editor_workspaces
+       SET deleted_at = $1, deleted_by = $2, purge_after = $3
+       WHERE id = $4`,
+      [-604_797_000, "owner-1", 3_000, "workspace-1"],
+    );
+    await expect(lifecycleStore.restoreWorkspace("owner-1", "workspace-1"))
+      .rejects.toMatchObject({ code: "workspace_purge_expired" });
+  });
 });
 
 async function seedWorkspace(pool: Pool) {
