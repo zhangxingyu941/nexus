@@ -8,6 +8,7 @@ function createHandlers() {
   };
   const documentStore = {
     loadDocument: vi.fn(),
+    saveDocument: vi.fn(),
   };
 
   return {
@@ -56,4 +57,101 @@ describe("document route handlers", () => {
     });
     expect(documentStore.loadDocument).toHaveBeenCalledWith("owner-1", "public-document-1");
   });
+
+  it("requires an authenticated session to save a document", async () => {
+    const { authStore, documentStore, handlers } = createHandlers();
+    authStore.getUserBySessionToken.mockResolvedValue(null);
+
+    const response = await handlers.PUT(
+      jsonRequest({ document: documentPayload() }),
+      "public-document-1",
+    );
+
+    expect(response.status).toBe(401);
+    expect(documentStore.saveDocument).not.toHaveBeenCalled();
+  });
+
+  it("rejects invalid JSON when saving a document", async () => {
+    const { authStore, documentStore, handlers } = createHandlers();
+    authStore.getUserBySessionToken.mockResolvedValue({ id: "editor-1" });
+
+    const response = await handlers.PUT(
+      new Request("http://localhost/api/documents/public-document-1", {
+        body: "{",
+        headers: { "content-type": "application/json" },
+        method: "PUT",
+      }),
+      "public-document-1",
+    );
+
+    expect(response.status).toBe(400);
+    expect(documentStore.saveDocument).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed document snapshot", async () => {
+    const { authStore, documentStore, handlers } = createHandlers();
+    authStore.getUserBySessionToken.mockResolvedValue({ id: "editor-1" });
+
+    const response = await handlers.PUT(
+      jsonRequest({ document: { id: "document-1", title: "Private document" } }),
+      "public-document-1",
+    );
+
+    expect(response.status).toBe(400);
+    expect(documentStore.saveDocument).not.toHaveBeenCalled();
+  });
+
+  it("hides a denied document save behind a generic not-found response", async () => {
+    const { authStore, documentStore, handlers } = createHandlers();
+    authStore.getUserBySessionToken.mockResolvedValue({ id: "viewer-1" });
+    documentStore.saveDocument.mockRejectedValue(new DocumentNotFoundError());
+
+    const response = await handlers.PUT(
+      jsonRequest({ document: documentPayload() }),
+      "public-document-1",
+    );
+
+    expect(response.status).toBe(404);
+    expect(documentStore.saveDocument).toHaveBeenCalledWith(
+      "viewer-1",
+      "public-document-1",
+      documentPayload(),
+    );
+  });
+
+  it("saves a valid document snapshot", async () => {
+    const { authStore, documentStore, handlers } = createHandlers();
+    authStore.getUserBySessionToken.mockResolvedValue({ id: "editor-1" });
+    documentStore.saveDocument.mockResolvedValue({ saved: true });
+
+    const response = await handlers.PUT(
+      jsonRequest({ document: documentPayload() }),
+      "public-document-1",
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ saved: true });
+    expect(documentStore.saveDocument).toHaveBeenCalledWith(
+      "editor-1",
+      "public-document-1",
+      documentPayload(),
+    );
+  });
 });
+
+function documentPayload() {
+  return {
+    blocks: [],
+    id: "document-1",
+    title: "Private document",
+    updatedAt: 1000,
+  };
+}
+
+function jsonRequest(body: unknown) {
+  return new Request("http://localhost/api/documents/public-document-1", {
+    body: JSON.stringify(body),
+    headers: { "content-type": "application/json" },
+    method: "PUT",
+  });
+}

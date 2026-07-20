@@ -21,3 +21,16 @@ export async function GET(request: Request, context: DocumentRouteContext) {
     documentStore: services.documentStore,
   }).GET(request, documentId);
 }
+
+export async function PUT(request: Request, context: DocumentRouteContext) {
+  if (!hasDatabaseConfiguration()) {
+    return documentServiceUnavailableResponse();
+  }
+
+  const { documentId } = await context.params;
+  const services = createPostgresServices();
+  return createDocumentRouteHandlers({
+    authStore: services.authStore,
+    documentStore: services.documentStore,
+  }).PUT(request, documentId);
+}
