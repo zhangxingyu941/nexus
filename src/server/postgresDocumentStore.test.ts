@@ -47,6 +47,37 @@ describe("PostgresDocumentStore", () => {
     await expect(store.loadDocument("editor-1", "public-document-1"))
       .rejects.toBeInstanceOf(DocumentNotFoundError);
   });
+
+  it("saves one writable document without changing its public identity or author", async () => {
+    const loaded = await store.loadDocument("owner-1", "public-document-1");
+    const nextDocument = {
+      ...loaded.document,
+      blocks: [{
+        ...loaded.document.blocks[0],
+        content: "Updated private content",
+        updatedAt: 2000,
+      }],
+      title: "Updated private document",
+      updatedAt: 2000,
+    };
+
+    await store.saveDocument("owner-1", "public-document-1", nextDocument);
+
+    await expect(store.loadDocument("owner-1", "public-document-1")).resolves.toMatchObject({
+      document: {
+        blocks: [expect.objectContaining({ content: "Updated private content" })],
+        title: "Updated private document",
+      },
+    });
+    await expect(pool.query(
+      `SELECT public_id, created_by
+       FROM editor_documents
+       WHERE workspace_id = $1 AND id = $2`,
+      ["workspace-1", "document-1"],
+    )).resolves.toMatchObject({
+      rows: [{ created_by: "author-1", public_id: "public-document-1" }],
+    });
+  });
 });
 
 async function seedPrivateDocument(pool: Pool) {

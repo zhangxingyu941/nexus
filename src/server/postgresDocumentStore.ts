@@ -15,7 +15,7 @@ export interface DocumentSnapshot {
 
 export class PostgresDocumentStore {
   constructor(
-    private readonly pool: Pick<Pool, "query">,
+    private readonly pool: Pool,
     private readonly authorization: DocumentAuthorizationService,
   ) {}
 
@@ -118,5 +118,110 @@ export class PostgresDocumentStore {
     }
 
     return { access, document };
+  }
+
+  async saveDocument(
+    userId: string,
+    publicId: string,
+    document: EditorDocument,
+  ): Promise<DocumentSnapshot> {
+    const access = await this.authorization.requireUserAction(userId, publicId, "write");
+    if (document.id !== access.documentId) {
+      throw new DocumentNotFoundError();
+    }
+
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const updated = await client.query(
+        `UPDATE editor_documents
+         SET title = $1, template_id = $2, pinned = $3, updated_at = $4
+         WHERE workspace_id = $5 AND id = $6`,
+        [
+          document.title,
+          document.templateId ?? null,
+          document.pinned ?? null,
+          document.updatedAt,
+          access.workspaceId,
+          access.documentId,
+        ],
+      );
+      if (updated.rowCount !== 1) {
+        throw new DocumentNotFoundError();
+      }
+
+      await client.query(
+        `DELETE FROM editor_blocks
+         WHERE workspace_id = $1 AND document_id = $2`,
+        [access.workspaceId, access.documentId],
+      );
+
+      for (const [position, block] of document.blocks.entries()) {
+        await client.query(
+          `INSERT INTO editor_blocks
+           (workspace_id, id, document_id, type, heading_level, content, data, checked, assignee, due_date,
+            status, parent_id, position, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15)`,
+          [
+            access.workspaceId,
+            block.id,
+            access.documentId,
+            block.type,
+            block.headingLevel,
+            block.content,
+            block.data ? JSON.stringify(block.data) : null,
+            block.checked,
+            block.assignee,
+            block.dueDate,
+            block.status,
+            block.parentId,
+            position,
+            block.createdAt,
+            block.updatedAt,
+          ],
+        );
+        for (const comment of block.comments) {
+          await client.query(
+            `INSERT INTO block_comments
+             (workspace_id, id, block_id, author, body, time_label, created_at, resolved, resolved_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            [
+              access.workspaceId,
+              comment.id,
+              block.id,
+              comment.author,
+              comment.body,
+              comment.time,
+              comment.createdAt,
+              comment.resolved,
+              comment.resolvedAt ?? null,
+            ],
+          );
+        }
+      }
+
+      for (const block of document.blocks) {
+        for (const [position, childId] of block.children.entries()) {
+          await client.query(
+            `INSERT INTO block_relationships (workspace_id, parent_block_id, child_block_id, position)
+             VALUES ($1, $2, $3, $4)`,
+            [access.workspaceId, block.id, childId, position],
+          );
+        }
+      }
+
+      await client.query(
+        "UPDATE editor_workspaces SET updated_at = $1 WHERE id = $2",
+        [document.updatedAt, access.workspaceId],
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    return this.loadDocument(userId, publicId);
   }
 }
