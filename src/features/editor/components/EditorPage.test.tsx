@@ -9,6 +9,7 @@ import { EditorPage } from "./EditorPage";
 
 async function renderEditor({
   inviteCount = 0,
+  documentPublicId,
   membersEnabled = false,
   onOpenInvites,
   role = "owner",
@@ -16,6 +17,7 @@ async function renderEditor({
   workspace,
 }: {
   inviteCount?: number;
+  documentPublicId?: string;
   membersEnabled?: boolean;
   onOpenInvites?: () => void;
   role?: "owner" | "editor" | "viewer";
@@ -28,6 +30,7 @@ async function renderEditor({
     return (
       <EditorPage
         inviteCount={inviteCount}
+        documentPublicId={documentPublicId}
         membersEnabled={membersEnabled}
         onManageWorkspaces={vi.fn()}
         onOpenInvites={onOpenInvites}
@@ -86,7 +89,7 @@ describe("EditorPage", () => {
     expect(screen.getByText("项目空间")).toBeInTheDocument();
     expect(screen.getByLabelText("协作操作")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "评论 0" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "分享" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "分享" })).not.toBeInTheDocument();
     expect(screen.getByLabelText("文档编辑区")).toBeInTheDocument();
     expect(screen.getByLabelText("文档标题")).toHaveValue("未命名文档");
     expect(await getDocumentButtons()).toHaveLength(1);
@@ -306,16 +309,42 @@ describe("EditorPage", () => {
     expect(within(commentsPanel).getByText("已解决")).toBeInTheDocument();
   });
 
-  it("opens the share dialog, changes permission, and confirms link copy", async () => {
+  it("opens the server-backed share dialog when the document has a public id", async () => {
     const user = userEvent.setup();
-    await renderEditor();
+    const policySnapshot = {
+      access: {
+        accessMode: "private",
+        canManage: true,
+        canRead: true,
+        canWrite: true,
+        documentId: "document-1000",
+        publicId: "public-document-1",
+        role: "owner",
+        source: "workspace-owner",
+        workspaceId: "workspace-test",
+      },
+      policy: { accessMode: "private", permissions: [] },
+    };
+    const fetchSpy = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(policySnapshot), {
+        headers: { "Content-Type": "application/json" },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        ...policySnapshot,
+        policy: { accessMode: "workspace", permissions: [] },
+      }), { headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchSpy);
+    await renderEditor({ documentPublicId: "public-document-1" });
 
     await user.click(screen.getByRole("button", { name: "分享" }));
     const shareDialog = screen.getByRole("dialog", { name: "分享文档" });
 
-    expect(within(shareDialog).getByRole("radio", { name: "私有" })).toBeChecked();
+    expect(await within(shareDialog).findByRole("radio", { name: "仅自己与获授权成员可查看" })).toBeChecked();
     await user.click(within(shareDialog).getByRole("radio", { name: "团队可查看" }));
-    expect(within(shareDialog).getByRole("radio", { name: "团队可查看" })).toBeChecked();
+    expect(fetchSpy).toHaveBeenLastCalledWith(
+      "/api/documents/public-document-1/permissions",
+      expect.objectContaining({ method: "PATCH" }),
+    );
 
     await user.click(within(shareDialog).getByRole("button", { name: "复制链接" }));
     expect(within(shareDialog).getByText("链接已复制")).toBeInTheDocument();
