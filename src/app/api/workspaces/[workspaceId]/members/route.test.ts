@@ -19,9 +19,11 @@ describe("explicit workspace member route", () => {
     pool = createPgMemPool();
     await migrateDatabase(pool);
     workspaceStore = new PostgresWorkspaceStore(pool);
-    memberStore = new PostgresWorkspaceMemberStore(pool);
+    memberStore = new PostgresWorkspaceMemberStore(pool, {
+      notifyAccessInvalidation: async () => undefined,
+    });
     authStore = new PostgresAuthStore(pool, workspaceStore);
-    handlers = createWorkspaceMemberRouteHandlers({ authStore, memberStore });
+    handlers = createWorkspaceMemberRouteHandlers({ authStore, memberStore, workspaceStore });
   });
 
   afterEach(async () => {
@@ -67,6 +69,33 @@ describe("explicit workspace member route", () => {
     await expect(
       handlers.leave(new Request("http://localhost", { method: "POST" }), "workspace/a"),
     ).resolves.toBeDefined();
+  });
+
+  it("returns a catalog and selected fallback workspace after leaving", async () => {
+    const owner = await authStore.createSession({ displayName: "Owner", email: "owner@example.com" });
+    const member = await authStore.createSession({ displayName: "Member", email: "member@example.com" });
+    const workspaceId = (await workspaceStore.listWorkspaces(owner.user.id)).currentWorkspaceId;
+    await pool.query(
+      `INSERT INTO workspace_members (workspace_id, user_id, role, created_at)
+       VALUES ($1, $2, 'editor', $3)`,
+      [workspaceId, member.user.id, 2_000],
+    );
+
+    const response = await handlers.leave(
+      new Request("http://localhost/api/workspaces/ignored/leave", {
+        headers: { Cookie: `notion_editor_session=${member.token}` },
+        method: "POST",
+      }),
+      workspaceId,
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      catalog: expect.objectContaining({ currentWorkspaceId: expect.any(String) }),
+      workspace: expect.objectContaining({
+        summary: expect.objectContaining({ id: expect.any(String) }),
+      }),
+    });
   });
 
   it("returns 404 for a workspace the user cannot access", async () => {

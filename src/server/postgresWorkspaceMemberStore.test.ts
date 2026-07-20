@@ -23,6 +23,7 @@ describe("PostgresWorkspaceMemberStore", () => {
     store = new PostgresWorkspaceMemberStore(pool, {
       auditEventIdFactory: () => `audit-${++auditEventSequence}`,
       now: () => 4000,
+      notifyAccessInvalidation: async () => undefined,
     });
   });
 
@@ -56,6 +57,94 @@ describe("PostgresWorkspaceMemberStore", () => {
     ]);
     await expect(store.listMembers("outsider-1", "workspace-1"))
       .rejects.toMatchObject({ code: "workspace_not_found" });
+  });
+
+  it("reports a tombstone only to retained workspace members", async () => {
+    await pool.query(
+      `UPDATE editor_workspaces
+       SET deleted_at = $1, deleted_by = $2, purge_after = $3
+       WHERE id = $4`,
+      [5_000, "owner-1", 604_805_000, "workspace-1"],
+    );
+
+    await expect(store.listMembers("member-1", "workspace-1"))
+      .rejects.toMatchObject({ code: "workspace_deleted" });
+    await expect(store.listMembers("outsider-1", "workspace-1"))
+      .rejects.toMatchObject({ code: "workspace_not_found" });
+    await expect(store.updateRole({
+      actorUserId: "owner-1",
+      memberId: "member-1",
+      role: "editor",
+      workspaceId: "workspace-1",
+    })).rejects.toMatchObject({ code: "workspace_deleted" });
+    await expect(store.leaveWorkspace({
+      userDisplayName: "Member",
+      userId: "member-1",
+      workspaceId: "workspace-1",
+    })).rejects.toMatchObject({ code: "workspace_deleted" });
+    await expect(store.updateRole({
+      actorUserId: "outsider-1",
+      memberId: "member-1",
+      role: "editor",
+      workspaceId: "workspace-1",
+    })).rejects.toMatchObject({ code: "workspace_forbidden" });
+  });
+
+  it("publishes invalidations for every affected member mutation", async () => {
+    const notifications = vi.fn(async (client, event) => {
+      await client.query("SELECT 1 AS notification_marker");
+      return event;
+    });
+    store = new PostgresWorkspaceMemberStore(pool, {
+      auditEventIdFactory: () => `audit-${++auditEventSequence}`,
+      notifyAccessInvalidation: notifications,
+      now: () => 4_000,
+    });
+
+    await store.updateRole({
+      actorUserId: "owner-1",
+      memberId: "member-1",
+      role: "editor",
+      workspaceId: "workspace-1",
+    });
+    await store.transferOwnership({
+      actorUserId: "owner-1",
+      retainOwnerRole: false,
+      targetUserId: "editor-1",
+      workspaceId: "workspace-1",
+    });
+    await store.removeMember({
+      actorUserId: "editor-1",
+      memberId: "member-1",
+      workspaceId: "workspace-1",
+    });
+    await store.leaveWorkspace({
+      userDisplayName: "Owner",
+      userId: "owner-1",
+      workspaceId: "workspace-1",
+    });
+
+    expect(notifications).toHaveBeenNthCalledWith(1, expect.anything(), {
+      userId: "member-1",
+      workspaceId: "workspace-1",
+    });
+    expect(notifications).toHaveBeenNthCalledWith(2, expect.anything(), {
+      userId: "editor-1",
+      workspaceId: "workspace-1",
+    });
+    expect(notifications).toHaveBeenNthCalledWith(3, expect.anything(), {
+      userId: "owner-1",
+      workspaceId: "workspace-1",
+    });
+    expect(notifications).toHaveBeenNthCalledWith(4, expect.anything(), {
+      userId: "member-1",
+      workspaceId: "workspace-1",
+    });
+    expect(notifications).toHaveBeenNthCalledWith(5, expect.anything(), {
+      userId: "owner-1",
+      workspaceId: "workspace-1",
+    });
+    expect(notifications).toHaveBeenCalledTimes(5);
   });
 
   it("changes a member role, writes an audit event, and protects the last owner", async () => {

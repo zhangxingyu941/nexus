@@ -21,10 +21,11 @@ export async function DELETE(request: Request, context: WorkspaceMemberRouteCont
 }
 
 function createHandlers() {
-  const { authStore, workspaceMemberStore } = createPostgresServices();
+  const { authStore, workspaceMemberStore, workspaceStore } = createPostgresServices();
   return createWorkspaceMemberRouteHandlers({
     authStore,
     memberStore: workspaceMemberStore,
+    workspaceStore,
   });
 }
 

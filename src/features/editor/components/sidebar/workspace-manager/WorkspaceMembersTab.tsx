@@ -127,7 +127,7 @@ export function WorkspaceMembersTab({
     setPendingMemberId(currentUserId ?? "");
     try {
       await session.runServerTransition(async () => {
-        await leaveWorkspace(workspaceId);
+        return leaveWorkspace(workspaceId);
       });
       onMemberChanged?.();
     } catch (caught) {

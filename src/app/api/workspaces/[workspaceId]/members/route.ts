@@ -18,9 +18,10 @@ function unavailableResponse() {
 export async function GET(request: Request, context: WorkspaceMemberRouteContext) {
   if (!hasDatabaseConfiguration()) return unavailableResponse();
   const { workspaceId } = await context.params;
-  const { authStore, workspaceMemberStore } = createPostgresServices();
+  const { authStore, workspaceMemberStore, workspaceStore } = createPostgresServices();
   return createWorkspaceMemberRouteHandlers({
     authStore,
     memberStore: workspaceMemberStore,
+    workspaceStore,
   }).GET(request, workspaceId);
 }

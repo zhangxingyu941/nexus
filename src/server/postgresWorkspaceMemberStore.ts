@@ -4,15 +4,26 @@ import type { WorkspaceRole } from "../shared/workspace";
 import type { WorkspaceMemberSummary } from "../shared/workspaceMembers";
 import { PostgresWorkspaceStore } from "./postgresWorkspaceStore";
 import { WorkspaceAuditStore } from "./workspaceAuditStore";
+import {
+  notifyWorkspaceAccessInvalidation,
+  type WorkspaceAccessInvalidation,
+} from "./workspaceAccessNotifications";
 import { WorkspaceDomainError } from "./workspaceErrors";
+
+type WorkspaceAccessNotifier = (
+  client: Pick<PoolClient, "query">,
+  event: WorkspaceAccessInvalidation,
+) => Promise<unknown>;
 
 interface PostgresWorkspaceMemberStoreOptions {
   auditEventIdFactory?: () => string;
   now?: () => number;
+  notifyAccessInvalidation?: WorkspaceAccessNotifier;
 }
 
 export class PostgresWorkspaceMemberStore {
   private readonly auditStore: WorkspaceAuditStore;
+  private readonly notifyAccessInvalidation: WorkspaceAccessNotifier;
   private readonly workspaceStore: PostgresWorkspaceStore;
 
   constructor(
@@ -24,6 +35,8 @@ export class PostgresWorkspaceMemberStore {
       options.auditEventIdFactory ?? (() => `workspace-audit-${randomUUID()}`),
       now,
     );
+    this.notifyAccessInvalidation = options.notifyAccessInvalidation
+      ?? notifyWorkspaceAccessInvalidation;
     this.workspaceStore = new PostgresWorkspaceStore(pool, { now });
   }
 
@@ -32,7 +45,7 @@ export class PostgresWorkspaceMemberStore {
     workspaceId: string,
   ): Promise<WorkspaceMemberSummary[]> {
     const access = await this.pool.query(
-      `SELECT workspaces.id
+      `SELECT workspaces.id, workspaces.deleted_at
        FROM editor_workspaces workspaces
        INNER JOIN workspace_members members ON members.workspace_id = workspaces.id
        WHERE workspaces.id = $1 AND members.user_id = $2
@@ -41,6 +54,9 @@ export class PostgresWorkspaceMemberStore {
     );
     if (!access.rows[0]) {
       throw new WorkspaceDomainError("workspace_not_found", "Workspace not found");
+    }
+    if (access.rows[0].deleted_at !== null && access.rows[0].deleted_at !== undefined) {
+      throw new WorkspaceDomainError("workspace_deleted", "Workspace has been deleted");
     }
 
     const result = await this.pool.query(
@@ -75,7 +91,7 @@ export class PostgresWorkspaceMemberStore {
     try {
       await client.query("BEGIN");
       const workspace = await this.lockWorkspace(client, input.workspaceId);
-      await this.requireOwner(client, input.actorUserId, workspace.id);
+      await this.requireOwner(client, input.actorUserId, workspace);
       const targetRole = await this.requireMember(client, input.memberId, workspace.id);
 
       if (targetRole === role) {
@@ -113,6 +129,10 @@ export class PostgresWorkspaceMemberStore {
         workspaceId: workspace.id,
         workspaceName: workspace.name,
       });
+      await this.notifyAccessInvalidation(client, {
+        userId: input.memberId,
+        workspaceId: workspace.id,
+      });
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK");
@@ -132,7 +152,7 @@ export class PostgresWorkspaceMemberStore {
     try {
       await client.query("BEGIN");
       const workspace = await this.lockWorkspace(client, input.workspaceId);
-      await this.requireOwner(client, input.actorUserId, workspace.id);
+      await this.requireOwner(client, input.actorUserId, workspace);
       if (input.actorUserId === input.memberId) {
         throw new WorkspaceDomainError(
           "member_self_remove_forbidden",
@@ -171,7 +191,7 @@ export class PostgresWorkspaceMemberStore {
     try {
       await client.query("BEGIN");
       const workspace = await this.lockWorkspace(client, input.workspaceId);
-      await this.requireOwner(client, input.actorUserId, workspace.id);
+      await this.requireOwner(client, input.actorUserId, workspace);
       const targetRole = await this.requireTransferTarget(
         client,
         input.targetUserId,
@@ -204,6 +224,16 @@ export class PostgresWorkspaceMemberStore {
         workspaceId: workspace.id,
         workspaceName: workspace.name,
       });
+      await this.notifyAccessInvalidation(client, {
+        userId: input.targetUserId,
+        workspaceId: workspace.id,
+      });
+      if (!input.retainOwnerRole) {
+        await this.notifyAccessInvalidation(client, {
+          userId: input.actorUserId,
+          workspaceId: workspace.id,
+        });
+      }
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK");
@@ -224,6 +254,7 @@ export class PostgresWorkspaceMemberStore {
       await client.query("BEGIN");
       const workspace = await this.lockWorkspace(client, input.workspaceId);
       const role = await this.requireMember(client, input.userId, workspace.id);
+      this.requireActiveWorkspace(workspace);
       await this.protectLastOwner(client, workspace.id, role);
       const selectedWorkspaceId = await this.removeMembership(client, {
         actorUserId: input.userId,
@@ -291,12 +322,16 @@ export class PostgresWorkspaceMemberStore {
       workspaceId: input.workspace.id,
       workspaceName: input.workspace.name,
     });
+    await this.notifyAccessInvalidation(client, {
+      userId: input.userId,
+      workspaceId: input.workspace.id,
+    });
 
     const remaining = await client.query(
       `SELECT workspaces.id
        FROM workspace_members members
        INNER JOIN editor_workspaces workspaces ON workspaces.id = members.workspace_id
-       WHERE members.user_id = $1
+       WHERE members.user_id = $1 AND workspaces.deleted_at IS NULL
        ORDER BY workspaces.created_at ASC, workspaces.id ASC`,
       [input.userId],
     );
@@ -328,7 +363,7 @@ export class PostgresWorkspaceMemberStore {
 
   private async lockWorkspace(client: PoolClient, workspaceId: string) {
     const result = await client.query(
-      `SELECT id, name
+      `SELECT id, name, deleted_at
        FROM editor_workspaces
        WHERE id = $1
        FOR UPDATE`,
@@ -338,26 +373,46 @@ export class PostgresWorkspaceMemberStore {
     if (!row) {
       throw new WorkspaceDomainError("workspace_not_found", "Workspace not found");
     }
-    return { id: String(row.id), name: String(row.name) };
+    return {
+      deletedAt: row.deleted_at === null || row.deleted_at === undefined
+        ? null
+        : Number(row.deleted_at),
+      id: String(row.id),
+      name: String(row.name),
+    };
   }
 
   private async requireOwner(
     client: PoolClient,
     actorUserId: string,
-    workspaceId: string,
+    workspace: { deletedAt: number | null; id: string },
   ) {
     const result = await client.query(
       `SELECT role
        FROM workspace_members
        WHERE workspace_id = $1 AND user_id = $2
        LIMIT 1`,
-      [workspaceId, actorUserId],
+      [workspace.id, actorUserId],
     );
-    if (result.rows[0]?.role !== "owner") {
+    const role = result.rows[0]?.role;
+    if (!role) {
       throw new WorkspaceDomainError(
         "workspace_forbidden",
         "Only workspace owners can manage members",
       );
+    }
+    this.requireActiveWorkspace(workspace);
+    if (role !== "owner") {
+      throw new WorkspaceDomainError(
+        "workspace_forbidden",
+        "Only workspace owners can manage members",
+      );
+    }
+  }
+
+  private requireActiveWorkspace(workspace: { deletedAt: number | null }) {
+    if (workspace.deletedAt !== null) {
+      throw new WorkspaceDomainError("workspace_deleted", "Workspace has been deleted");
     }
   }
 

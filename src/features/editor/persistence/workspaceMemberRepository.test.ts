@@ -38,10 +38,14 @@ describe("workspace member repository", () => {
 
     await updateWorkspaceMemberRole("workspace/a", "user/b", "viewer");
     await removeWorkspaceMember("workspace/a", "user/b");
+    const transition = {
+      catalog: { currentWorkspaceId: "ws-1", workspaces: [] },
+      workspace: { content: {}, summary: { id: "ws-1" } },
+    };
     fetchSpy.mockResolvedValueOnce(
-      new Response(JSON.stringify({ selectedWorkspaceId: "ws-1" }), { status: 200 }),
+      new Response(JSON.stringify(transition), { status: 200 }),
     );
-    await leaveWorkspace("workspace/a");
+    await expect(leaveWorkspace("workspace/a")).resolves.toEqual(transition);
 
     expect(fetchSpy).toHaveBeenNthCalledWith(
       1,

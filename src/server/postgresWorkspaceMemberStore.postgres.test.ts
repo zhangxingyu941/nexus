@@ -2,6 +2,7 @@ import type { Pool, PoolClient } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createPostgresIntegrationContext } from "../test/postgresIntegration";
 import { PostgresWorkspaceMemberStore } from "./postgresWorkspaceMemberStore";
+import { PostgresWorkspaceAccessListener } from "./workspaceAccessNotifications";
 
 const describeWithPostgres = process.env.TEST_DATABASE_URL ? describe : describe.skip;
 
@@ -83,7 +84,46 @@ describeWithPostgres("PostgresWorkspaceMemberStore ownership transfer", () => {
       ["workspace-1"],
     )).resolves.toMatchObject({ rows: [{ count: 1 }] });
   });
+
+  it("delivers a committed member access invalidation", async () => {
+    const listener = new PostgresWorkspaceAccessListener(pool);
+    const received: Array<{ userId: string | null; workspaceId: string }> = [];
+    listener.on("invalidation", (event) => received.push(event));
+    await listener.start();
+
+    try {
+      const store = new PostgresWorkspaceMemberStore(pool);
+      await store.updateRole({
+        actorUserId: "owner-1",
+        memberId: "editor-1",
+        role: "viewer",
+        workspaceId: "workspace-1",
+      });
+
+      await waitForInvalidation(received, {
+        userId: "editor-1",
+        workspaceId: "workspace-1",
+      });
+    } finally {
+      await listener.stop();
+    }
+  });
 });
+
+async function waitForInvalidation(
+  received: Array<{ userId: string | null; workspaceId: string }>,
+  expected: { userId: string | null; workspaceId: string },
+) {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    if (received.some((event) => event.userId === expected.userId
+      && event.workspaceId === expected.workspaceId)) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("Timed out waiting for workspace access invalidation");
+}
 
 async function loadBackendPid(client: PoolClient) {
   const result = await client.query("SELECT pg_backend_pid() AS pid");

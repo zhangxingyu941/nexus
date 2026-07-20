@@ -1,7 +1,9 @@
 import type { WorkspaceRole } from "../../../shared/workspace";
+import type { WorkspaceTransitionResponse } from "../../../shared/workspaceApi";
 import type {
   DatabaseWorkspaceMember,
 } from "../session/sessionTypes";
+import { jsonRequest, requestJson } from "./apiClient";
 
 export async function loadWorkspaceMembers(
   workspaceId: string,
@@ -56,25 +58,11 @@ export async function removeWorkspaceMember(
 
 export async function leaveWorkspace(
   workspaceId: string,
-): Promise<{ selectedWorkspaceId: string }> {
-  const response = await fetch(
+): Promise<WorkspaceTransitionResponse> {
+  return requestJson<WorkspaceTransitionResponse>(
     `/api/workspaces/${encodeURIComponent(workspaceId)}/leave`,
-    {
-      headers: { Accept: "application/json" },
-      method: "POST",
-    },
+    jsonRequest("POST"),
   );
-
-  const payload = await response.json() as {
-    error?: string;
-    selectedWorkspaceId?: string;
-  };
-
-  if (!response.ok || !payload.selectedWorkspaceId) {
-    throw new Error(payload.error || "退出工作区失败");
-  }
-
-  return { selectedWorkspaceId: payload.selectedWorkspaceId };
 }
 
 function memberPath(workspaceId: string) {

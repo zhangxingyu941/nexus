@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { WorkspaceMembersTab } from "./WorkspaceMembersTab";
@@ -69,6 +69,36 @@ describe("WorkspaceMembersTab", () => {
     await screen.findByText("editor@example.com");
 
     expect(screen.queryByRole("button", { name: /转让所有权/ })).not.toBeInTheDocument();
+  });
+
+  it("returns the leave transition through the workspace session", async () => {
+    const transition = {
+      catalog: { currentWorkspaceId: "fallback-1", workspaces: [] },
+      workspace: { content: {}, summary: { id: "fallback-1" } },
+    };
+    const fetchSpy = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ members: membersWithTwoOwners }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(transition), { status: 200 }));
+    const runServerTransition = vi.fn(async (operation: () => Promise<unknown>) => operation());
+    render(
+      <WorkspaceMembersTab
+        currentUserId="editor-1"
+        session={{ runServerTransition }}
+        workspaceId="workspace-1"
+      />,
+    );
+
+    await screen.findByText("editor@example.com");
+    await userEvent.click(screen.getByRole("button"));
+    const dialog = screen.getByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "确认退出" }));
+
+    await waitFor(() => expect(runServerTransition).toHaveBeenCalledTimes(1));
+    await expect(runServerTransition.mock.results[0]!.value).resolves.toEqual(transition);
+    expect(fetchSpy).toHaveBeenLastCalledWith(
+      "/api/workspaces/workspace-1/leave",
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 
   it("renders loading state", () => {

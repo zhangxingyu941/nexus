@@ -2,12 +2,14 @@ import type { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { PostgresWorkspaceAccessListener, notifyWorkspaceAccessInvalidation } from "./workspaceAccessNotifications";
 
+const describeWithPostgres = process.env.TEST_DATABASE_URL ? describe : describe.skip;
+
 function createRealPool(): Pool {
   const { Pool } = require("pg") as typeof import("pg");
   return new Pool({ connectionString: process.env.TEST_DATABASE_URL });
 }
 
-describe("PostgresWorkspaceAccessListener (real PostgreSQL)", () => {
+describeWithPostgres("PostgresWorkspaceAccessListener (real PostgreSQL)", () => {
   let pool: Pool;
 
   beforeEach(() => {

@@ -15,10 +15,11 @@ export async function POST(request: Request, context: WorkspaceOwnershipTransfer
 }
 
 function createHandlers() {
-  const { authStore, workspaceMemberStore } = createPostgresServices();
+  const { authStore, workspaceMemberStore, workspaceStore } = createPostgresServices();
   return createWorkspaceMemberRouteHandlers({
     authStore,
     memberStore: workspaceMemberStore,
+    workspaceStore,
   });
 }
 

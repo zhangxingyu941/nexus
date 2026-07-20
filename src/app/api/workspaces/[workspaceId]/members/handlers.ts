@@ -3,6 +3,7 @@ import { workspaceErrorResponse } from "@/app/api/workspaceErrorResponse";
 import type { WorkspaceRole } from "@/shared/workspace";
 import type { PostgresAuthStore } from "@/server/postgresAuthStore";
 import type { PostgresWorkspaceMemberStore } from "@/server/postgresWorkspaceMemberStore";
+import type { PostgresWorkspaceStore } from "@/server/postgresWorkspaceStore";
 import { getSessionToken } from "@/server/sessionCookie";
 import { WorkspaceDomainError } from "@/server/workspaceErrors";
 
@@ -16,11 +17,13 @@ interface WorkspaceMemberRouteDependencies {
     | "transferOwnership"
     | "updateRole"
   >;
+  workspaceStore: Pick<PostgresWorkspaceStore, "listWorkspaces" | "loadWorkspace">;
 }
 
 export function createWorkspaceMemberRouteHandlers({
   authStore,
   memberStore,
+  workspaceStore,
 }: WorkspaceMemberRouteDependencies) {
   async function authenticate(request: Request) {
     return authStore.getUserBySessionToken(getSessionToken(request));
@@ -86,7 +89,9 @@ export function createWorkspaceMemberRouteHandlers({
           userId: user.id,
           workspaceId,
         });
-        return NextResponse.json({ selectedWorkspaceId });
+        const catalog = await workspaceStore.listWorkspaces(user.id);
+        const workspace = await workspaceStore.loadWorkspace(user.id, selectedWorkspaceId);
+        return NextResponse.json({ catalog, workspace });
       } catch (error) {
         return mapMemberError(error);
       }
