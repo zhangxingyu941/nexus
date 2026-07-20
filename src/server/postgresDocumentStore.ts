@@ -5,12 +5,28 @@ import type {
   EditorDocument,
   HeadingLevel,
 } from "../features/editor/model/block";
-import type { DocumentAccess } from "../shared/documentAccess";
+import type {
+  DocumentAccess,
+  DocumentAccessMode,
+  DocumentPolicy,
+} from "../shared/documentAccess";
 import { DocumentAuthorizationService, DocumentNotFoundError } from "./documentAuthorization";
 
 export interface DocumentSnapshot {
   access: DocumentAccess;
   document: EditorDocument;
+}
+
+export interface DocumentPolicySnapshot {
+  access: DocumentAccess;
+  policy: DocumentPolicy;
+}
+
+export class DocumentPolicyMemberError extends Error {
+  constructor() {
+    super("授权用户不是当前工作区成员");
+    this.name = "DocumentPolicyMemberError";
+  }
 }
 
 export class PostgresDocumentStore {
@@ -223,5 +239,115 @@ export class PostgresDocumentStore {
     }
 
     return this.loadDocument(userId, publicId);
+  }
+
+  async loadDocumentPolicy(userId: string, publicId: string): Promise<DocumentPolicySnapshot> {
+    const access = await this.authorization.requireUserAction(userId, publicId, "manage");
+    const policy = await this.readDocumentPolicy(this.pool, access);
+    return {
+      access: { ...access, accessMode: policy.accessMode },
+      policy,
+    };
+  }
+
+  async replaceDocumentPolicy(
+    userId: string,
+    publicId: string,
+    policy: DocumentPolicy,
+  ): Promise<DocumentPolicySnapshot> {
+    const access = await this.authorization.requireUserAction(userId, publicId, "manage");
+    const client = await this.pool.connect();
+    const updatedAt = Date.now();
+
+    try {
+      await client.query("BEGIN");
+      for (const permission of policy.permissions) {
+        const membership = await client.query(
+          `SELECT 1
+           FROM workspace_members
+           WHERE workspace_id = $1 AND user_id = $2
+           LIMIT 1`,
+          [access.workspaceId, permission.userId],
+        );
+        if (!membership.rows[0]) {
+          throw new DocumentPolicyMemberError();
+        }
+      }
+
+      const updated = await client.query(
+        `UPDATE editor_documents
+         SET access_mode = $1, updated_at = $2
+         WHERE workspace_id = $3 AND id = $4`,
+        [policy.accessMode, updatedAt, access.workspaceId, access.documentId],
+      );
+      if (updated.rowCount !== 1) {
+        throw new DocumentNotFoundError();
+      }
+
+      await client.query(
+        `DELETE FROM document_permissions
+         WHERE workspace_id = $1 AND document_id = $2`,
+        [access.workspaceId, access.documentId],
+      );
+
+      for (const permission of policy.permissions) {
+        await client.query(
+          `INSERT INTO document_permissions
+             (workspace_id, document_id, user_id, role, created_by, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $6)`,
+          [
+            access.workspaceId,
+            access.documentId,
+            permission.userId,
+            permission.role,
+            userId,
+            updatedAt,
+          ],
+        );
+      }
+
+      await client.query(
+        "UPDATE editor_workspaces SET updated_at = $1 WHERE id = $2",
+        [updatedAt, access.workspaceId],
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    return this.loadDocumentPolicy(userId, publicId);
+  }
+
+  private async readDocumentPolicy(
+    executor: Pick<Pool, "query">,
+    access: DocumentAccess,
+  ): Promise<DocumentPolicy> {
+    const document = await executor.query(
+      `SELECT access_mode
+       FROM editor_documents
+       WHERE workspace_id = $1 AND id = $2`,
+      [access.workspaceId, access.documentId],
+    );
+    if (!document.rows[0]) {
+      throw new DocumentNotFoundError();
+    }
+    const permissions = await executor.query(
+      `SELECT user_id, role
+       FROM document_permissions
+       WHERE workspace_id = $1 AND document_id = $2
+       ORDER BY created_at ASC, user_id ASC`,
+      [access.workspaceId, access.documentId],
+    );
+
+    return {
+      accessMode: document.rows[0].access_mode as DocumentAccessMode,
+      permissions: permissions.rows.map((permission) => ({
+        role: permission.role as DocumentPolicy["permissions"][number]["role"],
+        userId: String(permission.user_id),
+      })),
+    };
   }
 }

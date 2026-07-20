@@ -8,6 +8,8 @@ function createHandlers() {
   };
   const documentStore = {
     loadDocument: vi.fn(),
+    loadDocumentPolicy: vi.fn(),
+    replaceDocumentPolicy: vi.fn(),
     saveDocument: vi.fn(),
   };
 
@@ -137,6 +139,55 @@ describe("document route handlers", () => {
       documentPayload(),
     );
   });
+
+  it("hides a policy from a document reader without manage access", async () => {
+    const { authStore, documentStore, handlers } = createHandlers();
+    authStore.getUserBySessionToken.mockResolvedValue({ id: "editor-1" });
+    documentStore.loadDocumentPolicy.mockRejectedValue(new DocumentNotFoundError());
+
+    const response = await handlers.GETPermissions(
+      new Request("http://localhost/api/documents/public-document-1/permissions"),
+      "public-document-1",
+    );
+
+    expect(response.status).toBe(404);
+    expect(documentStore.loadDocumentPolicy).toHaveBeenCalledWith("editor-1", "public-document-1");
+  });
+
+  it("rejects an invalid document policy without replacing it", async () => {
+    const { authStore, documentStore, handlers } = createHandlers();
+    authStore.getUserBySessionToken.mockResolvedValue({ id: "owner-1" });
+
+    const response = await handlers.PATCHPermissions(
+      jsonRequest({ accessMode: "link", permissions: [] }, "PATCH"),
+      "public-document-1",
+    );
+
+    expect(response.status).toBe(400);
+    expect(documentStore.replaceDocumentPolicy).not.toHaveBeenCalled();
+  });
+
+  it("replaces a valid document policy for a manager", async () => {
+    const { authStore, documentStore, handlers } = createHandlers();
+    authStore.getUserBySessionToken.mockResolvedValue({ id: "owner-1" });
+    documentStore.replaceDocumentPolicy.mockResolvedValue({
+      access: { canManage: true, publicId: "public-document-1" },
+      policy: policyPayload(),
+    });
+
+    const response = await handlers.PATCHPermissions(
+      jsonRequest(policyPayload(), "PATCH"),
+      "public-document-1",
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ policy: policyPayload() });
+    expect(documentStore.replaceDocumentPolicy).toHaveBeenCalledWith(
+      "owner-1",
+      "public-document-1",
+      policyPayload(),
+    );
+  });
 });
 
 function documentPayload() {
@@ -148,10 +199,17 @@ function documentPayload() {
   };
 }
 
-function jsonRequest(body: unknown) {
+function jsonRequest(body: unknown, method = "PUT") {
   return new Request("http://localhost/api/documents/public-document-1", {
     body: JSON.stringify(body),
     headers: { "content-type": "application/json" },
-    method: "PUT",
+    method,
   });
+}
+
+function policyPayload() {
+  return {
+    accessMode: "private",
+    permissions: [{ role: "viewer", userId: "editor-1" }],
+  };
 }

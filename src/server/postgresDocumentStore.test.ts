@@ -7,7 +7,7 @@ import {
   DocumentNotFoundError,
   PostgresDocumentAuthorizationRecords,
 } from "./documentAuthorization";
-import { PostgresDocumentStore } from "./postgresDocumentStore";
+import { DocumentPolicyMemberError, PostgresDocumentStore } from "./postgresDocumentStore";
 
 describe("PostgresDocumentStore", () => {
   let pool: Pool;
@@ -76,6 +76,44 @@ describe("PostgresDocumentStore", () => {
       ["workspace-1", "document-1"],
     )).resolves.toMatchObject({
       rows: [{ created_by: "author-1", public_id: "public-document-1" }],
+    });
+  });
+
+  it("loads and replaces a managed document policy", async () => {
+    await expect(store.loadDocumentPolicy("owner-1", "public-document-1")).resolves.toMatchObject({
+      access: { canManage: true, publicId: "public-document-1" },
+      policy: { accessMode: "private", permissions: [] },
+    });
+
+    await store.replaceDocumentPolicy("owner-1", "public-document-1", {
+      accessMode: "workspace",
+      permissions: [{ role: "viewer", userId: "editor-1" }],
+    });
+
+    await expect(store.loadDocumentPolicy("owner-1", "public-document-1")).resolves.toMatchObject({
+      policy: {
+        accessMode: "workspace",
+        permissions: [{ role: "viewer", userId: "editor-1" }],
+      },
+    });
+  });
+
+  it("does not replace a policy when a granted user is no longer a workspace member", async () => {
+    await store.replaceDocumentPolicy("owner-1", "public-document-1", {
+      accessMode: "private",
+      permissions: [{ role: "viewer", userId: "editor-1" }],
+    });
+
+    await expect(store.replaceDocumentPolicy("owner-1", "public-document-1", {
+      accessMode: "workspace",
+      permissions: [{ role: "editor", userId: "former-member-1" }],
+    })).rejects.toBeInstanceOf(DocumentPolicyMemberError);
+
+    await expect(store.loadDocumentPolicy("owner-1", "public-document-1")).resolves.toMatchObject({
+      policy: {
+        accessMode: "private",
+        permissions: [{ role: "viewer", userId: "editor-1" }],
+      },
     });
   });
 });

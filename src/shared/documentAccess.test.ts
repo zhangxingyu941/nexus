@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isDocumentAccessMode,
+  isDocumentPolicy,
   isDocumentPermissionRole,
 } from "./documentAccess";
 
@@ -13,5 +14,20 @@ describe("document access contracts", () => {
     expect(isDocumentPermissionRole("editor")).toBe(true);
     expect(isDocumentPermissionRole("viewer")).toBe(true);
     expect(isDocumentPermissionRole("owner")).toBe(false);
+  });
+
+  it("accepts only unique workspace or private permission policies", () => {
+    expect(isDocumentPolicy({
+      accessMode: "private",
+      permissions: [{ role: "viewer", userId: "user-1" }],
+    })).toBe(true);
+    expect(isDocumentPolicy({ accessMode: "link", permissions: [] })).toBe(false);
+    expect(isDocumentPolicy({
+      accessMode: "workspace",
+      permissions: [
+        { role: "viewer", userId: "user-1" },
+        { role: "editor", userId: "user-1" },
+      ],
+    })).toBe(false);
   });
 });
