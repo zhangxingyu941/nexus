@@ -107,6 +107,7 @@ const HEADING_LEVEL_MIGRATION_ID = "2026-07-17-editor-heading-level";
 const WORKSPACE_SOFT_DELETION_MIGRATION_ID =
   "2026-07-16-workspace-soft-deletion";
 const DOCUMENT_PERMISSIONS_MIGRATION_ID = "2026-07-20-document-permissions";
+const DOCUMENT_PUBLIC_ID_MIGRATION_ID = "2026-07-20-document-public-id";
 const MIGRATION_LOCK_ID = "__migration_lock__";
 
 const WORKSPACE_SCOPED_CONTENT_SCHEMA = [
@@ -338,6 +339,15 @@ const DOCUMENT_PERMISSIONS_FINAL_SCHEMA = [
   "CREATE INDEX document_permissions_user_idx ON document_permissions(user_id, workspace_id, document_id)",
 ];
 
+const DOCUMENT_PUBLIC_ID_SCHEMA = [
+  "ALTER TABLE editor_documents ADD COLUMN public_id TEXT",
+];
+
+const DOCUMENT_PUBLIC_ID_FINAL_SCHEMA = [
+  "ALTER TABLE editor_documents ALTER COLUMN public_id SET NOT NULL",
+  "ALTER TABLE editor_documents ADD CONSTRAINT editor_documents_public_id_key UNIQUE (public_id)",
+];
+
 async function migrateDocumentPermissions(client: PoolClient) {
   for (const statement of DOCUMENT_PERMISSIONS_SCHEMA) {
     await client.query(statement);
@@ -375,6 +385,35 @@ async function migrateDocumentPermissions(client: PoolClient) {
   }
 
   for (const statement of DOCUMENT_PERMISSIONS_FINAL_SCHEMA) {
+    await client.query(statement);
+  }
+}
+
+async function migrateDocumentPublicIds(client: PoolClient) {
+  for (const statement of DOCUMENT_PUBLIC_ID_SCHEMA) {
+    await client.query(statement);
+  }
+
+  const documents = await client.query(
+    `SELECT workspace_id, id
+     FROM editor_documents
+     WHERE public_id IS NULL`,
+  );
+
+  for (const document of documents.rows) {
+    await client.query(
+      `UPDATE editor_documents
+       SET public_id = $1
+       WHERE workspace_id = $2 AND id = $3`,
+      [
+        `document-${randomUUID()}`,
+        String(document.workspace_id),
+        String(document.id),
+      ],
+    );
+  }
+
+  for (const statement of DOCUMENT_PUBLIC_ID_FINAL_SCHEMA) {
     await client.query(statement);
   }
 }
@@ -584,6 +623,20 @@ export async function migrateDatabase(pool: Pool) {
       await client.query(
         "INSERT INTO schema_migrations (id, applied_at) VALUES ($1, $2)",
         [DOCUMENT_PERMISSIONS_MIGRATION_ID, Date.now()],
+      );
+    }
+
+    const documentPublicIdResult = await client.query(
+      "SELECT id FROM schema_migrations WHERE id = $1",
+      [DOCUMENT_PUBLIC_ID_MIGRATION_ID],
+    );
+
+    if (documentPublicIdResult.rows.length === 0) {
+      await migrateDocumentPublicIds(client);
+
+      await client.query(
+        "INSERT INTO schema_migrations (id, applied_at) VALUES ($1, $2)",
+        [DOCUMENT_PUBLIC_ID_MIGRATION_ID, Date.now()],
       );
     }
 

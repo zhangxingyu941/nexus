@@ -171,9 +171,9 @@ async function seedWorkspace(pool: Pool) {
   }
   for (const id of ["document-1", "document-2"]) {
     await pool.query(
-      `INSERT INTO editor_documents (workspace_id, id, title, position, updated_at)
-       VALUES ($1, $2, $3, $4, $5)`,
-      ["workspace-1", id, id, id === "document-1" ? 0 : 1, 1_000],
+      `INSERT INTO editor_documents (workspace_id, id, public_id, created_by, title, position, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      ["workspace-1", id, `document-${id}`, "owner-1", id, id === "document-1" ? 0 : 1, 1_000],
     );
   }
   for (const [id, type] of [["block-1", "image"], ["block-2", "file"], ["block-3", "file"]]) {

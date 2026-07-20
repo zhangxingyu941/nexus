@@ -11,6 +11,7 @@ export interface DocumentAccess {
   canRead: boolean;
   canWrite: boolean;
   documentId: string;
+  publicId: string;
   role: "owner" | "editor" | "viewer" | "none";
   source: "workspace-owner" | "author" | "explicit" | "workspace";
   workspaceId: string;

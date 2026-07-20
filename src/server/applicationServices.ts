@@ -1,5 +1,9 @@
 import type { Pool } from "pg";
 import { getDatabasePool } from "./database/pool";
+import {
+  DocumentAuthorizationService,
+  PostgresDocumentAuthorizationRecords,
+} from "./documentAuthorization";
 import { PostgresAuthStore } from "./postgresAuthStore";
 import { PostgresWorkspaceInviteStore } from "./postgresWorkspaceInviteStore";
 import { PostgresWorkspaceLifecycleStore } from "./postgresWorkspaceLifecycleStore";
@@ -17,6 +21,9 @@ let workspaceInviteLimiter: WorkspaceInviteRateLimiter | null = null;
 
 export function createPostgresServices(pool: Pool = getDatabasePool()) {
   const workspaceStore = new PostgresWorkspaceStore(pool);
+  const documentAuthorization = new DocumentAuthorizationService(
+    new PostgresDocumentAuthorizationRecords(pool),
+  );
   const production = process.env.NODE_ENV === "production";
   const workspaceInviteSecret = process.env.AUTH_HASH_SECRET?.trim()
     || (production
@@ -45,6 +52,7 @@ export function createPostgresServices(pool: Pool = getDatabasePool()) {
 
   return {
     authStore,
+    documentAuthorization,
     workspaceInviteLimiter,
     workspaceInviteMailer,
     workspaceInviteStore,

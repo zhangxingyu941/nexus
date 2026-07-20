@@ -95,7 +95,7 @@ it("adds document ownership and permissions idempotently", async () => {
 
 在 `WORKSPACE_SOFT_DELETION_MIGRATION_ID` 后加入 `2026-07-20-document-permissions`。迁移必须：
 
-1. 给 `editor_documents` 增加 `created_by` 和 `access_mode`，默认模式为 `workspace`。
+1. 给 `editor_documents` 增加全局唯一 `public_id`、`created_by` 和 `access_mode`；直接路由的 `documentId` 使用 `public_id`，默认模式为 `workspace`。
 2. 通过 `workspace_members` 中按 `created_at, user_id` 排序的最早 owner 回填历史文档作者，再将 `created_by` 设为非空外键；不恢复单一 `owner_id`。
 3. 创建 `document_permissions`，主键为 `(workspace_id, document_id, user_id)`，角色仅允许 `editor` 和 `viewer`。
 4. 使用现有迁移锁、事务和 `schema_migrations` 记录模式，重复运行不得失败。
@@ -219,7 +219,7 @@ async saveDocument(userId: string, documentId: string, document: EditorDocument)
 }
 ```
 
-策略替换在 owner 的 `manage` 权限校验后放入单个事务。工作区目录只返回用户可访问的文档元数据；数据库模式的旧全量工作区保存拒绝包含不可访问文档的负载。本地 IndexedDB 行为不变。
+策略替换在 owner 的 `manage` 权限校验后放入单个事务。工作区目录只返回用户可访问的文档元数据，其中包含对外唯一 `publicId`；数据库模式的旧全量工作区保存拒绝包含不可访问文档的负载。本地 IndexedDB 行为不变。
 
 - [ ] **步骤 4：验证 GREEN 并提交**
 

@@ -484,6 +484,21 @@ export class PostgresWorkspaceStore {
          FOR UPDATE`,
         [access.workspaceId],
       );
+      const documentAuthorsResult = await client.query(
+        `SELECT id, created_by, public_id
+         FROM editor_documents
+         WHERE workspace_id = $1`,
+        [access.workspaceId],
+      );
+      const persistedDocuments = new Map(
+        documentAuthorsResult.rows.map((row) => [
+          String(row.id),
+          {
+            createdBy: String(row.created_by),
+            publicId: String(row.public_id),
+          },
+        ]),
+      );
 
       await client.query(
         "UPDATE editor_workspaces SET updated_at = $1 WHERE id = $2",
@@ -498,9 +513,12 @@ export class PostgresWorkspaceStore {
         documentPosition,
         document,
       ] of workspace.documents.entries()) {
+        const persistedDocument = persistedDocuments.get(document.id);
         await this.insertDocument(
           client,
           access.workspaceId,
+          persistedDocument?.createdBy ?? userId,
+          persistedDocument?.publicId ?? `document-${randomUUID()}`,
           document,
           documentPosition,
         );
@@ -706,16 +724,20 @@ export class PostgresWorkspaceStore {
   private async insertDocument(
     client: Pick<PoolClient, "query">,
     workspaceId: string,
+    createdBy: string,
+    publicId: string,
     document: EditorDocument,
     position: number,
   ) {
     await client.query(
       `INSERT INTO editor_documents
-       (id, workspace_id, title, template_id, pinned, position, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+       (id, workspace_id, public_id, created_by, title, template_id, pinned, position, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [
         document.id,
         workspaceId,
+        publicId,
+        createdBy,
         document.title,
         document.templateId ?? null,
         document.pinned ?? null,
@@ -801,6 +823,8 @@ export class PostgresWorkspaceStore {
       await this.insertDocument(
         executor,
         workspaceId,
+        userId,
+        `document-${randomUUID()}`,
         workspace.documents[0],
         0,
       );

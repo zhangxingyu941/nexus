@@ -63,6 +63,7 @@
 
 在 `editor_documents` 增加：
 
+- `public_id TEXT NOT NULL UNIQUE`：对外文档路由标识。现有 `(workspace_id, id)` 保持内部复合主键，允许不同工作区继续使用同一内部 `id`；`/documents/:documentId` 的 `documentId` 始终指向 `public_id`。
 - `created_by TEXT NOT NULL REFERENCES app_users(id)`：私有文档的作者；历史数据按 `workspace_members.created_at, user_id` 回填为所属工作区最早加入的 owner。工作区仍以 `workspace_members` 支持多个 owner，不恢复单一 `owner_id`。
 - `access_mode TEXT NOT NULL DEFAULT 'workspace'`，约束为 `workspace`、`private`、`link`。
 
@@ -102,7 +103,7 @@
 
 ### 5.1 文档级数据边界
 
-远端会话改为先请求可访问文档目录，再按当前文档 ID 请求内容。工作区成员目录不包含其无权访问的私有文档，目录记录只保留 `id`、`title`、`updatedAt`、`accessMode` 和当前访问角色。
+远端会话改为先请求可访问文档目录，再按当前文档 ID 请求内容。工作区成员目录不包含其无权访问的私有文档，目录记录只保留内部 `id`、对外 `publicId`、`title`、`updatedAt`、`accessMode` 和当前访问角色。
 
 新增文档接口：
 
@@ -114,7 +115,7 @@
 
 现有工作区 `GET`/`PUT` 在 M7.1 迁移期保留给本地模式和兼容读取，但 PostgreSQL 远端编辑器不再通过它读取或保存文档内容。新文档 API 到位后移除远端仓库对整工作区 `save` 的调用，并为旧端点补充拒绝私有文档混合快照的保护，防止过渡期绕过。
 
-`/documents/:documentId` 作为已登录入口。页面先解析会话，再调用文档接口；无权时展示通用的“文档不可用”状态而非文档标题。根入口继续承载工作区目录与切换，选中文档后导航到规范文档路由。
+`/documents/:documentId` 作为已登录入口，参数是全局唯一 `public_id`。页面先解析会话，再调用文档接口；无权时展示通用的“文档不可用”状态而非文档标题。根入口继续承载工作区目录与切换，选中文档后导航到规范文档路由。
 
 ### 5.2 文件、历史与协作
 
@@ -142,7 +143,7 @@
 
 ## 7. 错误处理、迁移与兼容
 
-- 所有新表和列通过幂等迁移创建，并为旧文档按最早 owner 回填 `created_by` 与 `access_mode = 'workspace'`。
+- 所有新表和列通过幂等迁移创建，并为旧文档生成唯一 `public_id`，再按最早 owner 回填 `created_by` 与 `access_mode = 'workspace'`。
 - 迁移前导出数据库和对象存储清单；迁移后检查每篇文档都有作者、每条权限/分享记录的复合外键有效。
 - 权限策略更改使用事务，提交后发布协作权限失效事件；发布失败记录可重试审计，不回滚已提交的授权数据。
 - 分享令牌生成使用至少 256 bit 的加密随机数。比较采用恒定时间语义，由 HMAC 查找避免保存明文。

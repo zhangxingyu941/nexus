@@ -46,6 +46,17 @@ describe("PostgresWorkspaceStore", () => {
     });
     expect(await countRows(pool, "editor_documents")).toBe(1);
     expect(await countRows(pool, "editor_blocks")).toBe(1);
+    await expect(pool.query(
+      `SELECT created_by, public_id
+       FROM editor_documents
+       WHERE workspace_id = $1`,
+      ["workspace-test"],
+    )).resolves.toMatchObject({
+      rows: [{
+        created_by: "owner-1",
+        public_id: expect.stringMatching(/^document-/),
+      }],
+    });
   });
 
   it("round-trips heading levels through PostgreSQL", async () => {
@@ -69,6 +80,36 @@ describe("PostgresWorkspaceStore", () => {
           },
         ],
       },
+    });
+  });
+
+  it("preserves a document author when another editor saves the workspace", async () => {
+    await seedUser(pool, "owner-1", "owner@example.com", "Owner");
+    await seedUser(pool, "editor-1", "editor@example.com", "Editor");
+    await store.ensurePersonalWorkspace("owner-1", "Owner workspace");
+    await seedMembership(pool, "workspace-test", "editor-1", "editor", 2000);
+    const workspace = await store.loadWorkspace("owner-1", "workspace-test");
+
+    await store.saveWorkspace("editor-1", "workspace-test", {
+      ...workspace.content,
+      documents: workspace.content.documents.map((document) => ({
+        ...document,
+        title: "Edited by another member",
+        updatedAt: 4000,
+      })),
+      updatedAt: 4000,
+    });
+
+    await expect(pool.query(
+      `SELECT created_by, public_id
+       FROM editor_documents
+       WHERE workspace_id = $1`,
+      ["workspace-test"],
+    )).resolves.toMatchObject({
+      rows: [{
+        created_by: "owner-1",
+        public_id: expect.stringMatching(/^document-/),
+      }],
     });
   });
 

@@ -121,20 +121,41 @@ describe("authentication database migration", () => {
     expect(await columnNames(pool, "editor_documents")).toEqual(expect.arrayContaining([
       "access_mode",
       "created_by",
+      "public_id",
     ]));
     await expect(pool.query(
-      `SELECT created_by, access_mode
+      `SELECT created_by, access_mode, public_id
        FROM editor_documents
        WHERE workspace_id = $1 AND id = $2`,
       ["workspace-1", "document-1"],
     )).resolves.toMatchObject({
-      rows: [{ access_mode: "workspace", created_by: "owner-early" }],
+      rows: [{
+        access_mode: "workspace",
+        created_by: "owner-early",
+        public_id: expect.stringMatching(/^document-/),
+      }],
     });
     await expect(pool.query(
       `INSERT INTO document_permissions
          (workspace_id, document_id, user_id, role, created_by, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $6)`,
       ["workspace-1", "document-1", "editor-1", "owner-early", "owner-early", 3000],
+    )).rejects.toThrow();
+    const publicId = await pool.query(
+      `SELECT public_id
+       FROM editor_documents
+       WHERE workspace_id = $1 AND id = $2`,
+      ["workspace-1", "document-1"],
+    );
+    await pool.query(
+      `INSERT INTO editor_workspaces (id, name, deleted_at, updated_at, created_at)
+       VALUES ('workspace-2', 'Second workspace', NULL, 3000, 1000)`,
+    );
+    await expect(pool.query(
+      `INSERT INTO editor_documents
+         (workspace_id, id, public_id, created_by, title, position, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      ["workspace-2", "document-2", publicId.rows[0].public_id, "owner-late", "Duplicate route", 0, 3000],
     )).rejects.toThrow();
   });
 
