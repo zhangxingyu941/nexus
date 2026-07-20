@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { extname, relative, resolve, sep } from "node:path";
 import {
+  DeleteObjectsCommand,
   GetObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
@@ -14,6 +16,7 @@ export interface StoredObject {
 }
 
 export interface ObjectStorage {
+  deletePrefix: (prefix: string) => Promise<void>;
   getObject: (key: string) => Promise<StoredObject>;
   putObject: (key: string, body: Uint8Array, contentType: string) => Promise<void>;
 }
@@ -29,6 +32,12 @@ function validateObjectKey(key: string) {
     !/^[a-zA-Z0-9/_-]+(?:\.[a-zA-Z0-9]+)?$/.test(key)
   ) {
     throw new Error("对象标识不正确");
+  }
+}
+
+function validateWorkspacePrefix(prefix: string) {
+  if (!/^[a-zA-Z0-9_-]+\/$/.test(prefix)) {
+    throw new Error("对象前缀不正确");
   }
 }
 
@@ -78,6 +87,12 @@ export class LocalObjectStorage implements ObjectStorage {
     };
   }
 
+  async deletePrefix(prefix: string) {
+    const workspacePath = this.resolveWorkspacePath(prefix);
+
+    await rm(workspacePath, { force: true, recursive: true });
+  }
+
   private resolveObjectPath(key: string) {
     validateObjectKey(key);
     const objectPath = resolve(this.root, ...key.split("/"));
@@ -88,6 +103,18 @@ export class LocalObjectStorage implements ObjectStorage {
     }
 
     return objectPath;
+  }
+
+  private resolveWorkspacePath(prefix: string) {
+    validateWorkspacePrefix(prefix);
+    const workspacePath = resolve(this.root, prefix.slice(0, -1));
+    const relativePath = relative(this.root, workspacePath);
+
+    if (relativePath.startsWith(`..${sep}`) || relativePath === "..") {
+      throw new Error("对象前缀不正确");
+    }
+
+    return workspacePath;
   }
 }
 
@@ -145,6 +172,41 @@ export class S3ObjectStorage implements ObjectStorage {
       contentType: result.ContentType || "application/octet-stream",
       size: result.ContentLength ?? body.byteLength,
     };
+  }
+
+  async deletePrefix(prefix: string) {
+    validateWorkspacePrefix(prefix);
+    let continuationToken: string | undefined;
+
+    do {
+      const result = await this.client.send(new ListObjectsV2Command({
+        Bucket: this.bucket,
+        ...(continuationToken ? { ContinuationToken: continuationToken } : {}),
+        Prefix: prefix,
+      }));
+      const objects = (result.Contents ?? []).flatMap((object) => (
+        object.Key ? [{ Key: object.Key }] : []
+      ));
+
+      for (let index = 0; index < objects.length; index += 1_000) {
+        const deleted = await this.client.send(new DeleteObjectsCommand({
+          Bucket: this.bucket,
+          Delete: {
+            Objects: objects.slice(index, index + 1_000),
+            Quiet: true,
+          },
+        }));
+
+        if (deleted.Errors?.length) {
+          throw new Error("对象删除不完整");
+        }
+      }
+
+      continuationToken = result.IsTruncated ? result.NextContinuationToken : undefined;
+      if (result.IsTruncated && !continuationToken) {
+        throw new Error("对象列表分页令牌缺失");
+      }
+    } while (continuationToken);
   }
 }
 
