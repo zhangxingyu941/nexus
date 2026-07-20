@@ -45,7 +45,7 @@ if (!Number.isInteger(port) || port <= 0 || port > 65535) {
 }
 
 const pool = createDatabasePool();
-const { authStore, workspaceStore } = createPostgresServices(pool);
+const { authStore, documentAuthorization } = createPostgresServices(pool);
 const collaborationPubSub = createRedisCollaborationPubSub();
 const accessInvalidations = new PostgresWorkspaceAccessListener(pool);
 await accessInvalidations.start();
@@ -70,7 +70,7 @@ const collaborationServer = createCollaborationServer({
     await collaborationPubSub?.attachRoom(roomName, document, document.awareness);
   },
   setupConnection: setupWSConnection,
-  workspaceStore,
+  documentAuthorization,
 });
 let shuttingDown = false;
 

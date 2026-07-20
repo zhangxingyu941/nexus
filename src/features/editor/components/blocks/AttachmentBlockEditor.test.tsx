@@ -32,6 +32,7 @@ describe("AttachmentBlockEditor", () => {
       <AttachmentBlockEditor
         content=""
         data={null}
+        documentId="document-1"
         isReadOnly={false}
         kind="image"
         onChangeContent={() => undefined}
@@ -44,6 +45,7 @@ describe("AttachmentBlockEditor", () => {
 
     expect(attachmentRepositoryMock.uploadAttachment).toHaveBeenCalledWith(
       "workspace-a",
+      "document-1",
       file,
       "image",
     );
@@ -65,6 +67,7 @@ describe("AttachmentBlockEditor", () => {
       <AttachmentBlockEditor
         content="文件说明"
         data={data}
+        documentId="document-1"
         isReadOnly={false}
         kind="file"
         onChangeContent={() => undefined}
@@ -81,6 +84,7 @@ describe("AttachmentBlockEditor", () => {
       <AttachmentBlockEditor
         content="文件说明"
         data={data}
+        documentId="document-1"
         isReadOnly
         kind="file"
         onChangeContent={() => undefined}

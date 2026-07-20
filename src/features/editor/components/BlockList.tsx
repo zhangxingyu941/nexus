@@ -9,6 +9,7 @@ import { BlockRow } from "./BlockRow";
 interface BlockListProps {
   blocks: Block[];
   collaborationDocument: CollaborationDocument | null;
+  documentId: string;
   focusBlockId: string | null;
   isReadOnly: boolean;
   onAddAfter: (blockId: string) => void;
@@ -53,6 +54,7 @@ function estimateBlockSize(block: Block) {
 export function BlockList({
   blocks,
   collaborationDocument,
+  documentId,
   focusBlockId,
   isReadOnly,
   onAddAfter,
@@ -153,6 +155,7 @@ export function BlockList({
       canIndent={Boolean(previousBlock) && block.parentId !== previousBlock.id}
       canOutdent={block.parentId !== null}
       collaborationDocument={collaborationDocument}
+      documentId={documentId}
       depth={meta.depth}
       focusRequest={focusBlockId === block.id}
       isFirst={meta.isFirst}

@@ -64,8 +64,8 @@ describe("authenticated collaboration server", () => {
     const collaborationServer = createCollaborationServer({
       allowedOrigins: ["http://localhost:3000"],
       authStore,
+      documentAuthorization: { requireWorkspaceDocumentAction: vi.fn() },
       setupConnection: vi.fn(),
-      workspaceStore: { getDocumentAccess: vi.fn() },
     });
     servers.push(collaborationServer);
     const url = await listen(collaborationServer);
@@ -81,15 +81,17 @@ describe("authenticated collaboration server", () => {
       _request: unknown,
       _options: { docName: string },
     ) => socket.send("ready"));
-    const getDocumentAccess = vi.fn().mockResolvedValue({ role: "editor", workspaceId: "workspace-1" });
+    const requireWorkspaceDocumentAction = vi.fn().mockResolvedValue({
+      canWrite: true,
+      role: "editor",
+      workspaceId: "workspace-1",
+    });
     const collaborationServer = createCollaborationServer({
       allowedOrigins: ["http://localhost:3000"],
       authStore: { getUserBySessionToken: vi.fn().mockResolvedValue({ id: "editor-1" }) },
+      documentAuthorization: { requireWorkspaceDocumentAction },
       prepareRoom,
       setupConnection,
-      workspaceStore: {
-        getDocumentAccess,
-      },
     });
     servers.push(collaborationServer);
     const url = await listen(collaborationServer);
@@ -110,7 +112,12 @@ describe("authenticated collaboration server", () => {
       docName: "workspace:workspace-1:document:document-1",
     });
     expect(prepareRoom).toHaveBeenCalledWith("workspace:workspace-1:document:document-1");
-    expect(getDocumentAccess).toHaveBeenCalledWith("editor-1", "workspace-1", "document-1");
+    expect(requireWorkspaceDocumentAction).toHaveBeenCalledWith(
+      "editor-1",
+      "workspace-1",
+      "document-1",
+      "write",
+    );
     expect(prepareRoom.mock.invocationCallOrder[0]).toBeLessThan(setupConnection.mock.invocationCallOrder[0]);
   });
 
@@ -120,11 +127,11 @@ describe("authenticated collaboration server", () => {
     const collaborationServer = createCollaborationServer({
       allowedOrigins: ["http://localhost:3000"],
       authStore: { getUserBySessionToken: vi.fn().mockResolvedValue({ id: "viewer-1" }) },
+      documentAuthorization: {
+        requireWorkspaceDocumentAction: vi.fn().mockRejectedValue(new Error("viewer denied")),
+      },
       prepareRoom,
       setupConnection,
-      workspaceStore: {
-        getDocumentAccess: vi.fn().mockResolvedValue({ role: "viewer", workspaceId: "workspace-1" }),
-      },
     });
     servers.push(collaborationServer);
     const url = await listen(collaborationServer);
@@ -139,9 +146,9 @@ describe("authenticated collaboration server", () => {
     const collaborationServer = createCollaborationServer({
       allowedOrigins: ["http://localhost:3000"],
       authStore: { getUserBySessionToken: vi.fn() },
+      documentAuthorization: { requireWorkspaceDocumentAction: vi.fn() },
       flushRooms,
       setupConnection: vi.fn(),
-      workspaceStore: { getDocumentAccess: vi.fn() },
     });
 
     await collaborationServer.close();
@@ -151,7 +158,11 @@ describe("authenticated collaboration server", () => {
 
   it("closes only the invalidated user sockets", async () => {
     const invalidations = createFakeInvalidationSource();
-    const getDocumentAccess = vi.fn().mockResolvedValue({ role: "editor", workspaceId: "workspace-1" });
+    const requireWorkspaceDocumentAction = vi.fn().mockResolvedValue({
+      canWrite: true,
+      role: "editor",
+      workspaceId: "workspace-1",
+    });
     const setupConnection = vi.fn((
       socket: WebSocket,
       _request: unknown,
@@ -161,8 +172,8 @@ describe("authenticated collaboration server", () => {
       accessInvalidations: invalidations,
       allowedOrigins: ["http://localhost:3000"],
       authStore: { getUserBySessionToken: vi.fn().mockResolvedValue({ id: "user-1" }) },
+      documentAuthorization: { requireWorkspaceDocumentAction },
       setupConnection,
-      workspaceStore: { getDocumentAccess },
     });
     servers.push(collaborationServer);
     const url = await listen(collaborationServer);
@@ -180,7 +191,11 @@ describe("authenticated collaboration server", () => {
     });
 
     // Override auth for second user
-    getDocumentAccess.mockResolvedValue({ role: "editor", workspaceId: "workspace-1" });
+    requireWorkspaceDocumentAction.mockResolvedValue({
+      canWrite: true,
+      role: "editor",
+      workspaceId: "workspace-1",
+    });
     collaborationServer.connections.set(first, { userId: "user-1", workspaceId: "workspace-1" });
 
     // Create a second connection tracked as user-2
@@ -211,7 +226,11 @@ describe("authenticated collaboration server", () => {
 
   it("closes all workspace connections on workspace-level invalidation", async () => {
     const invalidations = createFakeInvalidationSource();
-    const getDocumentAccess = vi.fn().mockResolvedValue({ role: "editor", workspaceId: "workspace-1" });
+    const requireWorkspaceDocumentAction = vi.fn().mockResolvedValue({
+      canWrite: true,
+      role: "editor",
+      workspaceId: "workspace-1",
+    });
     const setupConnection = vi.fn((
       socket: WebSocket,
       _request: unknown,
@@ -233,8 +252,8 @@ describe("authenticated collaboration server", () => {
       accessInvalidations: invalidations,
       allowedOrigins: ["http://localhost:3000"],
       authStore,
+      documentAuthorization: { requireWorkspaceDocumentAction },
       setupConnection,
-      workspaceStore: { getDocumentAccess },
     });
     servers.push(collaborationServer);
     const url = await listen(collaborationServer);

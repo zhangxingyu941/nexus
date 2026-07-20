@@ -108,6 +108,7 @@ const WORKSPACE_SOFT_DELETION_MIGRATION_ID =
   "2026-07-16-workspace-soft-deletion";
 const DOCUMENT_PERMISSIONS_MIGRATION_ID = "2026-07-20-document-permissions";
 const DOCUMENT_PUBLIC_ID_MIGRATION_ID = "2026-07-20-document-public-id";
+const DOCUMENT_ATTACHMENTS_MIGRATION_ID = "2026-07-20-document-attachments";
 const MIGRATION_LOCK_ID = "__migration_lock__";
 
 const WORKSPACE_SCOPED_CONTENT_SCHEMA = [
@@ -346,6 +347,19 @@ const DOCUMENT_PUBLIC_ID_SCHEMA = [
 const DOCUMENT_PUBLIC_ID_FINAL_SCHEMA = [
   "ALTER TABLE editor_documents ALTER COLUMN public_id SET NOT NULL",
   "ALTER TABLE editor_documents ADD CONSTRAINT editor_documents_public_id_key UNIQUE (public_id)",
+];
+
+const DOCUMENT_ATTACHMENTS_SCHEMA = [
+  `CREATE TABLE document_attachments (
+    object_key TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    document_id TEXT NOT NULL,
+    created_at BIGINT NOT NULL,
+    FOREIGN KEY (workspace_id, document_id)
+      REFERENCES editor_documents(workspace_id, id)
+      ON DELETE CASCADE
+  )`,
+  "CREATE INDEX document_attachments_document_idx ON document_attachments(workspace_id, document_id)",
 ];
 
 async function migrateDocumentPermissions(client: PoolClient) {
@@ -637,6 +651,22 @@ export async function migrateDatabase(pool: Pool) {
       await client.query(
         "INSERT INTO schema_migrations (id, applied_at) VALUES ($1, $2)",
         [DOCUMENT_PUBLIC_ID_MIGRATION_ID, Date.now()],
+      );
+    }
+
+    const documentAttachmentsResult = await client.query(
+      "SELECT id FROM schema_migrations WHERE id = $1",
+      [DOCUMENT_ATTACHMENTS_MIGRATION_ID],
+    );
+
+    if (documentAttachmentsResult.rows.length === 0) {
+      for (const statement of DOCUMENT_ATTACHMENTS_SCHEMA) {
+        await client.query(statement);
+      }
+
+      await client.query(
+        "INSERT INTO schema_migrations (id, applied_at) VALUES ($1, $2)",
+        [DOCUMENT_ATTACHMENTS_MIGRATION_ID, Date.now()],
       );
     }
 

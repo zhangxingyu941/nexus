@@ -2,11 +2,13 @@ import type { AttachmentBlockData } from "../model/block";
 
 export async function uploadAttachment(
   workspaceId: string,
+  documentId: string,
   file: File,
   kind: "image" | "file",
 ) {
   const formData = new FormData();
   formData.set("workspaceId", workspaceId);
+  formData.set("documentId", documentId);
   formData.set("file", file);
   formData.set("kind", kind);
   const response = await fetch("/api/files", {

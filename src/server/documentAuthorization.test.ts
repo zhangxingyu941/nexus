@@ -8,6 +8,7 @@ import {
 function createService(record: DocumentAuthorizationRecord | null) {
   return new DocumentAuthorizationService({
     findRecord: async () => record,
+    findWorkspaceDocumentRecord: async () => record,
   });
 }
 
@@ -118,5 +119,24 @@ describe("DocumentAuthorizationService", () => {
 
     await expect(service.requireUserAction("viewer-1", "document-1", "write"))
       .rejects.toBeInstanceOf(DocumentNotFoundError);
+  });
+
+  it("uses the same policy when authorizing an internal workspace document reference", async () => {
+    const service = createService({
+      accessMode: "private",
+      documentId: "document-1",
+      documentCreatedBy: "author-1",
+      explicitRole: "viewer",
+      publicId: "public-document-1",
+      workspaceId: "workspace-1",
+      workspaceRole: "editor",
+    });
+
+    await expect(service.requireWorkspaceDocumentAction(
+      "viewer-1",
+      "workspace-1",
+      "document-1",
+      "write",
+    )).rejects.toBeInstanceOf(DocumentNotFoundError);
   });
 });

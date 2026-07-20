@@ -19,6 +19,7 @@ function LargeBlockList({ focusBlockId = null }: { focusBlockId?: string | null 
         <BlockList
         blocks={largeBlocks}
         collaborationDocument={null}
+        documentId="document-1"
         focusBlockId={focusBlockId}
         isReadOnly={false}
         onAddAfter={noop}
@@ -37,6 +38,7 @@ function LargeBlockList({ focusBlockId = null }: { focusBlockId?: string | null 
         onResolveBlockComment={noop}
         onToggleTodo={noop}
         scrollElementRef={scrollElementRef}
+        sessionUser={null}
         workspaceId="workspace-a"
         />
       </div>

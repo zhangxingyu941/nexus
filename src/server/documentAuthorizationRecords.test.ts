@@ -32,6 +32,18 @@ describe("PostgresDocumentAuthorizationRecords", () => {
     await expect(records.findRecord("owner-2", "document-1")).resolves.toBeNull();
   });
 
+  it("resolves a document by its workspace-scoped internal id", async () => {
+    await expect(records.findWorkspaceDocumentRecord(
+      "viewer-1",
+      "workspace-1",
+      "document-1",
+    )).resolves.toMatchObject({
+      explicitRole: "viewer",
+      publicId: "public-document-1",
+      workspaceId: "workspace-1",
+    });
+  });
+
   it("returns an explicit permission alongside the member role", async () => {
     await expect(records.findRecord("viewer-1", "public-document-1")).resolves.toMatchObject({
       explicitRole: "viewer",

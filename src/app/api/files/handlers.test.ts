@@ -67,28 +67,52 @@ describe("file route handlers", () => {
     await expect(downloadResponse.text()).resolves.toBe("image-body");
   });
 
-  it("authorizes the workspace submitted by the client instead of the selected workspace", async () => {
+  it("maps an uploaded attachment to its authorized document", async () => {
     const objectStorage = new MemoryObjectStorage();
     const authStore = { getUserBySessionToken: vi.fn().mockResolvedValue({ id: "editor-1" }) };
-    const workspaceStore = {
-      getWorkspaceAccess: vi.fn().mockResolvedValue({ role: "editor", workspaceId: "workspace-a" }),
+    const documentAuthorization = {
+      requireWorkspaceDocumentAction: vi.fn().mockResolvedValue({
+        canWrite: true,
+        documentId: "document-1",
+        workspaceId: "workspace-a",
+      }),
+    };
+    const attachmentStore = {
+      createAttachment: vi.fn(),
+      findAttachment: vi.fn().mockResolvedValue({
+        documentId: "document-1",
+        key: "workspace-a/object-1.pdf",
+        workspaceId: "workspace-a",
+      }),
     };
     const handlers = createFileRouteHandlers({
+      attachmentStore,
       authStore,
+      documentAuthorization,
       idFactory: () => "object-1",
       objectStorage,
-      workspaceStore,
     });
     const formData = new FormData();
     formData.set("kind", "file");
     formData.set("file", new File(["body"], "方案.pdf", { type: "application/pdf" }));
+    formData.set("documentId", "document-1");
     formData.set("workspaceId", "workspace-a");
 
     const uploadResponse = await handlers.POST(
       new Request("http://localhost/api/files", { body: formData, method: "POST" }),
     );
     expect(uploadResponse.status).toBe(201);
-    expect(workspaceStore.getWorkspaceAccess).toHaveBeenCalledWith("editor-1", "workspace-a");
+    expect(documentAuthorization.requireWorkspaceDocumentAction).toHaveBeenCalledWith(
+      "editor-1",
+      "workspace-a",
+      "document-1",
+      "write",
+    );
+    expect(attachmentStore.createAttachment).toHaveBeenCalledWith({
+      documentId: "document-1",
+      key: "workspace-a/object-1.pdf",
+      workspaceId: "workspace-a",
+    });
     expect([...objectStorage.objects.keys()]).toEqual(["workspace-a/object-1.pdf"]);
 
     const downloadResponse = await handlers.GET(
@@ -96,10 +120,15 @@ describe("file route handlers", () => {
       "workspace-a/object-1.pdf",
     );
     expect(downloadResponse.status).toBe(200);
-    expect(workspaceStore.getWorkspaceAccess).toHaveBeenLastCalledWith("editor-1", "workspace-a");
+    expect(documentAuthorization.requireWorkspaceDocumentAction).toHaveBeenLastCalledWith(
+      "editor-1",
+      "workspace-a",
+      "document-1",
+      "read",
+    );
   });
 
-  it("rejects invalid local workspace ids and inaccessible database workspaces", async () => {
+  it("rejects invalid local workspace ids and hides an ungranted document attachment", async () => {
     const objectStorage = new MemoryObjectStorage();
     const invalidForm = new FormData();
     invalidForm.set("kind", "file");
@@ -112,18 +141,27 @@ describe("file route handlers", () => {
     expect(invalidResponse.status).toBe(400);
 
     const deniedHandlers = createFileRouteHandlers({
+      attachmentStore: {
+        createAttachment: vi.fn(),
+        findAttachment: vi.fn().mockResolvedValue({
+          documentId: "private-document-1",
+          key: "workspace-a/object-1.pdf",
+          workspaceId: "workspace-a",
+        }),
+      },
       authStore: { getUserBySessionToken: vi.fn().mockResolvedValue({ id: "editor-1" }) },
+      documentAuthorization: { requireWorkspaceDocumentAction: vi.fn().mockRejectedValue(new Error("denied")) },
       objectStorage,
-      workspaceStore: { getWorkspaceAccess: vi.fn().mockResolvedValue(null) },
     });
     const deniedForm = new FormData();
     deniedForm.set("kind", "file");
     deniedForm.set("file", new File(["body"], "方案.pdf", { type: "application/pdf" }));
+    deniedForm.set("documentId", "private-document-1");
     deniedForm.set("workspaceId", "workspace-a");
     const deniedResponse = await deniedHandlers.POST(
       new Request("http://localhost/api/files", { body: deniedForm, method: "POST" }),
     );
 
-    expect(deniedResponse.status).toBe(403);
+    expect(deniedResponse.status).toBe(404);
   });
 });

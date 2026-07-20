@@ -237,6 +237,7 @@ export function DocumentEditor({
             <BlockList
               blocks={document.blocks}
               collaborationDocument={collaborationDocument}
+              documentId={document.id}
               focusBlockId={focusBlockId}
               isReadOnly={isReadOnly}
               onAddAfter={onAddAfter}

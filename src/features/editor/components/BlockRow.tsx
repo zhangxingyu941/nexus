@@ -36,6 +36,7 @@ interface BlockRowProps {
   canOutdent: boolean;
   collaborationDocument: CollaborationDocument | null;
   depth: number;
+  documentId: string;
   focusRequest: boolean;
   isFirst: boolean;
   isLast: boolean;
@@ -68,6 +69,7 @@ export function BlockRow({
   canOutdent,
   collaborationDocument,
   depth,
+  documentId,
   focusRequest,
   isFirst,
   isLast,
@@ -451,6 +453,7 @@ export function BlockRow({
             <AttachmentBlockEditor
               content={block.content}
               data={block.data?.kind === block.type ? block.data : null}
+              documentId={documentId}
               isReadOnly={isReadOnly}
               kind={block.type}
               onChangeContent={(content) => onChangeContent(block.id, content)}

@@ -45,6 +45,7 @@ describe("BlockRow mention menu", () => {
             canOutdent={false}
             collaborationDocument={null}
             depth={0}
+            documentId="document-1"
             focusRequest={false}
             isFirst={true}
             isLast={true}

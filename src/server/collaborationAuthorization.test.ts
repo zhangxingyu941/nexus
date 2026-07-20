@@ -13,23 +13,23 @@ function createRequest(
 describe("collaboration WebSocket authorization", () => {
   it("rejects unauthenticated, unknown, and viewer document access", async () => {
     const authStore = { getUserBySessionToken: vi.fn().mockResolvedValue(null) };
-    const workspaceStore = { getDocumentAccess: vi.fn() };
+    const documentAuthorization = { requireWorkspaceDocumentAction: vi.fn() };
 
-    await expect(authorizeCollaborationRequest(createRequest(), { authStore, workspaceStore })).resolves.toEqual({
+    await expect(authorizeCollaborationRequest(createRequest(), { authStore, documentAuthorization })).resolves.toEqual({
       message: "请先登录",
       ok: false,
       status: 401,
     });
 
     authStore.getUserBySessionToken.mockResolvedValue({ id: "user-1" });
-    workspaceStore.getDocumentAccess.mockResolvedValueOnce(null);
-    await expect(authorizeCollaborationRequest(createRequest(), { authStore, workspaceStore })).resolves.toMatchObject({
+    documentAuthorization.requireWorkspaceDocumentAction.mockRejectedValueOnce(new Error("denied"));
+    await expect(authorizeCollaborationRequest(createRequest(), { authStore, documentAuthorization })).resolves.toMatchObject({
       ok: false,
       status: 403,
     });
 
-    workspaceStore.getDocumentAccess.mockResolvedValueOnce({ role: "viewer", workspaceId: "workspace-a" });
-    await expect(authorizeCollaborationRequest(createRequest(), { authStore, workspaceStore })).resolves.toMatchObject({
+    documentAuthorization.requireWorkspaceDocumentAction.mockRejectedValueOnce(new Error("viewer denied"));
+    await expect(authorizeCollaborationRequest(createRequest(), { authStore, documentAuthorization })).resolves.toMatchObject({
       ok: false,
       status: 403,
     });
@@ -37,31 +37,40 @@ describe("collaboration WebSocket authorization", () => {
 
   it("allows editors to connect only to a valid document room", async () => {
     const authStore = { getUserBySessionToken: vi.fn().mockResolvedValue({ id: "editor-1" }) };
-    const workspaceStore = {
-      getDocumentAccess: vi.fn().mockResolvedValue({ role: "editor", workspaceId: "workspace-a" }),
+    const documentAuthorization = {
+      requireWorkspaceDocumentAction: vi.fn().mockResolvedValue({
+        canWrite: true,
+        role: "editor",
+        workspaceId: "workspace-a",
+      }),
     };
 
-    await expect(authorizeCollaborationRequest(createRequest(), { authStore, workspaceStore })).resolves.toEqual({
-      access: { role: "editor", workspaceId: "workspace-a" },
+    await expect(authorizeCollaborationRequest(createRequest(), { authStore, documentAuthorization })).resolves.toEqual({
+      access: { canWrite: true, role: "editor", workspaceId: "workspace-a" },
       documentId: "document-1",
       ok: true,
       roomName: "workspace:workspace-a:document:document-1",
       userId: "editor-1",
     });
-    expect(workspaceStore.getDocumentAccess).toHaveBeenCalledWith(
+    expect(documentAuthorization.requireWorkspaceDocumentAction).toHaveBeenCalledWith(
       "editor-1",
       "workspace-a",
       "document-1",
+      "write",
     );
 
-    await expect(authorizeCollaborationRequest(createRequest("other-room"), { authStore, workspaceStore })).resolves.toMatchObject({
+    await expect(authorizeCollaborationRequest(createRequest("other-room"), { authStore, documentAuthorization })).resolves.toMatchObject({
       ok: false,
       status: 400,
     });
 
-    workspaceStore.getDocumentAccess.mockResolvedValueOnce({ role: "editor", workspaceId: "workspace-b" });
+    documentAuthorization.requireWorkspaceDocumentAction.mockResolvedValueOnce({
+      canWrite: true,
+      role: "editor",
+      workspaceId: "workspace-b",
+    });
     await expect(
-      authorizeCollaborationRequest(createRequest(), { authStore, workspaceStore }),
+      authorizeCollaborationRequest(createRequest(), { authStore, documentAuthorization }),
     ).resolves.toMatchObject({ ok: false, status: 403 });
   });
 

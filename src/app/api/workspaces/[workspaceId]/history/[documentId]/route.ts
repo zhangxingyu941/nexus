@@ -14,7 +14,12 @@ function unavailableResponse() {
 export async function GET(request: Request, context: DocumentHistoryRouteContext) {
   if (!hasDatabaseConfiguration()) return unavailableResponse();
   const { documentId, workspaceId } = await context.params;
-  return createDocumentHistoryRouteHandlers(createPostgresServices()).GET(
+  const services = createPostgresServices();
+  return createDocumentHistoryRouteHandlers({
+    authStore: services.authStore,
+    documentAuthorization: services.documentAuthorization,
+    workspaceStore: services.workspaceStore,
+  }).GET(
     request,
     workspaceId,
     documentId,
@@ -24,7 +29,12 @@ export async function GET(request: Request, context: DocumentHistoryRouteContext
 export async function POST(request: Request, context: DocumentHistoryRouteContext) {
   if (!hasDatabaseConfiguration()) return unavailableResponse();
   const { documentId, workspaceId } = await context.params;
-  return createDocumentHistoryRouteHandlers(createPostgresServices()).POST(
+  const services = createPostgresServices();
+  return createDocumentHistoryRouteHandlers({
+    authStore: services.authStore,
+    documentAuthorization: services.documentAuthorization,
+    workspaceStore: services.workspaceStore,
+  }).POST(
     request,
     workspaceId,
     documentId,

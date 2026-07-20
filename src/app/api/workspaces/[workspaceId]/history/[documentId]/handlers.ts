@@ -1,4 +1,8 @@
 import { NextResponse } from "next/server";
+import {
+  DocumentNotFoundError,
+  type DocumentAuthorizationService,
+} from "@/server/documentAuthorization";
 import type { PostgresAuthStore } from "@/server/postgresAuthStore";
 import type { PostgresWorkspaceStore } from "@/server/postgresWorkspaceStore";
 import {
@@ -8,12 +12,17 @@ import {
 import { getSessionToken } from "@/server/sessionCookie";
 
 interface DocumentHistoryRouteDependencies {
-  authStore: PostgresAuthStore;
-  workspaceStore: PostgresWorkspaceStore;
+  authStore: Pick<PostgresAuthStore, "getUserBySessionToken">;
+  documentAuthorization: Pick<DocumentAuthorizationService, "requireWorkspaceDocumentAction">;
+  workspaceStore: Pick<
+    PostgresWorkspaceStore,
+    "listDocumentVersions" | "restoreDocumentVersion"
+  >;
 }
 
 export function createDocumentHistoryRouteHandlers({
   authStore,
+  documentAuthorization,
   workspaceStore,
 }: DocumentHistoryRouteDependencies) {
   async function authenticate(request: Request) {
@@ -26,6 +35,12 @@ export function createDocumentHistoryRouteHandlers({
       if (!user) return unauthorizedResponse();
 
       try {
+        await documentAuthorization.requireWorkspaceDocumentAction(
+          user.id,
+          workspaceId,
+          documentId,
+          "read",
+        );
         return NextResponse.json({
           versions: await workspaceStore.listDocumentVersions(user.id, workspaceId, documentId),
         });
@@ -53,6 +68,12 @@ export function createDocumentHistoryRouteHandlers({
       }
 
       try {
+        await documentAuthorization.requireWorkspaceDocumentAction(
+          user.id,
+          workspaceId,
+          documentId,
+          "write",
+        );
         return NextResponse.json({
           document: await workspaceStore.restoreDocumentVersion(
             user.id,
@@ -74,6 +95,9 @@ function unauthorizedResponse() {
 }
 
 function mapHistoryError(error: unknown) {
+  if (error instanceof DocumentNotFoundError) {
+    return NextResponse.json({ error: "文档不存在或无权访问" }, { status: 404 });
+  }
   if (error instanceof WorkspaceNotFoundError) {
     return NextResponse.json({ error: error.message }, { status: 404 });
   }

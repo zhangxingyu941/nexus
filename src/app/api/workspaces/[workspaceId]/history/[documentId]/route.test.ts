@@ -1,8 +1,13 @@
 import type { Pool } from "pg";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDefaultWorkspace } from "@/features/editor/model/workspaceOperations";
 import { createPgMemPool } from "@/test/pgMemDatabase";
 import { migrateDatabase } from "@/server/database/migrations";
+import {
+  DocumentAuthorizationService,
+  DocumentNotFoundError,
+  PostgresDocumentAuthorizationRecords,
+} from "@/server/documentAuthorization";
 import { PostgresAuthStore } from "@/server/postgresAuthStore";
 import { PostgresWorkspaceStore } from "@/server/postgresWorkspaceStore";
 import { createDocumentHistoryRouteHandlers } from "./handlers";
@@ -10,6 +15,7 @@ import { createDocumentHistoryRouteHandlers } from "./handlers";
 describe("explicit workspace history route", () => {
   let pool: Pool;
   let authStore: PostgresAuthStore;
+  let documentAuthorization: DocumentAuthorizationService;
   let workspaceStore: PostgresWorkspaceStore;
   let handlers: ReturnType<typeof createDocumentHistoryRouteHandlers>;
 
@@ -22,7 +28,14 @@ describe("explicit workspace history route", () => {
       now: () => 3000,
     });
     authStore = new PostgresAuthStore(pool, workspaceStore);
-    handlers = createDocumentHistoryRouteHandlers({ authStore, workspaceStore });
+    documentAuthorization = new DocumentAuthorizationService(
+      new PostgresDocumentAuthorizationRecords(pool),
+    );
+    handlers = createDocumentHistoryRouteHandlers({
+      authStore,
+      documentAuthorization,
+      workspaceStore,
+    });
   });
 
   afterEach(async () => {
@@ -59,6 +72,33 @@ describe("explicit workspace history route", () => {
       expect.arrayContaining([expect.objectContaining({ title: "第二版" })]),
     );
     expect(mismatchResponse.status).toBe(404);
-    await expect(mismatchResponse.json()).resolves.toEqual({ error: "工作区不存在" });
+    await expect(mismatchResponse.json()).resolves.toEqual({ error: "文档不存在或无权访问" });
+  });
+
+  it("does not expose a private document history to an ungranted workspace member", async () => {
+    const documentAuthorization = {
+      requireWorkspaceDocumentAction: vi.fn().mockRejectedValue(new DocumentNotFoundError()),
+    };
+    const workspaceStore = { listDocumentVersions: vi.fn(), restoreDocumentVersion: vi.fn() };
+    const deniedHandlers = createDocumentHistoryRouteHandlers({
+      authStore: { getUserBySessionToken: vi.fn().mockResolvedValue({ id: "editor-1" }) },
+      documentAuthorization,
+      workspaceStore,
+    });
+
+    const response = await deniedHandlers.GET(
+      new Request("http://localhost/api/workspaces/workspace-1/history/document-1"),
+      "workspace-1",
+      "document-1",
+    );
+
+    expect(response.status).toBe(404);
+    expect(workspaceStore.listDocumentVersions).not.toHaveBeenCalled();
+    expect(documentAuthorization.requireWorkspaceDocumentAction).toHaveBeenCalledWith(
+      "editor-1",
+      "workspace-1",
+      "document-1",
+      "read",
+    );
   });
 });

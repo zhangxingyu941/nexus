@@ -1,37 +1,45 @@
 import { NextResponse } from "next/server";
 import type { AppUser } from "../../../server/postgresAuthStore";
+import type { DocumentAuthorizationService } from "../../../server/documentAuthorization";
 import type { ObjectStorage } from "../../../server/objectStorage";
 import { createObjectKey } from "../../../server/objectStorage";
-import type { WorkspaceAccess } from "../../../server/postgresWorkspaceStore";
+import type { PostgresAttachmentStore } from "../../../server/postgresAttachmentStore";
 import { getSessionToken } from "../../../server/sessionCookie";
 
 interface FileAuthStore {
   getUserBySessionToken: (token: string) => Promise<Pick<AppUser, "id"> | null>;
 }
 
-interface FileWorkspaceStore {
-  getWorkspaceAccess: (userId: string, workspaceId: string) => Promise<WorkspaceAccess | null>;
-}
-
 interface FileRouteDependencies {
+  attachmentStore?: Pick<PostgresAttachmentStore, "createAttachment" | "findAttachment">;
   authStore?: FileAuthStore;
+  documentAuthorization?: Pick<DocumentAuthorizationService, "requireWorkspaceDocumentAction">;
   idFactory?: () => string;
   objectStorage: ObjectStorage;
-  workspaceStore?: FileWorkspaceStore;
 }
 
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 const WORKSPACE_ID_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
+const DOCUMENT_ID_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
 
 export function createFileRouteHandlers({
+  attachmentStore,
   authStore,
+  documentAuthorization,
   idFactory,
   objectStorage,
-  workspaceStore,
 }: FileRouteDependencies) {
-  async function getScope(request: Request, workspaceId: string, requireWrite: boolean) {
-    if (!authStore || !workspaceStore) {
-      return { role: "owner" as const, workspaceId };
+  async function getScope(
+    request: Request,
+    workspaceId: string,
+    documentId: string,
+    action: "read" | "write",
+  ) {
+    if (!authStore) {
+      return { workspaceId };
+    }
+    if (!documentAuthorization || !attachmentStore) {
+      throw new Error("Document file services are not configured");
     }
 
     const user = await authStore.getUserBySessionToken(getSessionToken(request));
@@ -39,19 +47,20 @@ export function createFileRouteHandlers({
       return NextResponse.json({ error: "请先进入工作区" }, { status: 401 });
     }
 
-    const access = await workspaceStore.getWorkspaceAccess(user.id, workspaceId);
-    if (
-      !access ||
-      access.workspaceId !== workspaceId ||
-      (requireWrite && access.role === "viewer")
-    ) {
-      return NextResponse.json(
-        { error: requireWrite ? "没有上传文件的权限" : "没有读取文件的权限" },
-        { status: 403 },
+    try {
+      const access = await documentAuthorization.requireWorkspaceDocumentAction(
+        user.id,
+        workspaceId,
+        documentId,
+        action,
       );
+      if (access.workspaceId !== workspaceId) {
+        return NextResponse.json({ error: "文档不存在或无权访问" }, { status: 404 });
+      }
+      return access;
+    } catch {
+      return NextResponse.json({ error: "文档不存在或无权访问" }, { status: 404 });
     }
-
-    return access;
   }
 
   return {
@@ -65,10 +74,15 @@ export function createFileRouteHandlers({
 
       const file = formData.get("file");
       const kind = formData.get("kind");
+      const documentId = formData.get("documentId");
       const workspaceId = formData.get("workspaceId");
+      const requestedDocumentId = typeof documentId === "string" ? documentId : null;
 
       if (typeof workspaceId !== "string" || !WORKSPACE_ID_PATTERN.test(workspaceId)) {
         return NextResponse.json({ error: "工作区标识不正确" }, { status: 400 });
+      }
+      if (authStore && (!requestedDocumentId || !DOCUMENT_ID_PATTERN.test(requestedDocumentId))) {
+        return NextResponse.json({ error: "文档标识不正确" }, { status: 400 });
       }
       if (!(file instanceof File) || (kind !== "image" && kind !== "file")) {
         return NextResponse.json({ error: "请选择要上传的文件" }, { status: 400 });
@@ -80,7 +94,7 @@ export function createFileRouteHandlers({
         return NextResponse.json({ error: "图片块只能上传图片文件" }, { status: 400 });
       }
 
-      const scope = await getScope(request, workspaceId, true);
+      const scope = await getScope(request, workspaceId, requestedDocumentId ?? "", "write");
       if (scope instanceof NextResponse) {
         return scope;
       }
@@ -89,6 +103,9 @@ export function createFileRouteHandlers({
       const body = new Uint8Array(await file.arrayBuffer());
       const mimeType = file.type || "application/octet-stream";
       await objectStorage.putObject(key, body, mimeType);
+      if (authStore && requestedDocumentId && attachmentStore) {
+        await attachmentStore.createAttachment({ documentId: requestedDocumentId, key, workspaceId });
+      }
       const url = `/api/files/${key.split("/").map(encodeURIComponent).join("/")}`;
 
       return NextResponse.json({
@@ -109,12 +126,21 @@ export function createFileRouteHandlers({
         return NextResponse.json({ error: "文件标识不正确" }, { status: 400 });
       }
 
-      const scope = await getScope(request, workspaceId, false);
+      if (authStore && !attachmentStore) {
+        throw new Error("Document file services are not configured");
+      }
+      const attachment = authStore ? await attachmentStore!.findAttachment(key) : null;
+      if (authStore && (!attachment || attachment.workspaceId !== workspaceId)) {
+        return NextResponse.json({ error: "文档不存在或无权访问" }, { status: 404 });
+      }
+      const scope = await getScope(
+        request,
+        workspaceId,
+        attachment?.documentId ?? "",
+        "read",
+      );
       if (scope instanceof NextResponse) {
         return scope;
-      }
-      if (scope.workspaceId !== workspaceId) {
-        return NextResponse.json({ error: "没有读取文件的权限" }, { status: 403 });
       }
 
       try {

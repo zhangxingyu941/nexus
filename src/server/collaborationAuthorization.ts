@@ -1,26 +1,27 @@
-import type { WorkspaceAccess } from "./postgresWorkspaceStore";
+import type { DocumentAccess } from "../shared/documentAccess";
 import { getSessionToken } from "./sessionCookie";
 
 interface CollaborationAuthStore {
   getUserBySessionToken(token: string): Promise<{ id: string } | null>;
 }
 
-interface CollaborationWorkspaceStore {
-  getDocumentAccess(
+interface CollaborationDocumentAuthorization {
+  requireWorkspaceDocumentAction(
     userId: string,
     workspaceId: string,
     documentId: string,
-  ): Promise<WorkspaceAccess | null>;
+    action: "write",
+  ): Promise<DocumentAccess>;
 }
 
 interface CollaborationAuthorizationDependencies {
   authStore: CollaborationAuthStore;
-  workspaceStore: CollaborationWorkspaceStore;
+  documentAuthorization: CollaborationDocumentAuthorization;
 }
 
 export type CollaborationAuthorizationResult =
   | {
-      access: WorkspaceAccess;
+      access: DocumentAccess;
       documentId: string;
       ok: true;
       roomName: string;
@@ -43,7 +44,7 @@ function getRoomName(request: Request) {
 
 export async function authorizeCollaborationRequest(
   request: Request,
-  { authStore, workspaceStore }: CollaborationAuthorizationDependencies,
+  { authStore, documentAuthorization }: CollaborationAuthorizationDependencies,
 ): Promise<CollaborationAuthorizationResult> {
   const roomName = getRoomName(request);
   const roomMatch = /^workspace:([^:/]+):document:([^:/]+)$/.exec(roomName);
@@ -57,11 +58,21 @@ export async function authorizeCollaborationRequest(
   }
 
   const [, workspaceId, documentId] = roomMatch;
-  const access = await workspaceStore.getDocumentAccess(user.id, workspaceId, documentId);
-  if (!access || access.workspaceId !== workspaceId) {
+  let access: DocumentAccess;
+  try {
+    access = await documentAuthorization.requireWorkspaceDocumentAction(
+      user.id,
+      workspaceId,
+      documentId,
+      "write",
+    );
+  } catch {
     return { message: "没有访问此协作文档的权限", ok: false, status: 403 };
   }
-  if (access.role === "viewer") {
+  if (access.workspaceId !== workspaceId) {
+    return { message: "没有访问此协作文档的权限", ok: false, status: 403 };
+  }
+  if (!access.canWrite) {
     return { message: "只读成员不能加入可写协作通道", ok: false, status: 403 };
   }
 

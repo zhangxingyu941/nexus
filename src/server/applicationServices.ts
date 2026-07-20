@@ -10,6 +10,7 @@ import { PostgresWorkspaceLifecycleStore } from "./postgresWorkspaceLifecycleSto
 import { PostgresWorkspaceMemberStore } from "./postgresWorkspaceMemberStore";
 import { PostgresWorkspaceStore } from "./postgresWorkspaceStore";
 import { PostgresDocumentStore } from "./postgresDocumentStore";
+import { PostgresAttachmentStore } from "./postgresAttachmentStore";
 import { getRedisSessionCache } from "./redisSessionCache";
 import { createObjectStorage } from "./objectStorage";
 import { createWorkspaceInviteMailerFromEnvironment } from "./workspaceInviteMailer";
@@ -26,6 +27,7 @@ export function createPostgresServices(pool: Pool = getDatabasePool()) {
     new PostgresDocumentAuthorizationRecords(pool),
   );
   const documentStore = new PostgresDocumentStore(pool, documentAuthorization);
+  const attachmentStore = new PostgresAttachmentStore(pool);
   const production = process.env.NODE_ENV === "production";
   const workspaceInviteSecret = process.env.AUTH_HASH_SECRET?.trim()
     || (production
@@ -54,6 +56,7 @@ export function createPostgresServices(pool: Pool = getDatabasePool()) {
 
   return {
     authStore,
+    attachmentStore,
     documentAuthorization,
     documentStore,
     workspaceInviteLimiter,

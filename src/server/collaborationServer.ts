@@ -9,17 +9,20 @@ import {
   isAllowedCollaborationOrigin,
   type CollaborationAuthorizationResult,
 } from "./collaborationAuthorization";
+import type { DocumentAccess } from "../shared/documentAccess";
 import type { WorkspaceAccessInvalidationSource } from "./workspaceAccessNotifications";
 
 interface CollaborationServerAuthStore {
   getUserBySessionToken(token: string): Promise<{ id: string } | null>;
 }
 
-interface CollaborationServerWorkspaceStore {
-  getDocumentAccess(userId: string, workspaceId: string, documentId: string): Promise<{
-    role: "owner" | "editor" | "viewer";
-    workspaceId: string;
-  } | null>;
+interface CollaborationServerDocumentAuthorization {
+  requireWorkspaceDocumentAction(
+    userId: string,
+    workspaceId: string,
+    documentId: string,
+    action: "write",
+  ): Promise<DocumentAccess>;
 }
 
 type SetupConnection = (
@@ -35,7 +38,7 @@ interface CollaborationServerOptions {
   flushRooms?: () => Promise<void>;
   prepareRoom?: (roomName: string) => Promise<void>;
   setupConnection: SetupConnection;
-  workspaceStore: CollaborationServerWorkspaceStore;
+  documentAuthorization: CollaborationServerDocumentAuthorization;
 }
 
 function toRequest(request: IncomingMessage) {
@@ -72,7 +75,7 @@ export function createCollaborationServer({
   flushRooms,
   prepareRoom,
   setupConnection,
-  workspaceStore,
+  documentAuthorization,
 }: CollaborationServerOptions) {
   const webSocketServer = new WebSocketServer({ noServer: true });
   const connections = new Map<WebSocket, { userId: string; workspaceId: string }>();
@@ -101,7 +104,10 @@ export function createCollaborationServer({
 
       let authorization: CollaborationAuthorizationResult;
       try {
-        authorization = await authorizeCollaborationRequest(toRequest(request), { authStore, workspaceStore });
+        authorization = await authorizeCollaborationRequest(toRequest(request), {
+          authStore,
+          documentAuthorization,
+        });
       } catch {
         rejectUpgrade(socket, 403, "协作授权失败");
         return;

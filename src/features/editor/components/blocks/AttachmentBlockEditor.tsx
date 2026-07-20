@@ -8,6 +8,7 @@ import { uploadAttachment } from "../../persistence/attachmentRepository";
 interface AttachmentBlockEditorProps {
   content: string;
   data: AttachmentBlockData | null;
+  documentId: string;
   isReadOnly: boolean;
   kind: "image" | "file";
   onChangeContent: (content: string) => void;
@@ -29,6 +30,7 @@ function formatFileSize(size: number) {
 export function AttachmentBlockEditor({
   content,
   data,
+  documentId,
   isReadOnly,
   kind,
   onChangeContent,
@@ -49,7 +51,7 @@ export function AttachmentBlockEditor({
     setStatus("");
 
     try {
-      onChangeData(await uploadAttachment(workspaceId, file, kind));
+      onChangeData(await uploadAttachment(workspaceId, documentId, file, kind));
       setStatus(`${label}已上传`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : `${label}上传失败`);
