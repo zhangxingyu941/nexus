@@ -116,6 +116,7 @@ export function WorkspaceShell({ mode, sessionUser, onSignOut }: WorkspaceShellP
         onOpenInvites={mode === "database" ? () => setIsInvitationsOpen(true) : undefined}
         onSignOut={onSignOut}
         onWorkspaceChange={session.updateContent}
+        documentPublicId={session.snapshot.documentPublicIds?.[session.snapshot.content.activeDocumentId]}
         saveStatus={session.saveStatus}
         sessionUser={sessionUser}
         workspace={session.snapshot.content}

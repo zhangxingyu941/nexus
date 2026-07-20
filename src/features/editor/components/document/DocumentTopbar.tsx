@@ -24,6 +24,7 @@ interface DocumentTopbarProps {
   memberCount: number;
   presenceCount: number;
   sessionUser: EditorSessionUser | null;
+  shareEnabled: boolean;
   title: string;
   onToggleContext: () => void;
   onToggleComments: () => void;
@@ -51,6 +52,7 @@ export function DocumentTopbar({
   memberCount,
   presenceCount,
   sessionUser,
+  shareEnabled,
   title,
   onToggleContext,
   onToggleComments,
@@ -215,10 +217,12 @@ export function DocumentTopbar({
             </Tooltip>
           ) : null}
 
-          <Button aria-expanded={isShareOpen} aria-label="分享" className="h-8 px-2.5" onClick={onToggleShare} type="button">
-            <Share2 aria-hidden="true" className="size-4" />
-            <span className="hidden text-xs sm:inline">分享</span>
-          </Button>
+          {shareEnabled ? (
+            <Button aria-expanded={isShareOpen} aria-label="分享" className="h-8 px-2.5" onClick={onToggleShare} type="button">
+              <Share2 aria-hidden="true" className="size-4" />
+              <span className="hidden text-xs sm:inline">分享</span>
+            </Button>
+          ) : null}
         </div>
     </header>
   );

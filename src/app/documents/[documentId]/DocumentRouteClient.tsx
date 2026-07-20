@@ -28,6 +28,8 @@ import {
   type DocumentSnapshot,
 } from "@/features/editor/persistence/documentRepository";
 import { ApiRequestError } from "@/features/editor/persistence/apiClient";
+import { loadWorkspaceMembers } from "@/features/editor/persistence/workspaceMemberRepository";
+import type { DatabaseWorkspaceMember } from "@/features/editor/session/sessionTypes";
 import type { WorkspaceSaveStatus } from "@/features/editor/session/useWorkspaceSession";
 
 interface DocumentRouteClientProps {
@@ -45,15 +47,19 @@ export function DocumentRouteClient({ publicId }: DocumentRouteClientProps) {
   const repository = useMemo(() => createDocumentRepository(), []);
   const [routeState, setRouteState] = useState<DocumentRouteState>({ status: "loading" });
   const [saveStatus, setSaveStatus] = useState<WorkspaceSaveStatus>("remote");
+  const [workspaceMembers, setWorkspaceMembers] = useState<DatabaseWorkspaceMember[]>([]);
   const documentRef = useRef<EditorDocument | null>(null);
   const saveTimerRef = useRef<number | null>(null);
+  const loadSequenceRef = useRef(0);
 
   const load = useCallback(async () => {
+    const sequence = ++loadSequenceRef.current;
     if (saveTimerRef.current !== null) {
       window.clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
     }
     documentRef.current = null;
+    setWorkspaceMembers([]);
     setRouteState({ status: "loading" });
 
     try {
@@ -61,6 +67,12 @@ export function DocumentRouteClient({ publicId }: DocumentRouteClientProps) {
       documentRef.current = snapshot.document;
       setSaveStatus(snapshot.access.canWrite ? "remote" : "readonly");
       setRouteState({ snapshot, status: "ready" });
+      void loadWorkspaceMembers(snapshot.access.workspaceId).then(
+        (members) => {
+          if (loadSequenceRef.current === sequence) setWorkspaceMembers(members);
+        },
+        () => undefined,
+      );
     } catch (error) {
       documentRef.current = null;
       if (error instanceof ApiRequestError && error.status === 401) {
@@ -79,6 +91,7 @@ export function DocumentRouteClient({ publicId }: DocumentRouteClientProps) {
   useEffect(() => {
     void load();
     return () => {
+      loadSequenceRef.current += 1;
       if (saveTimerRef.current !== null) {
         window.clearTimeout(saveTimerRef.current);
       }
@@ -152,6 +165,7 @@ export function DocumentRouteClient({ publicId }: DocumentRouteClientProps) {
       collaborationPresence={[]}
       collaborationState="disabled"
       document={document}
+      documentPublicId={publicId}
       focusBlockId={null}
       inviteCount={0}
       isReadOnly={!access.canWrite}
@@ -202,7 +216,7 @@ export function DocumentRouteClient({ publicId }: DocumentRouteClientProps) {
       sessionUser={null}
       titleFocusRequest={0}
       workspaceId={access.workspaceId}
-      workspaceMembers={[]}
+      workspaceMembers={workspaceMembers}
     />
   );
 }

@@ -77,6 +77,7 @@ interface EditorPageProps {
   onOpenInvites?: () => void;
   onSignOut?: () => void;
   onWorkspaceChange: (updater: (current: EditorWorkspace) => EditorWorkspace) => void;
+  documentPublicId?: string;
   saveStatus: WorkspaceSaveStatus;
   sessionUser?: EditorSessionUser | null;
   workspace: EditorWorkspace;
@@ -91,6 +92,7 @@ export function EditorPage({
   onOpenInvites,
   onSignOut,
   onWorkspaceChange,
+  documentPublicId,
   saveStatus,
   sessionUser = null,
   workspace,
@@ -496,6 +498,7 @@ export function EditorPage({
         collaborationPresence={collaboration.presence}
         collaborationState={collaboration.connectionState}
         document={activeDocument}
+        documentPublicId={documentPublicId}
         focusBlockId={focusBlockId}
         inviteCount={inviteCount}
         isWorkspaceNavigationOpen={isSidebarOpen}

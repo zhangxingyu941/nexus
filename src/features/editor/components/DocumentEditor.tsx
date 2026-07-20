@@ -20,7 +20,7 @@ import { DocumentTitleSection } from "./document/DocumentTitleSection";
 import { DocumentTopbar } from "./document/DocumentTopbar";
 import { getBlockPreview, getDocumentTitle } from "./document/documentEditorTypes";
 import type { WorkspaceSaveStatus } from "../session/useWorkspaceSession";
-import type { CommentFilter, SharePermission } from "./document/documentEditorTypes";
+import type { CommentFilter } from "./document/documentEditorTypes";
 import { HistoryPanel } from "./document/HistoryPanel";
 import { MembersPopover } from "./document/MembersPopover";
 import { SharePopover } from "./document/SharePopover";
@@ -32,6 +32,7 @@ interface DocumentEditorProps {
   collaborationPresence: CollaborationPresence[];
   collaborationState: CollaborationConnectionState;
   document: EditorDocument;
+  documentPublicId?: string;
   focusBlockId: string | null;
   inviteCount: number;
   isWorkspaceNavigationOpen: boolean;
@@ -71,6 +72,7 @@ export function DocumentEditor({
   collaborationPresence,
   collaborationState,
   document,
+  documentPublicId,
   focusBlockId,
   inviteCount,
   isWorkspaceNavigationOpen,
@@ -110,8 +112,6 @@ export function DocumentEditor({
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [isShortcutOpen, setIsShortcutOpen] = useState(false);
   const [commentFilter, setCommentFilter] = useState<CommentFilter>("open");
-  const [sharePermission, setSharePermission] = useState<SharePermission>("private");
-  const [shareStatus, setShareStatus] = useState("");
   const titleInputRef = useRef<HTMLTextAreaElement | null>(null);
   const documentScrollRef = useRef<HTMLDivElement | null>(null);
   const blockComments = useMemo(
@@ -172,14 +172,6 @@ export function DocumentEditor({
     return () => globalThis.document.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  const handleCopyLink = () => {
-    const shareLink = `${window.location.origin}/documents/${document.id}`;
-
-    // 浏览器支持剪贴板时写入真实链接；测试和受限环境下仍给出明确反馈。
-    void navigator.clipboard?.writeText(shareLink)?.catch(() => undefined);
-    setShareStatus("链接已复制");
-  };
-
   return (
     <TooltipProvider delayDuration={350}>
       <main className={`relative grid min-h-dvh min-w-0 grid-rows-[auto_minmax(0,1fr)] bg-background${isReadOnly ? " main-pane-readonly" : ""}`}>
@@ -200,6 +192,7 @@ export function DocumentEditor({
         presenceCount={collaborationPresence.length}
         memberCount={workspaceMembers.length || collaborators.length}
         sessionUser={sessionUser}
+        shareEnabled={Boolean(documentPublicId)}
         title={title}
         onToggleContext={() => setIsContextOpen((current) => !current)}
         onToggleComments={() => {
@@ -217,7 +210,7 @@ export function DocumentEditor({
           setIsCommentsOpen(false);
           setIsHistoryOpen(false);
         }}
-        onToggleShare={() => setIsShareOpen((current) => !current)}
+        onToggleShare={() => documentPublicId && setIsShareOpen((current) => !current)}
         onToggleShortcuts={() => setIsShortcutOpen((current) => !current)}
         onToggleWorkspaceNavigation={onToggleWorkspaceNavigation}
       />
@@ -285,18 +278,11 @@ export function DocumentEditor({
         />
       ) : null}
 
-      {isShareOpen ? (
+      {isShareOpen && documentPublicId ? (
         <SharePopover
-          collaborators={collaborators}
-          documentId={document.id}
-          sharePermission={sharePermission}
-          shareStatus={shareStatus}
-          onChangePermission={(permission) => {
-            setSharePermission(permission);
-            setShareStatus("");
-          }}
           onClose={() => setIsShareOpen(false)}
-          onCopyLink={handleCopyLink}
+          documentPublicId={documentPublicId}
+          workspaceMembers={workspaceMembers}
         />
       ) : null}
 

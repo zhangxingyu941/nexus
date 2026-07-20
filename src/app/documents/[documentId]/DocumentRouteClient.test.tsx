@@ -7,13 +7,26 @@ import { DocumentRouteClient } from "./DocumentRouteClient";
 const documentRepositoryMock = vi.hoisted(() => ({
   createDocumentRepository: vi.fn(),
 }));
+const workspaceMemberRepositoryMock = vi.hoisted(() => ({
+  loadWorkspaceMembers: vi.fn(),
+}));
 
 vi.mock("@/features/editor/persistence/documentRepository", () => documentRepositoryMock);
+vi.mock("@/features/editor/persistence/workspaceMemberRepository", () => workspaceMemberRepositoryMock);
 vi.mock("@/features/editor/components/DocumentEditor", () => ({
-  DocumentEditor: ({ document, isReadOnly }: { document: { title: string }; isReadOnly: boolean }) => (
+  DocumentEditor: ({
+    document,
+    isReadOnly,
+    workspaceMembers,
+  }: {
+    document: { title: string };
+    isReadOnly: boolean;
+    workspaceMembers: unknown[];
+  }) => (
     <main aria-label="文档编辑器">
       <h1>{document.title}</h1>
       <span>{isReadOnly ? "只读" : "可编辑"}</span>
+      <span>{workspaceMembers.length} 位成员</span>
     </main>
   ),
 }));
@@ -41,12 +54,17 @@ describe("DocumentRouteClient", () => {
   it("loads the direct document and renders it as readonly for a viewer", async () => {
     const repository = createRepository();
     documentRepositoryMock.createDocumentRepository.mockReturnValue(repository);
+    workspaceMemberRepositoryMock.loadWorkspaceMembers.mockResolvedValueOnce([
+      { displayName: "Owner", email: "owner@example.com", id: "owner-1", role: "owner" },
+    ]);
 
     render(<DocumentRouteClient publicId="public-document-1" />);
 
     expect(await screen.findByRole("heading", { name: "预算草案" })).toBeInTheDocument();
     expect(screen.getByText("只读")).toBeInTheDocument();
+    expect(await screen.findByText("1 位成员")).toBeInTheDocument();
     expect(repository.load).toHaveBeenCalledWith("public-document-1");
+    expect(workspaceMemberRepositoryMock.loadWorkspaceMembers).toHaveBeenCalledWith("workspace-1");
   });
 
   it("shows the existing authentication flow when the document API returns 401", async () => {
