@@ -77,6 +77,17 @@ describe("PostgresWorkspaceMemberStore", () => {
       role: "editor",
       workspaceId: "workspace-1",
     })).rejects.toMatchObject({ code: "workspace_deleted" });
+    await expect(store.removeMember({
+      actorUserId: "owner-1",
+      memberId: "member-1",
+      workspaceId: "workspace-1",
+    })).rejects.toMatchObject({ code: "workspace_deleted" });
+    await expect(store.transferOwnership({
+      actorUserId: "owner-1",
+      retainOwnerRole: true,
+      targetUserId: "editor-1",
+      workspaceId: "workspace-1",
+    })).rejects.toMatchObject({ code: "workspace_deleted" });
     await expect(store.leaveWorkspace({
       userDisplayName: "Member",
       userId: "member-1",
@@ -87,7 +98,23 @@ describe("PostgresWorkspaceMemberStore", () => {
       memberId: "member-1",
       role: "editor",
       workspaceId: "workspace-1",
-    })).rejects.toMatchObject({ code: "workspace_forbidden" });
+    })).rejects.toMatchObject({ code: "workspace_not_found" });
+    await expect(store.removeMember({
+      actorUserId: "outsider-1",
+      memberId: "member-1",
+      workspaceId: "workspace-1",
+    })).rejects.toMatchObject({ code: "workspace_not_found" });
+    await expect(store.transferOwnership({
+      actorUserId: "outsider-1",
+      retainOwnerRole: true,
+      targetUserId: "editor-1",
+      workspaceId: "workspace-1",
+    })).rejects.toMatchObject({ code: "workspace_not_found" });
+    await expect(store.leaveWorkspace({
+      userDisplayName: "Outsider",
+      userId: "outsider-1",
+      workspaceId: "workspace-1",
+    })).rejects.toMatchObject({ code: "workspace_not_found" });
   });
 
   it("publishes invalidations for every affected member mutation", async () => {

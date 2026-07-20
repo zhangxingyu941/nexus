@@ -91,6 +91,7 @@ export class PostgresWorkspaceMemberStore {
     try {
       await client.query("BEGIN");
       const workspace = await this.lockWorkspace(client, input.workspaceId);
+      await this.requireDeletedWorkspaceVisibility(client, input.actorUserId, workspace);
       await this.requireOwner(client, input.actorUserId, workspace);
       const targetRole = await this.requireMember(client, input.memberId, workspace.id);
 
@@ -152,6 +153,7 @@ export class PostgresWorkspaceMemberStore {
     try {
       await client.query("BEGIN");
       const workspace = await this.lockWorkspace(client, input.workspaceId);
+      await this.requireDeletedWorkspaceVisibility(client, input.actorUserId, workspace);
       await this.requireOwner(client, input.actorUserId, workspace);
       if (input.actorUserId === input.memberId) {
         throw new WorkspaceDomainError(
@@ -191,6 +193,7 @@ export class PostgresWorkspaceMemberStore {
     try {
       await client.query("BEGIN");
       const workspace = await this.lockWorkspace(client, input.workspaceId);
+      await this.requireDeletedWorkspaceVisibility(client, input.actorUserId, workspace);
       await this.requireOwner(client, input.actorUserId, workspace);
       const targetRole = await this.requireTransferTarget(
         client,
@@ -253,8 +256,8 @@ export class PostgresWorkspaceMemberStore {
     try {
       await client.query("BEGIN");
       const workspace = await this.lockWorkspace(client, input.workspaceId);
+      await this.requireDeletedWorkspaceVisibility(client, input.userId, workspace);
       const role = await this.requireMember(client, input.userId, workspace.id);
-      this.requireActiveWorkspace(workspace);
       await this.protectLastOwner(client, workspace.id, role);
       const selectedWorkspaceId = await this.removeMembership(client, {
         actorUserId: input.userId,
@@ -414,6 +417,26 @@ export class PostgresWorkspaceMemberStore {
     if (workspace.deletedAt !== null) {
       throw new WorkspaceDomainError("workspace_deleted", "Workspace has been deleted");
     }
+  }
+
+  private async requireDeletedWorkspaceVisibility(
+    client: PoolClient,
+    userId: string,
+    workspace: { deletedAt: number | null; id: string },
+  ) {
+    if (workspace.deletedAt === null) return;
+
+    const membership = await client.query(
+      `SELECT 1
+       FROM workspace_members
+       WHERE workspace_id = $1 AND user_id = $2
+       LIMIT 1`,
+      [workspace.id, userId],
+    );
+    if (!membership.rows[0]) {
+      throw new WorkspaceDomainError("workspace_not_found", "Workspace not found");
+    }
+    throw new WorkspaceDomainError("workspace_deleted", "Workspace has been deleted");
   }
 
   private async requireMember(
