@@ -87,6 +87,31 @@ describe("authentication database migration", () => {
     expect(Number(migration.rows[0].count)).toBe(1);
   });
 
+  it("adds constrained workspace tombstone fields", async () => {
+    await migrateDatabase(pool);
+    await pool.query(
+      "INSERT INTO app_users (id, email, display_name, created_at) VALUES ($1, $2, $3, $4)",
+      ["owner-1", "owner@example.com", "Owner", 1000],
+    );
+    await pool.query(
+      `INSERT INTO editor_workspaces (id, name, updated_at, created_at)
+       VALUES ($1, $2, $3, $4)`,
+      ["workspace-1", "Workspace", 1000, 1000],
+    );
+
+    expect(await columnNames(pool, "editor_workspaces")).toEqual(expect.arrayContaining([
+      "deleted_at",
+      "deleted_by",
+      "purge_after",
+    ]));
+    await expect(pool.query(
+      `UPDATE editor_workspaces
+       SET deleted_at = $1, deleted_by = $2, purge_after = $3
+       WHERE id = $4`,
+      [1000, "owner-1", 2000, "workspace-1"],
+    )).rejects.toThrow();
+  });
+
   it("enforces provider account uniqueness", async () => {
     await migrateDatabase(pool);
     await pool.query(

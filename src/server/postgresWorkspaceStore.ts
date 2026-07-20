@@ -16,6 +16,7 @@ import {
   type WorkspaceSnapshot,
   type WorkspaceSummary,
 } from "../shared/workspace";
+import { WorkspaceDomainError } from "./workspaceErrors";
 
 export type WorkspaceRole = SharedWorkspaceRole;
 
@@ -154,7 +155,7 @@ export class PostgresWorkspaceStore {
        FROM workspace_members members
        INNER JOIN editor_workspaces workspaces ON workspaces.id = members.workspace_id
        LEFT JOIN workspace_preferences preferences ON preferences.user_id = members.user_id
-       WHERE members.user_id = $1
+       WHERE members.user_id = $1 AND workspaces.deleted_at IS NULL
        ORDER BY workspaces.created_at ASC, workspaces.id ASC`,
       [userId],
     );
@@ -237,10 +238,7 @@ export class PostgresWorkspaceStore {
 
     try {
       await client.query("BEGIN");
-      const access = await this.findAccess(client, userId, workspaceId);
-      if (!access) {
-        throw new WorkspaceNotFoundError();
-      }
+      const access = await this.requireActiveAccess(client, userId, workspaceId);
       await this.ensureDefaultDocument(client, userId, workspaceId);
       await client.query(
         `INSERT INTO workspace_preferences (user_id, selected_workspace_id)
@@ -270,10 +268,7 @@ export class PostgresWorkspaceStore {
 
     try {
       await client.query("BEGIN");
-      const access = await this.findAccess(client, userId, workspaceId);
-      if (!access) {
-        throw new WorkspaceNotFoundError();
-      }
+      const access = await this.requireActiveAccess(client, userId, workspaceId);
       if (access.role !== "owner") {
         throw new WorkspacePermissionError("只有工作区所有者可以重命名");
       }
@@ -299,11 +294,7 @@ export class PostgresWorkspaceStore {
     userId: string,
     workspaceId: string,
   ): Promise<WorkspaceSnapshot> {
-    const access = await this.findAccess(this.pool, userId, workspaceId);
-
-    if (!access) {
-      throw new WorkspaceNotFoundError();
-    }
+    const access = await this.requireActiveAccess(this.pool, userId, workspaceId);
 
     await this.ensureDefaultDocument(this.pool, userId, access.workspaceId);
 
@@ -481,11 +472,7 @@ export class PostgresWorkspaceStore {
 
     try {
       await client.query("BEGIN");
-      const access = await this.findAccess(client, userId, workspaceId);
-
-      if (!access) {
-        throw new WorkspaceNotFoundError();
-      }
+      const access = await this.requireActiveAccess(client, userId, workspaceId);
       if (access.role === "viewer") {
         throw new WorkspacePermissionError();
       }
@@ -607,9 +594,12 @@ export class PostgresWorkspaceStore {
        FROM workspace_members members
        INNER JOIN editor_documents documents
          ON documents.workspace_id = members.workspace_id
+       INNER JOIN editor_workspaces workspaces
+         ON workspaces.id = members.workspace_id
        WHERE members.user_id = $1
          AND members.workspace_id = $2
          AND documents.id = $3
+         AND workspaces.deleted_at IS NULL
        LIMIT 1`,
       [userId, workspaceId, documentId],
     );
@@ -871,9 +861,13 @@ export class PostgresWorkspaceStore {
     workspaceId: string,
   ) {
     const result = await executor.query(
-      `SELECT workspace_id, role
-       FROM workspace_members
-       WHERE user_id = $1 AND workspace_id = $2
+      `SELECT members.workspace_id, members.role
+       FROM workspace_members members
+       INNER JOIN editor_workspaces workspaces
+         ON workspaces.id = members.workspace_id
+       WHERE members.user_id = $1
+         AND members.workspace_id = $2
+         AND workspaces.deleted_at IS NULL
        LIMIT 1`,
       [userId, workspaceId],
     );
@@ -895,7 +889,7 @@ export class PostgresWorkspaceStore {
       `SELECT members.workspace_id, members.role
        FROM workspace_members members
        INNER JOIN editor_workspaces workspaces ON workspaces.id = members.workspace_id
-       WHERE members.user_id = $1
+       WHERE members.user_id = $1 AND workspaces.deleted_at IS NULL
        ORDER BY workspaces.created_at ASC, workspaces.id ASC
        LIMIT 1`,
       [userId],
@@ -908,6 +902,34 @@ export class PostgresWorkspaceStore {
           workspaceId: String(row.workspace_id),
         } satisfies WorkspaceAccess)
       : null;
+  }
+
+  private async requireActiveAccess(
+    executor: Pick<Pool, "query"> | Pick<PoolClient, "query">,
+    userId: string,
+    workspaceId: string,
+  ): Promise<WorkspaceAccess> {
+    const access = await this.findAccess(executor, userId, workspaceId);
+    if (access) {
+      return access;
+    }
+
+    const deletedMembership = await executor.query(
+      `SELECT 1
+       FROM workspace_members members
+       INNER JOIN editor_workspaces workspaces
+         ON workspaces.id = members.workspace_id
+       WHERE members.user_id = $1
+         AND members.workspace_id = $2
+         AND workspaces.deleted_at IS NOT NULL
+       LIMIT 1`,
+      [userId, workspaceId],
+    );
+    if (deletedMembership.rows.length > 0) {
+      throw new WorkspaceDomainError("workspace_deleted", "Workspace has been deleted");
+    }
+
+    throw new WorkspaceNotFoundError();
   }
 }
 

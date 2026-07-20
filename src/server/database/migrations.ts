@@ -104,6 +104,8 @@ const ORPHANED_USER_WORKSPACES_MIGRATION_ID = "2026-07-16-orphaned-user-workspac
 const WORKSPACE_INVITATIONS_AUDIT_MIGRATION_ID =
   "2026-07-16-workspace-invitations-audit";
 const HEADING_LEVEL_MIGRATION_ID = "2026-07-17-editor-heading-level";
+const WORKSPACE_SOFT_DELETION_MIGRATION_ID =
+  "2026-07-16-workspace-soft-deletion";
 const MIGRATION_LOCK_ID = "__migration_lock__";
 
 const WORKSPACE_SCOPED_CONTENT_SCHEMA = [
@@ -294,6 +296,21 @@ const HEADING_LEVEL_SCHEMA = [
    CHECK (heading_level BETWEEN 1 AND 6)`,
 ];
 
+const WORKSPACE_SOFT_DELETION_SCHEMA = [
+  "ALTER TABLE editor_workspaces ADD COLUMN deleted_at BIGINT",
+  "ALTER TABLE editor_workspaces ADD COLUMN deleted_by TEXT REFERENCES app_users(id) ON DELETE SET NULL",
+  "ALTER TABLE editor_workspaces ADD COLUMN purge_after BIGINT",
+  `ALTER TABLE editor_workspaces
+   ADD CONSTRAINT editor_workspaces_tombstone_check
+   CHECK (
+     (deleted_at IS NULL AND purge_after IS NULL)
+     OR (deleted_at IS NOT NULL AND purge_after = deleted_at + 604800000)
+   )`,
+  `CREATE INDEX editor_workspaces_purge_after_idx
+   ON editor_workspaces(purge_after)
+   WHERE deleted_at IS NOT NULL`,
+];
+
 export async function migrateDatabase(pool: Pool) {
   const client = await pool.connect();
 
@@ -469,6 +486,22 @@ export async function migrateDatabase(pool: Pool) {
       await client.query(
         "INSERT INTO schema_migrations (id, applied_at) VALUES ($1, $2)",
         [HEADING_LEVEL_MIGRATION_ID, Date.now()],
+      );
+    }
+
+    const workspaceSoftDeletionResult = await client.query(
+      "SELECT id FROM schema_migrations WHERE id = $1",
+      [WORKSPACE_SOFT_DELETION_MIGRATION_ID],
+    );
+
+    if (workspaceSoftDeletionResult.rows.length === 0) {
+      for (const statement of WORKSPACE_SOFT_DELETION_SCHEMA) {
+        await client.query(statement);
+      }
+
+      await client.query(
+        "INSERT INTO schema_migrations (id, applied_at) VALUES ($1, $2)",
+        [WORKSPACE_SOFT_DELETION_MIGRATION_ID, Date.now()],
       );
     }
 

@@ -93,6 +93,50 @@ describe("PostgresWorkspaceStore", () => {
     });
   });
 
+  it("excludes deleted workspaces from the catalog and access lookups", async () => {
+    await seedUser(pool, "owner-1", "owner@example.com", "Owner");
+    await seedUser(pool, "owner-2", "second@example.com", "Second owner");
+    let workspaceSequence = 0;
+    const multiWorkspaceStore = new PostgresWorkspaceStore(pool, {
+      idFactory: () => `workspace-${++workspaceSequence}`,
+      now: () => 3000 + workspaceSequence,
+    });
+    await multiWorkspaceStore.ensurePersonalWorkspace("owner-1", "Owner workspace");
+    await multiWorkspaceStore.ensurePersonalWorkspace("owner-2", "Second workspace");
+    await seedMembership(pool, "workspace-2", "owner-1", "editor", 3000);
+    await pool.query(
+      `UPDATE editor_workspaces
+       SET deleted_at = $1, deleted_by = $2, purge_after = $3
+       WHERE id = $4`,
+      [1000, "owner-1", 604_801_000, "workspace-1"],
+    );
+
+    await expect(multiWorkspaceStore.listWorkspaces("owner-1")).resolves.toMatchObject({
+      currentWorkspaceId: "workspace-2",
+      workspaces: [expect.objectContaining({ id: "workspace-2" })],
+    });
+    await expect(
+      multiWorkspaceStore.getWorkspaceAccess("owner-1", "workspace-1"),
+    ).resolves.toBeNull();
+  });
+
+  it("reports a deleted workspace only to a retained member", async () => {
+    await seedUser(pool, "owner-1", "owner@example.com", "Owner");
+    await seedUser(pool, "stranger-1", "stranger@example.com", "Stranger");
+    await store.ensurePersonalWorkspace("owner-1", "Owner workspace");
+    await pool.query(
+      `UPDATE editor_workspaces
+       SET deleted_at = $1, deleted_by = $2, purge_after = $3
+       WHERE id = $4`,
+      [1000, "owner-1", 604_801_000, "workspace-test"],
+    );
+
+    await expect(store.loadWorkspace("owner-1", "workspace-test"))
+      .rejects.toMatchObject({ code: "workspace_deleted" });
+    await expect(store.loadWorkspace("stranger-1", "workspace-test"))
+      .rejects.toBeInstanceOf(WorkspaceNotFoundError);
+  });
+
   it("creates, selects, and renames explicitly scoped workspaces", async () => {
     await seedUser(pool, "owner-1", "owner@example.com", "Owner");
     await seedUser(pool, "editor-1", "editor@example.com", "Editor");
