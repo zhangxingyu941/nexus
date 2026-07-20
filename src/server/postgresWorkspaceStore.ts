@@ -314,13 +314,26 @@ export class PostgresWorkspaceStore {
     }
 
     const documentResult = await this.pool.query(
-      `SELECT id, title, template_id, pinned, updated_at
+      `SELECT id, created_by, access_mode, title, template_id, pinned, updated_at
        FROM editor_documents
        WHERE workspace_id = $1
        ORDER BY position ASC`,
       [access.workspaceId],
     );
-    if (documentResult.rows.length === 0) {
+    const permissionResult = await this.pool.query(
+      `SELECT document_id
+       FROM document_permissions
+       WHERE workspace_id = $1 AND user_id = $2`,
+      [access.workspaceId, userId],
+    );
+    const grantedDocumentIds = new Set(permissionResult.rows.map((row) => String(row.document_id)));
+    const visibleDocumentRows = documentResult.rows.filter((document) =>
+      access.role === "owner"
+      || String(document.created_by) === userId
+      || String(document.access_mode) !== "private"
+      || grantedDocumentIds.has(String(document.id)),
+    );
+    if (visibleDocumentRows.length === 0) {
       throw new WorkspaceNotFoundError();
     }
 
@@ -364,9 +377,16 @@ export class PostgresWorkspaceStore {
       [access.workspaceId],
     );
 
+    const visibleDocumentIds = new Set(visibleDocumentRows.map((document) => String(document.id)));
+    const visibleBlockRows = blockResult.rows.filter((block) =>
+      visibleDocumentIds.has(String(block.document_id)),
+    );
+    const visibleBlockIds = new Set(visibleBlockRows.map((block) => String(block.id)));
+
     const commentsByBlock = new Map<string, BlockComment[]>();
     for (const row of commentResult.rows) {
       const blockId = String(row.block_id);
+      if (!visibleBlockIds.has(blockId)) continue;
       const comment: BlockComment = {
         author: String(row.author),
         body: String(row.body),
@@ -389,6 +409,7 @@ export class PostgresWorkspaceStore {
     const childrenByBlock = new Map<string, string[]>();
     for (const row of relationshipResult.rows) {
       const parentId = String(row.parent_block_id);
+      if (!visibleBlockIds.has(parentId)) continue;
       childrenByBlock.set(parentId, [
         ...(childrenByBlock.get(parentId) ?? []),
         String(row.child_block_id),
@@ -396,7 +417,7 @@ export class PostgresWorkspaceStore {
     }
 
     const blocksByDocument = new Map<string, Block[]>();
-    for (const row of blockResult.rows) {
+    for (const row of visibleBlockRows) {
       const documentId = String(row.document_id);
       const blockId = String(row.id);
       const block: Block = {
@@ -424,7 +445,7 @@ export class PostgresWorkspaceStore {
       ]);
     }
 
-    const documents = documentResult.rows.map((row) => {
+    const documents = visibleDocumentRows.map((row) => {
       const document: EditorDocument = {
         blocks: blocksByDocument.get(String(row.id)) ?? [],
         id: String(row.id),
@@ -443,7 +464,9 @@ export class PostgresWorkspaceStore {
     });
 
     const content: EditorWorkspace = {
-      activeDocumentId: String(workspaceRow.active_document_id),
+      activeDocumentId: documents.some((document) => document.id === String(workspaceRow.active_document_id))
+        ? String(workspaceRow.active_document_id)
+        : documents[0].id,
       documents,
       updatedAt: Number(workspaceRow.updated_at),
     };

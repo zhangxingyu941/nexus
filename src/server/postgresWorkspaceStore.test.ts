@@ -113,6 +113,35 @@ describe("PostgresWorkspaceStore", () => {
     });
   });
 
+  it("omits an ungranted private document from a workspace member snapshot", async () => {
+    await seedUser(pool, "owner-1", "owner@example.com", "Owner");
+    await seedUser(pool, "editor-1", "editor@example.com", "Editor");
+    await store.ensurePersonalWorkspace("owner-1", "Owner workspace");
+    await seedMembership(pool, "workspace-test", "editor-1", "editor", 2000);
+    const workspace = await store.loadWorkspace("owner-1", "workspace-test");
+    const privateDocument = createWorkspaceDocument(
+      workspace.content,
+      2000,
+      "Private budget",
+    );
+
+    await store.saveWorkspace("owner-1", "workspace-test", privateDocument);
+    const privateDocumentId = privateDocument.documents.find(
+      (document) => document.title === "Private budget",
+    )!.id;
+    await pool.query(
+      `UPDATE editor_documents
+       SET access_mode = 'private'
+       WHERE workspace_id = $1 AND id = $2`,
+      ["workspace-test", privateDocumentId],
+    );
+
+    const editorWorkspace = await store.loadWorkspace("editor-1", "workspace-test");
+    expect(editorWorkspace.content.documents).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ title: "Private budget" })]),
+    );
+  });
+
   it("lists every accessible workspace with the selected workspace first", async () => {
     await seedUser(pool, "owner-1", "owner@example.com", "Owner");
     await seedUser(pool, "owner-2", "second@example.com", "Second owner");
