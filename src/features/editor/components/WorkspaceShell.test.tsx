@@ -18,13 +18,15 @@ vi.mock("../persistence/workspaceInviteRepository", () => ({
   workspaceInviteRepository: inviteRepositoryMock,
 }));
 vi.mock("./EditorPage", () => ({
-  EditorPage: ({ inviteCount, onOpenInvites, workspaceId }: {
+  EditorPage: ({ inviteCount, onManageWorkspaces, onOpenInvites, workspaceId }: {
     inviteCount: number;
+    onManageWorkspaces: () => void;
     onOpenInvites?: () => void;
     workspaceId: string;
   }) => (
     <main>
       编辑器 {workspaceId}
+      <button onClick={onManageWorkspaces} type="button">管理工作区</button>
       {onOpenInvites ? <button onClick={onOpenInvites} type="button">邀请 {inviteCount}</button> : null}
     </main>
   ),
@@ -110,6 +112,16 @@ describe("WorkspaceShell", () => {
 
     await waitFor(() => expect(inviteRepositoryMock.declineReceived).toHaveBeenCalledWith("invite-1"));
     await waitFor(() => expect(inviteRepositoryMock.listReceived).toHaveBeenCalledTimes(2));
+  });
+
+  it("enables the lifecycle controls only in database mode", async () => {
+    const user = userEvent.setup();
+    sessionMock.useWorkspaceSession.mockReturnValue(controller());
+    inviteRepositoryMock.listReceived.mockResolvedValue([]);
+    render(<WorkspaceShell mode="database" sessionUser={null} />);
+
+    await user.click(screen.getByRole("button", { name: "管理工作区" }));
+    expect(screen.getByRole("button", { name: "打开回收站" })).toBeInTheDocument();
   });
 });
 

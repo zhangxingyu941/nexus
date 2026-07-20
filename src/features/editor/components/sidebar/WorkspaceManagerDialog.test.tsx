@@ -1,8 +1,19 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WorkspaceCatalog } from "../../../../shared/workspace";
 import { WorkspaceManagerDialog } from "./WorkspaceManagerDialog";
+
+const lifecycleRepositoryMock = vi.hoisted(() => ({
+  delete: vi.fn(),
+  listTrash: vi.fn(),
+  restore: vi.fn(),
+  summary: vi.fn(),
+}));
+
+vi.mock("../../persistence/workspaceLifecycleRepository", () => ({
+  workspaceLifecycleRepository: lifecycleRepositoryMock,
+}));
 
 const catalog: WorkspaceCatalog = {
   currentWorkspaceId: "workspace-a",
@@ -108,5 +119,82 @@ describe("WorkspaceManagerDialog", () => {
     expect(screen.getByRole("tab", { name: "成员" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "邀请" })).toBeInTheDocument();
     expect(await screen.findByText("owner@example.com")).toBeInTheDocument();
+  });
+
+  it("loads deletion details and performs deletion through the server transition", async () => {
+    const user = userEvent.setup();
+    const session = {
+      runServerTransition: vi.fn(async (operation: () => Promise<unknown>) => operation()),
+    };
+    lifecycleRepositoryMock.summary.mockResolvedValue({
+      documentCount: 2,
+      fileCount: 3,
+      id: "workspace-a",
+      memberCount: 4,
+      name: "Nexus 工作区",
+    });
+    lifecycleRepositoryMock.delete.mockResolvedValue({});
+    render(
+      <WorkspaceManagerDialog
+        catalog={catalog}
+        error=""
+        isTransitioning={false}
+        lifecycleEnabled
+        onClose={vi.fn()}
+        onCreate={vi.fn()}
+        onRename={vi.fn()}
+        onSwitch={vi.fn()}
+        open
+        session={session}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "管理 Nexus 工作区" }));
+    await user.click(screen.getByRole("tab", { name: "危险区域" }));
+    expect(await screen.findByText("2 个文档")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "移至回收站" }));
+    await user.type(screen.getByLabelText("输入完整工作区名称以确认"), "Nexus 工作区");
+    await user.click(within(screen.getByRole("dialog", { name: "移至回收站" })).getByRole("button", { name: "移至回收站" }));
+
+    await waitFor(() => expect(lifecycleRepositoryMock.delete).toHaveBeenCalledWith("workspace-a", "Nexus 工作区"));
+    expect(session.runServerTransition).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the global trash view and restores through the server transition", async () => {
+    const user = userEvent.setup();
+    const session = {
+      runServerTransition: vi.fn(async (operation: () => Promise<unknown>) => operation()),
+    };
+    lifecycleRepositoryMock.listTrash.mockResolvedValue([
+      {
+        deletedAt: Date.UTC(2026, 6, 16),
+        deletedBy: { displayName: "林夏", id: "owner-1" },
+        id: "workspace-deleted",
+        name: "产品研发中心",
+        purgeAfter: Date.UTC(2026, 6, 23),
+      },
+    ]);
+    lifecycleRepositoryMock.restore.mockResolvedValue({});
+    render(
+      <WorkspaceManagerDialog
+        catalog={catalog}
+        error=""
+        isTransitioning={false}
+        lifecycleEnabled
+        onClose={vi.fn()}
+        onCreate={vi.fn()}
+        onRename={vi.fn()}
+        onSwitch={vi.fn()}
+        open
+        session={session}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "打开回收站" }));
+    const item = await screen.findByTestId("trashed-workspace-workspace-deleted");
+    await user.click(within(item).getByRole("button", { name: "恢复并进入" }));
+
+    await waitFor(() => expect(lifecycleRepositoryMock.restore).toHaveBeenCalledWith("workspace-deleted"));
+    expect(session.runServerTransition).toHaveBeenCalledTimes(1);
   });
 });

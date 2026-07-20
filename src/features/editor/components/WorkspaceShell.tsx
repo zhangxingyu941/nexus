@@ -131,6 +131,7 @@ export function WorkspaceShell({ mode, sessionUser, onSignOut }: WorkspaceShellP
         currentUserId={sessionUser?.id}
         error={session.error}
         isTransitioning={session.isTransitioning}
+        lifecycleEnabled={mode === "database"}
         onClose={() => setIsManagerOpen(false)}
         onCreate={session.createWorkspace}
         onMemberChanged={() => void session.reload()}
