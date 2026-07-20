@@ -2,6 +2,7 @@ import type { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createPgMemPool } from "../test/pgMemDatabase";
 import { migrateDatabase } from "./database/migrations";
+import { PostgresWorkspaceLifecycleStore } from "./postgresWorkspaceLifecycleStore";
 import { PostgresWorkspaceInviteStore } from "./postgresWorkspaceInviteStore";
 import { WorkspaceInviteTokenService } from "./workspaceInviteTokens";
 
@@ -109,6 +110,29 @@ describe("PostgresWorkspaceInviteStore", () => {
       role: "viewer",
       workspaceId: "workspace-1",
     })).rejects.toMatchObject({ code: "already_member" });
+  });
+
+  it("rejects a new owner invitation after its workspace is deleted", async () => {
+    await deleteWorkspace(pool, now);
+
+    await expect(store.createInvite({
+      actorUserId: "owner-1",
+      email: "recipient@example.com",
+      role: "viewer",
+      workspaceId: "workspace-1",
+    })).rejects.toMatchObject({ code: "workspace_deleted" });
+  });
+
+  it("does not disclose a deleted workspace to a non-member invitation actor", async () => {
+    await seedUser(pool, "stranger-1", "stranger@example.com", "Stranger");
+    await deleteWorkspace(pool, now);
+
+    await expect(store.createInvite({
+      actorUserId: "stranger-1",
+      email: "recipient@example.com",
+      role: "viewer",
+      workspaceId: "workspace-1",
+    })).rejects.toMatchObject({ code: "workspace_not_found" });
   });
 
   it("lists only the recipient's valid pending invitations without exposing a token", async () => {
@@ -586,7 +610,124 @@ describe("PostgresWorkspaceInviteStore", () => {
       [created.invite.id],
     )).resolves.toMatchObject({ rows: [{ status: "expired" }] });
   });
+
+  it("does not accept a recipient invitation after its workspace is deleted", async () => {
+    const created = await store.createInvite({
+      actorUserId: "owner-1",
+      email: "member@example.com",
+      role: "viewer",
+      workspaceId: "workspace-1",
+    });
+    await deleteWorkspace(pool, now);
+
+    await expect(store.acceptInvite({
+      inviteId: created.invite.id,
+      tokenHash: null,
+      userEmail: "member@example.com",
+      userId: "member-1",
+    })).rejects.toMatchObject({ code: "workspace_not_found" });
+    await expect(pool.query(
+      `SELECT user_id
+       FROM workspace_members
+       WHERE workspace_id = $1 AND user_id = $2`,
+      ["workspace-1", "member-1"],
+    )).resolves.toMatchObject({ rows: [] });
+  });
+
+  it("reports a deleted workspace to a retained invitation recipient", async () => {
+    const created = await store.createInvite({
+      actorUserId: "owner-1",
+      email: "member@example.com",
+      role: "viewer",
+      workspaceId: "workspace-1",
+    });
+    const recipient = {
+      inviteId: created.invite.id,
+      tokenHash: null,
+      userEmail: "member@example.com",
+      userId: "member-1",
+    };
+    await store.acceptInvite(recipient);
+    await tombstoneWorkspace(pool, now);
+
+    await expect(store.acceptInvite(recipient))
+      .rejects.toMatchObject({ code: "workspace_deleted" });
+  });
+
+  it("blocks every remaining invitation transition for a deleted workspace", async () => {
+    const created = await store.createInvite({
+      actorUserId: "owner-1",
+      email: "member@example.com",
+      role: "viewer",
+      workspaceId: "workspace-1",
+    });
+    const recipient = {
+      inviteId: created.invite.id,
+      tokenHash: null,
+      userEmail: "member@example.com",
+      userId: "member-1",
+    };
+    await deleteWorkspace(pool, now);
+
+    await expect(store.assertOwnerAccess("owner-1", "workspace-1"))
+      .rejects.toMatchObject({ code: "workspace_deleted" });
+    await expect(store.listOwnerInvites("owner-1", "workspace-1"))
+      .rejects.toMatchObject({ code: "workspace_deleted" });
+    await expect(store.resendInvite("owner-1", "workspace-1", created.invite.id))
+      .rejects.toMatchObject({ code: "workspace_deleted" });
+    await expect(store.revokeInvite("owner-1", "workspace-1", created.invite.id))
+      .rejects.toMatchObject({ code: "workspace_deleted" });
+    await expect(store.markDeliveryResult(
+      "owner-1",
+      "workspace-1",
+      created.invite.id,
+      created.rawToken,
+      "sent",
+    )).rejects.toMatchObject({ code: "workspace_deleted" });
+    await expect(store.resolveRawToken(created.rawToken))
+      .rejects.toMatchObject({ code: "workspace_not_found" });
+    await expect(store.resolveInviteContext(recipient))
+      .rejects.toMatchObject({ code: "workspace_not_found" });
+    await expect(store.declineInvite(recipient))
+      .rejects.toMatchObject({ code: "workspace_not_found" });
+  });
+
+  it("hides a pending tombstone invitation from the recipient list", async () => {
+    await store.createInvite({
+      actorUserId: "owner-1",
+      email: "member@example.com",
+      role: "viewer",
+      workspaceId: "workspace-1",
+    });
+    await tombstoneWorkspace(pool, now);
+
+    await expect(store.listReceivedInvites("member-1", "member@example.com"))
+      .resolves.toEqual([]);
+  });
 });
+
+async function deleteWorkspace(pool: Pool, now: number) {
+  let auditSequence = 0;
+  const lifecycleStore = new PostgresWorkspaceLifecycleStore(pool, {
+    auditEventIdFactory: () => `lifecycle-audit-${now}-${++auditSequence}`,
+    now: () => now,
+    notifyAccessInvalidation: async () => undefined,
+  });
+  await lifecycleStore.deleteWorkspace({
+    actorUserId: "owner-1",
+    confirmationName: "Product",
+    workspaceId: "workspace-1",
+  });
+}
+
+async function tombstoneWorkspace(pool: Pool, now: number) {
+  await pool.query(
+    `UPDATE editor_workspaces
+     SET deleted_at = $1, deleted_by = $2, purge_after = $3
+     WHERE id = $4`,
+    [now, "owner-1", now + 7 * 24 * 60 * 60_000, "workspace-1"],
+  );
+}
 
 async function inviteDeliveryAttemptAt(pool: Pool, inviteId: string) {
   const result = await pool.query(

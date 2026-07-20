@@ -100,11 +100,11 @@ test.describe("workspace deletion and recovery", () => {
       const deniedFile = await memberContext.request.get(String(attachment.url));
       expect(deniedFile.status()).toBe(403);
 
-      const revokedInvite = await page.context().request.post("/api/workspace-invites/resolve", {
+      const deletedWorkspaceInvite = await page.context().request.post("/api/workspace-invites/resolve", {
         data: { token: inviteToken(pendingInviteUrl) },
       });
-      expect(revokedInvite.status()).toBe(410);
-      await expect(revokedInvite.json()).resolves.toMatchObject({ code: "invite_revoked" });
+      expect(deletedWorkspaceInvite.status()).toBe(404);
+      await expect(deletedWorkspaceInvite.json()).resolves.toMatchObject({ code: "workspace_not_found" });
       expect(pendingInvite.id).toBeTruthy();
 
       await page.reload();

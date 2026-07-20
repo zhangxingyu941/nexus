@@ -20,6 +20,7 @@ interface PostgresWorkspaceInviteStoreOptions {
 }
 
 interface LockedWorkspace {
+  deletedAt: number | null;
   id: string;
   name: string;
 }
@@ -73,7 +74,7 @@ export class PostgresWorkspaceInviteStore {
     try {
       await client.query("BEGIN");
       const workspace = await this.lockWorkspace(client, input.workspaceId);
-      const actor = await this.requireOwner(client, input.actorUserId, workspace.id);
+      const actor = await this.requireOwner(client, input.actorUserId, workspace);
       await this.expirePendingInvites(client, workspace);
 
       const member = await client.query(
@@ -270,6 +271,7 @@ export class PostgresWorkspaceInviteStore {
       }
 
       const workspace = await this.lockWorkspace(client, String(match.workspace_id));
+      this.requireActiveWorkspaceForToken(workspace);
       await this.expirePendingInvites(client, workspace);
       const invite = await this.lockInvite(client, workspace.id, String(match.id));
       if (String(invite.token_hash) !== tokenHash) {
@@ -357,7 +359,7 @@ export class PostgresWorkspaceInviteStore {
     try {
       await client.query("BEGIN");
       const workspace = await this.lockWorkspace(client, workspaceId);
-      await this.requireOwner(client, actorUserId, workspace.id);
+      await this.requireOwner(client, actorUserId, workspace);
       await this.expirePendingInvites(client, workspace);
 
       const result = await client.query(
@@ -395,7 +397,7 @@ export class PostgresWorkspaceInviteStore {
     try {
       await client.query("BEGIN");
       const workspace = await this.lockWorkspace(client, workspaceId);
-      await this.requireOwner(client, actorUserId, workspace.id);
+      await this.requireOwner(client, actorUserId, workspace);
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK");
@@ -434,6 +436,7 @@ export class PostgresWorkspaceInviteStore {
          WHERE invites.email = $1
            AND invites.status = 'pending'
            AND invites.expires_at > $2
+           AND workspaces.deleted_at IS NULL
          ORDER BY invites.created_at DESC, invites.id DESC`,
         [email, this.now()],
       );
@@ -530,7 +533,7 @@ export class PostgresWorkspaceInviteStore {
     try {
       await client.query("BEGIN");
       const workspace = await this.lockWorkspace(client, workspaceId);
-      await this.requireOwner(client, actorUserId, workspace.id);
+      await this.requireOwner(client, actorUserId, workspace);
       await this.expirePendingInvites(client, workspace);
       const invite = await this.lockInvite(client, workspace.id, inviteId);
       const terminalError = terminalInviteError(String(invite.status));
@@ -582,14 +585,16 @@ export class PostgresWorkspaceInviteStore {
 
       // Lock the workspace first so direct membership grants serialize with invite acceptance.
       const workspace = await this.lockWorkspace(client, String(match.workspace_id));
-      await this.expirePendingInvites(client, workspace);
-      expiryApplied = true;
-      const invite = await this.lockInvite(client, workspace.id, String(match.id));
+      let invite = await this.lockInvite(client, workspace.id, String(match.id));
       if (input.tokenHash !== null && String(invite.token_hash) !== input.tokenHash) {
         throw new WorkspaceDomainError("invite_not_found", "Invitation not found");
       }
 
       await this.requireRecipient(client, input, invite);
+      await this.requireActiveWorkspaceForRecipient(client, input.userId, workspace);
+      await this.expirePendingInvites(client, workspace);
+      expiryApplied = true;
+      invite = await this.lockInvite(client, workspace.id, String(match.id));
       const terminalError = terminalInviteError(String(invite.status));
       if (terminalError) {
         throw terminalError;
@@ -627,7 +632,7 @@ export class PostgresWorkspaceInviteStore {
 
   private async lockWorkspace(client: PoolClient, workspaceId: string): Promise<LockedWorkspace> {
     const result = await client.query(
-      `SELECT id, name
+      `SELECT id, name, deleted_at
        FROM editor_workspaces
        WHERE id = $1
        FOR UPDATE`,
@@ -637,7 +642,11 @@ export class PostgresWorkspaceInviteStore {
     if (!row) {
       throw new WorkspaceDomainError("workspace_not_found", "Workspace not found");
     }
-    return { id: String(row.id), name: String(row.name) };
+    return {
+      deletedAt: optionalTimestamp(row.deleted_at),
+      id: String(row.id),
+      name: String(row.name),
+    };
   }
 
   private async lockInvite(
@@ -729,7 +738,7 @@ export class PostgresWorkspaceInviteStore {
   private async requireOwner(
     client: PoolClient,
     actorUserId: string,
-    workspaceId: string,
+    workspace: LockedWorkspace,
   ): Promise<OwnerAccess> {
     const result = await client.query(
       `SELECT members.role, users.display_name
@@ -737,13 +746,48 @@ export class PostgresWorkspaceInviteStore {
        INNER JOIN app_users users ON users.id = members.user_id
        WHERE members.workspace_id = $1 AND members.user_id = $2
        LIMIT 1`,
-      [workspaceId, actorUserId],
+      [workspace.id, actorUserId],
     );
     const row = result.rows[0];
-    if (!row || row.role !== "owner") {
+    if (!row) {
+      if (workspace.deletedAt !== null) {
+        throw new WorkspaceDomainError("workspace_not_found", "Workspace not found");
+      }
+      throw new WorkspaceDomainError("workspace_forbidden", "Only workspace owners can manage invitations");
+    }
+    if (workspace.deletedAt !== null) {
+      throw new WorkspaceDomainError("workspace_deleted", "Workspace has been deleted");
+    }
+    if (row.role !== "owner") {
       throw new WorkspaceDomainError("workspace_forbidden", "Only workspace owners can manage invitations");
     }
     return { displayName: String(row.display_name) };
+  }
+
+  private requireActiveWorkspaceForToken(workspace: LockedWorkspace) {
+    if (workspace.deletedAt !== null) {
+      throw new WorkspaceDomainError("workspace_not_found", "Workspace not found");
+    }
+  }
+
+  private async requireActiveWorkspaceForRecipient(
+    client: PoolClient,
+    userId: string,
+    workspace: LockedWorkspace,
+  ) {
+    if (workspace.deletedAt === null) return;
+
+    const membership = await client.query(
+      `SELECT 1
+       FROM workspace_members
+       WHERE workspace_id = $1 AND user_id = $2
+       LIMIT 1`,
+      [workspace.id, userId],
+    );
+    if (membership.rows[0]) {
+      throw new WorkspaceDomainError("workspace_deleted", "Workspace has been deleted");
+    }
+    throw new WorkspaceDomainError("workspace_not_found", "Workspace not found");
   }
 
   private async expirePendingInvites(client: PoolClient, workspace: LockedWorkspace) {
@@ -768,6 +812,11 @@ export class PostgresWorkspaceInviteStore {
        WHERE email = $2
          AND status = 'pending'
          AND expires_at <= $1
+         AND workspace_id IN (
+           SELECT id
+           FROM editor_workspaces
+           WHERE deleted_at IS NULL
+         )
        RETURNING id, workspace_id`,
       [now, email],
     );
