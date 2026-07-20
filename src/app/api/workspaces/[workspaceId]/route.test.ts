@@ -3,22 +3,35 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createDefaultWorkspace } from "../../../../features/editor/model/workspaceOperations";
 import { migrateDatabase } from "../../../../server/database/migrations";
 import { PostgresAuthStore } from "../../../../server/postgresAuthStore";
+import { PostgresWorkspaceLifecycleStore } from "../../../../server/postgresWorkspaceLifecycleStore";
 import { PostgresWorkspaceStore } from "../../../../server/postgresWorkspaceStore";
 import { createPgMemPool } from "../../../../test/pgMemDatabase";
 import { createWorkspaceRouteHandlers } from "../handlers";
+import { createWorkspaceLifecycleRouteHandlers } from "../lifecycleHandlers";
 
 describe("workspace resource route", () => {
   let pool: Pool;
   let authStore: PostgresAuthStore;
+  let lifecycleStore: PostgresWorkspaceLifecycleStore;
   let workspaceStore: PostgresWorkspaceStore;
   let handlers: ReturnType<typeof createWorkspaceRouteHandlers>;
+  let lifecycleHandlers: ReturnType<typeof createWorkspaceLifecycleRouteHandlers>;
 
   beforeEach(async () => {
     pool = createPgMemPool();
     await migrateDatabase(pool);
     workspaceStore = new PostgresWorkspaceStore(pool, { now: () => 3000 });
+    lifecycleStore = new PostgresWorkspaceLifecycleStore(pool, {
+      now: () => 3000,
+      notifyAccessInvalidation: async () => undefined,
+    });
     authStore = new PostgresAuthStore(pool, workspaceStore);
     handlers = createWorkspaceRouteHandlers({ authStore, workspaceStore });
+    lifecycleHandlers = createWorkspaceLifecycleRouteHandlers({
+      authStore,
+      lifecycleStore,
+      workspaceStore,
+    });
   });
 
   afterEach(async () => {
@@ -136,6 +149,34 @@ describe("workspace resource route", () => {
     await expect(viewerResponse.json()).resolves.toEqual({ error: "没有修改此工作区的权限" });
     expect(invalidResponse.status).toBe(400);
     await expect(invalidResponse.json()).resolves.toEqual({ error: "工作区数据格式不正确" });
+  });
+
+  it("deletes a workspace and returns the catalog with an active fallback snapshot", async () => {
+    const owner = await authStore.createSession({ displayName: "Owner", email: "owner@example.com" });
+    const workspaceId = (await workspaceStore.listWorkspaces(owner.user.id)).currentWorkspaceId;
+    const deletedWorkspace = await workspaceStore.loadWorkspace(owner.user.id, workspaceId);
+    await workspaceStore.createWorkspace(owner.user.id, "Fallback");
+    const response = await lifecycleHandlers.DELETE(
+      new Request(`http://localhost/api/workspaces/${workspaceId}`, {
+        body: JSON.stringify({ confirmationName: deletedWorkspace.summary.name }),
+        headers: {
+          Cookie: `notion_editor_session=${owner.token}`,
+          "Content-Type": "application/json",
+        },
+        method: "DELETE",
+      }),
+      workspaceId,
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      catalog: {
+        currentWorkspaceId: expect.not.stringMatching(new RegExp(`^${workspaceId}$`)),
+        workspaces: [expect.objectContaining({ name: "Fallback" })],
+      },
+      deletedWorkspace: { id: workspaceId, name: deletedWorkspace.summary.name },
+      workspace: { summary: { name: "Fallback" } },
+    });
   });
 });
 

@@ -4,6 +4,7 @@ import {
   createWorkspaceRouteHandlers,
   workspaceServiceUnavailableResponse,
 } from "../handlers";
+import { createWorkspaceLifecycleRouteHandlers } from "../lifecycleHandlers";
 
 interface WorkspaceRouteContext {
   params: Promise<{ workspaceId: string }>;
@@ -34,4 +35,18 @@ export async function PUT(request: Request, context: WorkspaceRouteContext) {
 
   const { workspaceId } = await context.params;
   return createWorkspaceRouteHandlers(createPostgresServices()).save(request, workspaceId);
+}
+
+export async function DELETE(request: Request, context: WorkspaceRouteContext) {
+  if (!hasDatabaseConfiguration()) {
+    return workspaceServiceUnavailableResponse();
+  }
+
+  const { workspaceId } = await context.params;
+  const services = createPostgresServices();
+  return createWorkspaceLifecycleRouteHandlers({
+    authStore: services.authStore,
+    lifecycleStore: services.workspaceLifecycleStore,
+    workspaceStore: services.workspaceStore,
+  }).DELETE(request, workspaceId);
 }
