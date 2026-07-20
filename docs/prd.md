@@ -6,8 +6,8 @@
 - 项目目录：`E:\DesktopBackup\project\notion-block-editor`
 - 文档类型：产品需求文档 PRD
 - 整理日期：2026-06-10
-- 最近更新：2026-07-16
-- 当前阶段：M6 第一批多工作区基础已完成，第二批规划
+- 最近更新：2026-07-20
+- 当前阶段：M6.2 工作区团队生命周期已实现；容器、真实 PostgreSQL 和完整 E2E 最终回归待环境可用后复核
 - 来源：用户提供的项目构想文档
 
 ## 2. 项目背景
@@ -385,7 +385,11 @@ interface Block {
 - viewer 不进入可写 Yjs 通道，服务端拒绝其协同写入，避免绕过客户端只读限制。
 - M6 第一批验收覆盖数据库双工作区内容隔离、活动文档记忆、重命名、刷新恢复，以及本地 IndexedDB v1 到 v2 迁移。
 - PostgreSQL 升级验收覆盖缺失 owner 成员关系的旧工作区，以及完全没有工作区的历史用户。
-- M6 第二批仍处于规划：工作区删除、邮件邀请、成员移除/退出、所有权转让和账号设置；这些能力未标记为已实现。
+- M6.2A：owner 可发起、重发和撤销 editor/viewer 邮件邀请；收件人可在站内或经认证返回后接受/拒绝。邀请有效期为 24 小时，原始令牌不持久化，短期上下文使用 HttpOnly Cookie。
+- M6.2B：支持多个 owner、角色调整、移除、主动退出和所有权转让；最后一名 owner 受到事务性保护。成员或工作区权限变更会通知协作服务，关闭受影响用户的既有 WebSocket。
+- M6.2C：owner 按工作区名称确认软删除，工作区在仅 owner 可见的回收站中保留 7 天并可恢复。请求触发的到期清理先删除工作区对象前缀，成功后再删除数据库记录；对象存储失败时保留 tombstone 供后续重试。
+- M6.2 已有单元、PostgreSQL 集成与 Playwright 场景覆盖；最终容器、真实 PostgreSQL 和全量 E2E 回归仍须在可用环境中执行，不能据此视为发布验收已通过。
+- 账号设置（资料/密码、会话查看和撤销、邮箱变更）仍留在下一批，不属于已交付的 M6.2 范围。
 - 真实分享权限和页面权限归入 M7；当前分享界面不构成服务端授权。
 
 ## 15. 后续产品规划（2026-07-14）
@@ -396,7 +400,7 @@ interface Block {
 
 后续规划包含三条能力线：
 
-- `P0 协作闭环`：团队、工作区、邀请、成员生命周期、真实分享和页面权限。当前优先开发。
+- `P0 协作闭环`：M6 团队、工作区、邀请和成员生命周期已实现；下一优先项是真实分享和页面权限，且 M6.2 仍需完成环境级最终回归。
 - `P1 编辑与知识发现`：结构化富文本、拖拽、多选、导入导出、通知、@提及和服务端搜索。纳入规划，P0 稳定后推进。
 - `P2 AI 工作台`：写作辅助、总结、任务提取、语义检索和权限感知问答。暂不优先，必须建立在稳定权限和检索之上。
 
@@ -436,31 +440,30 @@ interface Block {
 - IndexedDB v2 自动迁移旧本地数据，默认目录名称为 `Nexus 工作区`。
 - PostgreSQL 使用 `workspace_document_preferences` 记录每名成员在每个工作区的活动文档。
 
-#### M6 第二批规划
+#### M6.2 已实现：邀请、成员与删除生命周期
 
-- 工作区删除及其确认、级联数据和审计策略。
+**邮件邀请（M6.2A）**
 
-#### 邮件邀请
+- owner 可邀请尚未注册或已经注册的邮箱，并选择 editor 或 viewer；同一邮箱的有效邀请不能重复创建。
+- 邀请包含随机高熵原始令牌，但数据库、审计、API 响应和浏览器存储只保留其 HMAC 或签名上下文。邀请 24 小时过期，邮件链接先解析为 30 分钟 HttpOnly 邀请上下文。
+- 支持查看、重发（轮换令牌）、撤销和投递状态。SMTP 投递失败不回滚已创建的邀请，而是返回明确告警，方便重发。
+- 未登录收件人完成注册或登录后回到验证过的邀请路径；接受后才显式切换到目标工作区。
 
-- 所有者可邀请尚未注册或已经注册的邮箱，并选择 editor/viewer。
-- 邀请包含随机高熵令牌、工作区、邀请角色、邀请人、创建时间和过期时间。
-- 支持重新发送、撤销和查看邀请状态；同一邮箱的有效邀请不可重复创建。
-- 未登录用户接受邀请时先完成注册或登录，再确认加入目标工作区。
-- 邀请邮件沿用灰白简约模板，不在日志、主题或 API 中暴露邀请令牌。
+**成员生命周期（M6.2B）**
 
-#### 成员生命周期
+- owner 可查看成员、调整角色、移除成员并转让所有权；工作区可以有多个 owner。
+- 普通成员可主动退出。最后一名 owner 不能被降级、移除或退出，所有权转让在事务内完成。
+- 角色降低、移除、退出、所有权转让和工作区删除会广播访问失效。服务端在下一次 REST/文件请求拒绝权限，并关闭该用户受影响工作区的既有协作 WebSocket；其他工作区会话保持有效。
 
-- 所有者可以修改 editor/viewer 角色、移除成员和查看成员加入时间。
-- 普通成员可以主动离开工作区。
-- 支持所有权转让；工作区必须至少保留一名 owner。
-- 不能移除最后一名 owner，不能把最后一名 owner 降级。
-- 成员被移除后，其 REST、文件和 WebSocket 权限立即失效，现有会话本身无需强制退出其他工作区。
+**删除、回收站与永久清理（M6.2C）**
 
-#### 账号设置
+- owner 必须输入精确工作区名称才能软删除。删除会返回删除摘要、撤销待处理邀请并保留成员关系，便于恢复。
+- 仅仍保留 owner 关系的用户可在回收站查看和恢复 tombstone；保留期固定为删除后 7 天。
+- 任意生命周期请求会低优先级处理少量到期 tombstone。清理严格先删除 `workspaceId/` 对象存储前缀，再删除数据库行；对象删除或数据库删除失败时记录脱敏错误并保留 tombstone，供后续请求重试。
 
-- 用户可修改显示名称和登录密码。
-- 用户可查看并撤销其他登录会话。
-- 暂不支持直接修改主邮箱；邮箱变更需要独立验证流程，后续再做。
+#### 下一批：账号设置
+
+- 显示名称和密码变更、其他登录会话查看/撤销，以及经过独立验证的主邮箱变更仍未实现。
 
 ### 16.3 数据与 API
 
@@ -475,22 +478,18 @@ interface Block {
 
 第一批已交付数据结构包括 `workspace_document_preferences`，并将工作区成员、内容、版本、文件和规范 Yjs room `workspace:{workspaceId}:document:{documentId}` 绑定到同一作用域。
 
-第二批建议新增：
+M6.2 已交付数据结构：
 
-- `workspace_invites`：邀请 ID、工作区、邮箱、角色、令牌 HMAC、状态、过期时间、邀请人和接受人。
-- `workspace_members.updated_at` 和成员状态字段，用于角色变更和审计。
-- `auth_sessions.last_seen_at`、设备摘要和撤销时间，用于会话管理。
+- `workspace_invites`：邀请 ID、工作区、邮箱、角色、令牌 HMAC、状态、过期时间、邀请人、收件人和投递状态。
+- `workspace_audit_events`：邀请、成员和工作区删除/恢复的脱敏审计事件。
+- `editor_workspaces.deleted_at` 与 `purge_after`：受约束的 7 天 tombstone；永久清理成功前保留记录。
 
-第二批建议新增或调整 API：
+M6.2 已交付或调整的 API：
 
-- `DELETE /api/workspaces/:workspaceId`
-- `GET|POST /api/workspaces/:workspaceId/invites`
-- `POST /api/workspace-invites/:token/accept`
-- `POST /api/workspaces/:workspaceId/invites/:inviteId/resend`
-- `DELETE /api/workspaces/:workspaceId/invites/:inviteId`
-- `PATCH|DELETE /api/workspaces/:workspaceId/members/:userId`
-- `POST /api/workspaces/:workspaceId/transfer-ownership`
-- `GET|DELETE /api/auth/sessions`
+- `GET|POST /api/workspaces/:workspaceId/invites`、`POST /api/workspaces/:workspaceId/invites/:inviteId/resend`、`DELETE /api/workspaces/:workspaceId/invites/:inviteId`
+- `GET /api/workspace-invites`、`POST /api/workspace-invites/resolve`、`POST /api/workspace-invites/:inviteId/accept|decline`、`POST /api/workspace-invites/accept|decline`
+- `PATCH|DELETE /api/workspaces/:workspaceId/members/:memberId`、`POST /api/workspaces/:workspaceId/leave`、`POST /api/workspaces/:workspaceId/ownership-transfer`
+- `GET /api/workspaces/:workspaceId/deletion-summary`、`DELETE /api/workspaces/:workspaceId`、`GET /api/workspaces/trash`、`POST /api/workspaces/:workspaceId/restore`
 
 ### 16.4 验收标准
 
@@ -501,14 +500,12 @@ interface Block {
 - 未授权工作区、跨工作区文档、文件 key 和协作 room 均被服务端拒绝。
 - IndexedDB v1 数据无损迁移到 v2 `Nexus 工作区`。
 
-第二批待验收：
+M6.2 实现与覆盖：
 
-- 新邮箱收到邀请后可以注册、接受邀请并进入正确工作区。
-- 已注册用户可以接受邀请，且当前工作区不会在未确认时被替换。
-- 用户可在至少两个工作区之间切换，文档、成员、文件和协同数据互不串联。
-- 所有者可以修改角色和移除成员，最后一名 owner 受到保护。
-- 被移除成员的下一次 API 请求和 WebSocket 写入均被拒绝。
-- 邀请令牌只保存 HMAC，过期、撤销和重复接受都有明确提示。
+- 邀请覆盖新用户认证返回、已注册用户接受、重发/撤销/过期和投递失败警告；原始令牌只在邮件 URL 的 fragment 中短暂出现。
+- 成员覆盖角色调整、移除、退出、所有权转让和最后一名 owner 保护；真实 PostgreSQL 场景用于验证并发事务。
+- 删除覆盖摘要、确认名、回收站、恢复、对象前缀隔离以及对象删除失败后的重试保留。
+- 端到端规格覆盖邀请、成员和工作区删除/恢复路径。最终 Docker、真实 PostgreSQL 与完整 Playwright 回归尚未在当前环境重新通过，不能标为完整发布验收。
 
 ## 17. M7：真实分享与页面权限（P0）
 

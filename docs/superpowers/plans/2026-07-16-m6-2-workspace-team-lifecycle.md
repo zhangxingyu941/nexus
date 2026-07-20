@@ -1,5 +1,11 @@
 # M6.2 工作区团队生命周期实施计划
 
+> **状态更新（2026-07-20）**：M6.2A 邀请闭环、M6.2B 成员生命周期和 M6.2C 删除/回收站/永久清理的实现及对应测试已分别提交在 `179c3ae`、`8ec3700` 至 `b4523c0`。本计划下方保留的未勾选项是原始逐步开发记录，不应单独用于判断实现完成度。
+>
+> **本次验证（2026-07-20）**：`pnpm test --run` 通过（109 个文件、674 个测试），`pnpm build` 通过，`docker compose config --quiet` 通过。独立 `pnpm exec tsc --noEmit` 仍受当前未提交的编辑器测试类型错误阻断（`BlockList.test.tsx` 缺少 `sessionUser`，`useMentionSearch.test.ts` 包含过期的 `createdAt`）；`pnpm test:postgres` 连接本机 `5432` 被拒绝，Docker daemon 不可用，因而容器迁移、真实 PostgreSQL 和完整 Playwright E2E 未运行。
+>
+> **最终验证状态**：尚未完成。上述环境与无关编辑器改动存在时，不得将任务 14、21、28 或任务 29 的全量验证、容器 E2E 标记为通过。任务 29 的文档步骤已完成，验证结果在该任务中如实记录。
+
 > **致智能代理工作者：** 必需子技能：使用 superpowers:subagent-driven-development（推荐）或 superpowers:executing-plans 逐任务实施本计划。步骤使用复选框（`- [ ]`）语法进行跟踪。
 
 **Goal:** 交付 M6.2A 邀请闭环、M6.2B 成员生命周期和 M6.2C 工作区删除恢复，并让 REST、文件和实时协作权限在角色或生命周期变化后立即一致。
@@ -2013,7 +2019,7 @@ git commit -m "test: cover workspace deletion and recovery"
 - 修改： `docs/prd.md` if present
 - 修改： `docs/superpowers/plans/2026-07-16-m6-2-workspace-team-lifecycle.md`
 
-- [ ] **步骤1: 更新 README 和项目进度**
+- [x] **步骤1: 更新 README 和项目进度**
 
 记录 A 的邀请与 SMTP/Redis、B 的多 owner 与权限失效、C 的 7 天回收站与对象优先清理、新 API 和验证命令。明确账号设置与 M7 真实分享权限仍在下一批。所有验证通过后才勾选本计划完成项。
 
@@ -2051,7 +2057,7 @@ git commit -m "test: cover workspace deletion and recovery"
 
 预期： 无空白错误，只包含本次 M6.2 与文档变更。
 
-- [ ] **步骤5: 提交文档**
+- [x] **步骤5: 提交文档**
 
 ~~~bash
 git add README.md docs/prd.md docs/superpowers/plans/2026-07-16-m6-2-workspace-team-lifecycle.md

@@ -47,6 +47,12 @@
 - 每个工作区保存独立内容，并按用户记忆上次打开的文档
 - 多文档管理、模板库、快速搜索、任务中心
 - owner / editor / viewer 三级权限
+- owner 可通过邮件邀请 editor 或 viewer；邀请在 24 小时后过期，可重发、撤销和从邀请中心接受或拒绝
+- 邀请令牌只保存 HMAC，浏览器只使用 30 分钟、HttpOnly 的邀请上下文 Cookie；SMTP 发送失败会保留邀请并返回投递警告
+- 支持多个 owner、角色调整、成员移除、主动退出和所有权转让；最后一名 owner 不能降级、移除或退出
+- 成员角色或工作区访问被收回时，REST、文件和现有协作 WebSocket 连接都会失效
+- owner 可按工作区名称确认软删除；删除后进入仅 owner 可见的 7 天回收站，可恢复，并会撤销待处理邀请
+- 到期清理由请求触发：先删除该工作区对象存储前缀，再删除数据库记录；对象删除失败时保留 tombstone 以便下次重试
 - 文档历史版本（完整快照 + 内容哈希去重）
 - 本地文件存储 / S3 对象存储
 - 成员、历史、文件对象和 Yjs 房间全部显式绑定 `workspaceId`
@@ -58,7 +64,7 @@
 - PostgreSQL 升级会回填旧工作区 owner 成员关系，并为没有任何成员关系的历史用户创建个人工作区
 
 ### 后续批次
-- M6 第二批：工作区删除、邮件邀请、成员移除/退出、所有权转让和账号设置
+- 账号设置：显示名称和密码变更、会话查看与撤销，以及经过独立验证的主邮箱变更
 - M7：真实分享权限与页面权限；当前分享弹层仅保留界面交互，不代表服务端授权已生效
 
 ### 部署
@@ -104,6 +110,8 @@ pnpm dev:fullstack
 | `pnpm db:migrate` | 执行数据库迁移 |
 | `pnpm db:smoke` | 数据库连接冒烟测试 |
 | `pnpm test --run` | 运行全部单元测试 |
+| `pnpm test:postgres` | 运行需要真实 PostgreSQL 的并发与事务测试 |
+| `pnpm test:e2e` | 运行 Playwright 端到端测试（需要完整服务） |
 | `pnpm exec tsc --noEmit` | TypeScript 类型检查 |
 | `pnpm build` | 生产构建 |
 | `pnpm healthcheck <url>` | 健康检查 |
@@ -153,12 +161,13 @@ docker compose run --rm migrate
 | `AUTH_CREDENTIAL_PRIVATE_KEY_HOST_FILE` | Docker Compose 挂载的宿主机私钥路径 |
 | `GITHUB_CLIENT_ID` | GitHub OAuth Client ID（可选） |
 | `GITHUB_CLIENT_SECRET` | GitHub OAuth Client Secret（可选） |
+| `APP_URL` | 对外可访问的 Web 地址；用于生成工作区邀请链接，未设置时为 `http://localhost:3000` |
 
 ### 邮件
 
 | 变量 | 说明 |
 |------|------|
-| `SMTP_HOST` | SMTP 服务器（如 `smtp.qq.com`） |
+| `SMTP_HOST` | SMTP 服务器（如 `smtp.qq.com`）；生产中的注册、重置和工作区邀请都需要配置 |
 | `SMTP_PORT` | 端口（QQ 邮箱用 `465`） |
 | `SMTP_SECURE` | 是否 SSL（`true`） |
 | `SMTP_USER` | 发件邮箱 |
@@ -182,7 +191,7 @@ docker compose run --rm migrate
 
 ## 数据库
 
-### 表结构（17 张）
+### 表结构（19 张）
 
 **认证**
 
@@ -202,6 +211,10 @@ docker compose run --rm migrate
 | `workspace_members` | 成员角色（owner / editor / viewer） |
 | `workspace_preferences` | 用户当前工作区偏好 |
 | `workspace_document_preferences` | 用户在每个工作区内的活动文档偏好 |
+| `workspace_invites` | 邀请邮箱、角色、令牌 HMAC、状态、过期时间和投递状态 |
+| `workspace_audit_events` | 邀请、成员和工作区生命周期的脱敏审计事件 |
+
+`editor_workspaces` 还包含删除 tombstone：`deleted_at` 与固定为删除后 7 天的 `purge_after`。到期清理成功前不会删除该记录。
 
 **内容**
 
@@ -263,7 +276,21 @@ Get-Content -Raw .\nexus.sql | docker compose exec -T postgres psql -U postgres 
 | `PATCH` | `/api/workspaces/:workspaceId` | owner 重命名指定工作区 |
 | `POST` | `/api/workspaces/:workspaceId/select` | 主动选择指定工作区 |
 | `GET` | `/api/workspaces/:workspaceId/members` | 获取指定工作区成员 |
-| `POST` | `/api/workspaces/:workspaceId/members` | 添加已注册成员 |
+| `PATCH` | `/api/workspaces/:workspaceId/members/:memberId` | owner 修改成员角色 |
+| `DELETE` | `/api/workspaces/:workspaceId/members/:memberId` | owner 移除成员 |
+| `POST` | `/api/workspaces/:workspaceId/leave` | 当前成员退出工作区 |
+| `POST` | `/api/workspaces/:workspaceId/ownership-transfer` | owner 转让所有权，可保留自身 owner 角色 |
+| `GET` / `POST` | `/api/workspaces/:workspaceId/invites` | owner 查看或创建邀请 |
+| `POST` | `/api/workspaces/:workspaceId/invites/:inviteId/resend` | 重发邀请并轮换令牌 |
+| `DELETE` | `/api/workspaces/:workspaceId/invites/:inviteId` | 撤销邀请 |
+| `GET` | `/api/workspace-invites` | 当前用户的待处理邀请 |
+| `POST` | `/api/workspace-invites/resolve` | 用一次性令牌建立短期邀请上下文 |
+| `POST` | `/api/workspace-invites/:inviteId/accept` / `decline` | 接受或拒绝站内邀请 |
+| `POST` | `/api/workspace-invites/accept` / `decline` | 接受或拒绝邮件邀请上下文 |
+| `GET` | `/api/workspaces/:workspaceId/deletion-summary` | owner 获取删除前的成员、文档和文件统计 |
+| `DELETE` | `/api/workspaces/:workspaceId` | owner 按工作区名称确认软删除 |
+| `GET` | `/api/workspaces/trash` | 当前用户可恢复的 owner 工作区 |
+| `POST` | `/api/workspaces/:workspaceId/restore` | 恢复 7 天保留期内的工作区 |
 | `GET` | `/api/workspaces/:workspaceId/history/:documentId` | 获取指定文档历史 |
 | `POST` | `/api/workspaces/:workspaceId/history/:documentId` | 恢复指定文档版本 |
 | `POST` | `/api/files` | 上传文件，表单必须包含 `workspaceId` |
@@ -291,6 +318,10 @@ src/server/                    服务端
   authRateLimiter.ts             Redis 限流
   postgresAuthStore.ts           认证数据访问
   postgresWorkspaceStore.ts      工作区数据访问
+  postgresWorkspaceInviteStore.ts 工作区邀请数据访问
+  postgresWorkspaceMemberStore.ts 成员与所有权生命周期
+  postgresWorkspaceLifecycleStore.ts 删除、回收站与恢复
+  workspacePurgeService.ts       对象优先的到期永久清理
   collaborationServer.ts         WebSocket 协作服务
   collaborationPubSub.ts         Redis 多实例发布订阅
   yjsPersistence.ts              Yjs CRDT PostgreSQL 持久化
