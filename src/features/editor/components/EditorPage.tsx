@@ -73,6 +73,9 @@ function nextTimestamp(document: EditorDocument) {
 interface EditorPageProps {
   inviteCount?: number;
   membersEnabled: boolean;
+  onCreateDocument?: (input?: CreateWorkspaceDocumentInput) => Promise<void> | void;
+  onDeleteDocument?: (documentId: string) => Promise<void> | void;
+  onDuplicateDocument?: (documentId: string) => Promise<void> | void;
   onManageWorkspaces: () => void;
   onOpenInvites?: () => void;
   onSignOut?: () => void;
@@ -89,6 +92,9 @@ interface EditorPageProps {
 export function EditorPage({
   inviteCount = 0,
   membersEnabled,
+  onCreateDocument,
+  onDeleteDocument,
+  onDuplicateDocument,
   onManageWorkspaces,
   onOpenInvites,
   onSignOut,
@@ -186,9 +192,13 @@ export function EditorPage({
   );
 
   const handleCreateDocument = useCallback((input?: CreateWorkspaceDocumentInput) => {
-    onWorkspaceChange((current) => createWorkspaceDocument(current, Date.now(), input));
+    if (onCreateDocument) {
+      void onCreateDocument(input);
+    } else {
+      onWorkspaceChange((current) => createWorkspaceDocument(current, Date.now(), input));
+    }
     setIsSidebarOpen(false);
-  }, []);
+  }, [onCreateDocument, onWorkspaceChange]);
 
   const handleSelectDocument = useCallback((documentId: string) => {
     onWorkspaceChange((current) => switchActiveDocument(current, documentId, Date.now()));
@@ -216,10 +226,14 @@ export function EditorPage({
   }, []);
 
   const handleDuplicateDocument = useCallback((documentId: string) => {
-    onWorkspaceChange((current) =>
-      current ? duplicateWorkspaceDocument(current, documentId, Date.now()) : current,
-    );
-  }, []);
+    if (onDuplicateDocument) {
+      void onDuplicateDocument(documentId);
+    } else {
+      onWorkspaceChange((current) =>
+        current ? duplicateWorkspaceDocument(current, documentId, Date.now()) : current,
+      );
+    }
+  }, [onDuplicateDocument, onWorkspaceChange]);
 
   const handleToggleDocumentPinned = useCallback((documentId: string) => {
     onWorkspaceChange((current) => toggleDocumentPinned(current, documentId, Date.now()));
@@ -244,12 +258,17 @@ export function EditorPage({
         return;
       }
 
+      if (onDeleteDocument) {
+        void onDeleteDocument(documentId);
+        return;
+      }
+
       setUndoDeleteNotice({ document, type: "document" });
       onWorkspaceChange((current) =>
         current ? deleteWorkspaceDocument(current, documentId, Date.now()) : current,
       );
     },
-    [workspace],
+    [onDeleteDocument, onWorkspaceChange, workspace],
   );
 
   const handleRestoreDeletedDocument = useCallback(() => {

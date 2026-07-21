@@ -11,6 +11,9 @@ async function renderEditor({
   inviteCount = 0,
   documentPublicId,
   membersEnabled = false,
+  onCreateDocument,
+  onDeleteDocument,
+  onDuplicateDocument,
   onOpenInvites,
   role = "owner",
   seedFixture = true,
@@ -19,6 +22,9 @@ async function renderEditor({
   inviteCount?: number;
   documentPublicId?: string;
   membersEnabled?: boolean;
+  onCreateDocument?: (input?: Parameters<typeof createWorkspaceDocument>[2]) => Promise<void> | void;
+  onDeleteDocument?: (documentId: string) => Promise<void> | void;
+  onDuplicateDocument?: (documentId: string) => Promise<void> | void;
   onOpenInvites?: () => void;
   role?: "owner" | "editor" | "viewer";
   seedFixture?: boolean;
@@ -32,6 +38,9 @@ async function renderEditor({
         inviteCount={inviteCount}
         documentPublicId={documentPublicId}
         membersEnabled={membersEnabled}
+        onCreateDocument={onCreateDocument}
+        onDeleteDocument={onDeleteDocument}
+        onDuplicateDocument={onDuplicateDocument}
         onManageWorkspaces={vi.fn()}
         onOpenInvites={onOpenInvites}
         onWorkspaceChange={(updater) => setCurrent(updater)}
@@ -690,6 +699,37 @@ describe("EditorPage", () => {
     const documentButtons = await getDocumentButtons();
     expect(documentButtons.some((button) => button.getAttribute("aria-current") === "page")).toBe(true);
     expect(screen.getByLabelText("文档标题")).toHaveValue("未命名文档 副本");
+  });
+
+  it("delegates remote document lifecycle actions to the session callbacks", async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const onCreateDocument = vi.fn().mockResolvedValue(undefined);
+    const onDuplicateDocument = vi.fn().mockResolvedValue(undefined);
+    const onDeleteDocument = vi.fn().mockResolvedValue(undefined);
+    const workspace = createWorkspaceDocument(createDefaultWorkspace(1000), 2000, "Second document");
+    await renderEditor({
+      onCreateDocument,
+      onDeleteDocument,
+      onDuplicateDocument,
+      seedFixture: false,
+      workspace,
+    });
+
+    await user.click(screen.getByRole("button", { name: "新建文档" }));
+    await user.click(within(screen.getByRole("dialog", { name: "新建文档" })).getByRole("button", { name: /空白文档/ }));
+    expect(onCreateDocument).toHaveBeenCalledTimes(1);
+
+    const activeDocumentId = workspace.activeDocumentId;
+    await user.click(screen.getByLabelText("打开文档操作 Second document"));
+    await user.click(screen.getByRole("menuitem", { name: "复制文档" }));
+    expect(onDuplicateDocument).toHaveBeenCalledWith(activeDocumentId);
+
+    await user.click(screen.getByLabelText("打开文档操作 Second document"));
+    await user.click(screen.getByRole("menuitem", { name: "删除文档" }));
+    expect(confirmSpy).toHaveBeenCalledWith("确定删除“Second document”吗？此操作无法撤销。");
+    expect(onDeleteDocument).toHaveBeenCalledWith(activeDocumentId);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
   it("deletes a newly created document from the document action menu after confirmation", async () => {

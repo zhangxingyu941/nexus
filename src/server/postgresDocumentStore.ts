@@ -44,6 +44,206 @@ export class PostgresDocumentStore {
     private readonly authorization: DocumentAuthorizationService,
   ) {}
 
+  async createDocument(
+    userId: string,
+    workspaceId: string,
+    document: EditorDocument,
+    requestedPosition: number,
+  ): Promise<DocumentSnapshot> {
+    const client = await this.pool.connect();
+    const publicId = `document-${randomUUID()}`;
+
+    try {
+      await client.query("BEGIN");
+      const membership = await client.query(
+        `SELECT members.role
+         FROM workspace_members members
+         INNER JOIN editor_workspaces workspaces ON workspaces.id = members.workspace_id
+         WHERE members.workspace_id = $1
+           AND members.user_id = $2
+           AND workspaces.deleted_at IS NULL
+         LIMIT 1`,
+        [workspaceId, userId],
+      );
+      if (!membership.rows[0] || membership.rows[0].role === "viewer") {
+        throw new DocumentNotFoundError();
+      }
+
+      const countResult = await client.query(
+        `SELECT COUNT(*) AS count
+         FROM editor_documents
+         WHERE workspace_id = $1`,
+        [workspaceId],
+      );
+      const documentCount = Number(countResult.rows[0]?.count ?? 0);
+      const position = Math.min(Math.max(0, requestedPosition), documentCount);
+      await client.query(
+        `UPDATE editor_documents
+         SET position = position + 1
+         WHERE workspace_id = $1 AND position >= $2`,
+        [workspaceId, position],
+      );
+      await client.query(
+        `INSERT INTO editor_documents
+           (id, workspace_id, public_id, created_by, access_mode, title, template_id, pinned, position, updated_at)
+         VALUES ($1, $2, $3, $4, 'workspace', $5, $6, $7, $8, $9)`,
+        [
+          document.id,
+          workspaceId,
+          publicId,
+          userId,
+          document.title,
+          document.templateId ?? null,
+          document.pinned ?? null,
+          position,
+          document.updatedAt,
+        ],
+      );
+      await this.insertDocumentContents(client, workspaceId, document);
+      await this.insertDocumentVersion(client, workspaceId, userId, document);
+      await client.query(
+        `INSERT INTO workspace_document_preferences
+           (user_id, workspace_id, active_document_id, updated_at)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (user_id, workspace_id) DO UPDATE
+         SET active_document_id = EXCLUDED.active_document_id,
+             updated_at = EXCLUDED.updated_at`,
+        [userId, workspaceId, document.id, document.updatedAt],
+      );
+      await client.query(
+        "UPDATE editor_workspaces SET updated_at = $1 WHERE id = $2",
+        [document.updatedAt, workspaceId],
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    return this.loadDocument(userId, publicId);
+  }
+
+  async deleteDocument(
+    userId: string,
+    workspaceId: string,
+    publicId: string,
+  ): Promise<{ activeDocumentPublicId: string }> {
+    const access = await this.authorization.requireUserAction(userId, publicId, "write");
+    if (access.workspaceId !== workspaceId) {
+      throw new DocumentNotFoundError();
+    }
+
+    const client = await this.pool.connect();
+    const updatedAt = Date.now();
+    try {
+      await client.query("BEGIN");
+      const documentResult = await client.query(
+        `SELECT id, position
+         FROM editor_documents
+         WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, access.documentId],
+      );
+      const document = documentResult.rows[0];
+      if (!document) {
+        throw new DocumentNotFoundError();
+      }
+
+      const replacementResult = await client.query(
+        `SELECT documents.id, documents.public_id
+         FROM editor_documents documents
+         LEFT JOIN document_permissions permissions
+           ON permissions.workspace_id = documents.workspace_id
+          AND permissions.document_id = documents.id
+          AND permissions.user_id = $1
+         WHERE documents.workspace_id = $2
+           AND documents.id <> $3
+           AND (
+             documents.created_by = $1
+             OR documents.access_mode <> 'private'
+             OR permissions.user_id IS NOT NULL
+           )
+         ORDER BY CASE
+                    WHEN documents.position < $4 THEN $4 - documents.position
+                    ELSE documents.position - $4
+                  END ASC,
+                  documents.position ASC
+         LIMIT 1`,
+        [userId, workspaceId, access.documentId, Number(document.position)],
+      );
+      const replacement = replacementResult.rows[0];
+      if (!replacement) {
+        throw new DocumentNotFoundError();
+      }
+
+      const activeDocumentResult = await client.query(
+        `SELECT active_document_id
+         FROM workspace_document_preferences
+         WHERE user_id = $1 AND workspace_id = $2`,
+        [userId, workspaceId],
+      );
+      const currentActiveDocumentId = activeDocumentResult.rows[0]?.active_document_id
+        ? String(activeDocumentResult.rows[0].active_document_id)
+        : null;
+      const nextActiveDocumentId = currentActiveDocumentId === access.documentId
+        ? String(replacement.id)
+        : currentActiveDocumentId;
+      const nextActiveDocumentPublicId = nextActiveDocumentId === String(replacement.id)
+        ? String(replacement.public_id)
+        : await this.findDocumentPublicId(client, workspaceId, nextActiveDocumentId)
+          ?? String(replacement.public_id);
+
+      await client.query(
+        `DELETE FROM document_versions
+         WHERE workspace_id = $1 AND document_id = $2`,
+        [workspaceId, access.documentId],
+      );
+      const roomName = `workspace:${workspaceId}:document:${access.documentId}`;
+      await client.query(
+        `DELETE FROM yjs_room_snapshots
+         WHERE workspace_id = $1 AND room_name = $2`,
+        [workspaceId, roomName],
+      );
+      await client.query(
+        `DELETE FROM yjs_room_updates
+         WHERE workspace_id = $1 AND room_name = $2`,
+        [workspaceId, roomName],
+      );
+      await client.query(
+        `DELETE FROM editor_documents
+         WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, access.documentId],
+      );
+      await client.query(
+        `UPDATE editor_documents
+         SET position = position - 1
+         WHERE workspace_id = $1 AND position > $2`,
+        [workspaceId, Number(document.position)],
+      );
+      await client.query(
+        `INSERT INTO workspace_document_preferences
+           (user_id, workspace_id, active_document_id, updated_at)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (user_id, workspace_id) DO UPDATE
+         SET active_document_id = EXCLUDED.active_document_id,
+             updated_at = EXCLUDED.updated_at`,
+        [userId, workspaceId, nextActiveDocumentId ?? String(replacement.id), updatedAt],
+      );
+      await client.query(
+        "UPDATE editor_workspaces SET updated_at = $1 WHERE id = $2",
+        [updatedAt, workspaceId],
+      );
+      await client.query("COMMIT");
+      return { activeDocumentPublicId: nextActiveDocumentPublicId };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async loadDocument(userId: string, publicId: string): Promise<DocumentSnapshot> {
     const access = await this.authorization.requireUserAction(userId, publicId, "read");
     const documentResult = await this.pool.query(
@@ -181,59 +381,7 @@ export class PostgresDocumentStore {
         [access.workspaceId, access.documentId],
       );
 
-      for (const [position, block] of document.blocks.entries()) {
-        await client.query(
-          `INSERT INTO editor_blocks
-           (workspace_id, id, document_id, type, heading_level, content, data, checked, assignee, due_date,
-            status, parent_id, position, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15)`,
-          [
-            access.workspaceId,
-            block.id,
-            access.documentId,
-            block.type,
-            block.headingLevel,
-            block.content,
-            block.data ? JSON.stringify(block.data) : null,
-            block.checked,
-            block.assignee,
-            block.dueDate,
-            block.status,
-            block.parentId,
-            position,
-            block.createdAt,
-            block.updatedAt,
-          ],
-        );
-        for (const comment of block.comments) {
-          await client.query(
-            `INSERT INTO block_comments
-             (workspace_id, id, block_id, author, body, time_label, created_at, resolved, resolved_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-            [
-              access.workspaceId,
-              comment.id,
-              block.id,
-              comment.author,
-              comment.body,
-              comment.time,
-              comment.createdAt,
-              comment.resolved,
-              comment.resolvedAt ?? null,
-            ],
-          );
-        }
-      }
-
-      for (const block of document.blocks) {
-        for (const [position, childId] of block.children.entries()) {
-          await client.query(
-            `INSERT INTO block_relationships (workspace_id, parent_block_id, child_block_id, position)
-             VALUES ($1, $2, $3, $4)`,
-            [access.workspaceId, block.id, childId, position],
-          );
-        }
-      }
+      await this.insertDocumentContents(client, access.workspaceId, document);
 
       await client.query(
         "UPDATE editor_workspaces SET updated_at = $1 WHERE id = $2",
@@ -410,6 +558,84 @@ export class PostgresDocumentStore {
         userId: String(permission.user_id),
       })),
     };
+  }
+
+  private async insertDocumentContents(
+    client: Pick<PoolClient, "query">,
+    workspaceId: string,
+    document: EditorDocument,
+  ) {
+    for (const [position, block] of document.blocks.entries()) {
+      await client.query(
+        `INSERT INTO editor_blocks
+         (workspace_id, id, document_id, type, heading_level, content, data, checked, assignee, due_date,
+          status, parent_id, position, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15)`,
+        [
+          workspaceId,
+          block.id,
+          document.id,
+          block.type,
+          block.headingLevel,
+          block.content,
+          block.data ? JSON.stringify(block.data) : null,
+          block.checked,
+          block.assignee,
+          block.dueDate,
+          block.status,
+          block.parentId,
+          position,
+          block.createdAt,
+          block.updatedAt,
+        ],
+      );
+      for (const comment of block.comments) {
+        await client.query(
+          `INSERT INTO block_comments
+           (workspace_id, id, block_id, author, body, time_label, created_at, resolved, resolved_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [
+            workspaceId,
+            comment.id,
+            block.id,
+            comment.author,
+            comment.body,
+            comment.time,
+            comment.createdAt,
+            comment.resolved,
+            comment.resolvedAt ?? null,
+          ],
+        );
+      }
+    }
+
+    for (const block of document.blocks) {
+      for (const [position, childId] of block.children.entries()) {
+        await client.query(
+          `INSERT INTO block_relationships (workspace_id, parent_block_id, child_block_id, position)
+           VALUES ($1, $2, $3, $4)`,
+          [workspaceId, block.id, childId, position],
+        );
+      }
+    }
+  }
+
+  private async findDocumentPublicId(
+    executor: Pick<PoolClient, "query">,
+    workspaceId: string,
+    documentId: string | null,
+  ) {
+    if (!documentId) {
+      return null;
+    }
+
+    const result = await executor.query(
+      `SELECT public_id
+       FROM editor_documents
+       WHERE workspace_id = $1 AND id = $2`,
+      [workspaceId, documentId],
+    );
+    return result.rows[0]?.public_id ? String(result.rows[0].public_id) : null;
   }
 
   private async insertDocumentVersion(

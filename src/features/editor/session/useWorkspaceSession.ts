@@ -14,6 +14,12 @@ import {
 } from "../../../shared/workspace";
 import type { WorkspaceTransitionResponse } from "../../../shared/workspaceApi";
 import type { EditorDocument, EditorWorkspace } from "../model/block";
+import {
+  createWorkspaceDocument,
+  deleteWorkspaceDocument,
+  duplicateWorkspaceDocument,
+  type CreateWorkspaceDocumentInput,
+} from "../model/workspaceOperations";
 import type { DocumentRepository } from "../persistence/documentRepository";
 import type { WorkspaceRepository } from "../persistence/workspaceRepository";
 
@@ -38,6 +44,9 @@ export interface WorkspaceSessionController {
   runServerTransition(
     operation: () => Promise<WorkspaceTransitionResponse>,
   ): Promise<void>;
+  createDocument(input?: CreateWorkspaceDocumentInput): Promise<void>;
+  deleteDocument(documentId: string): Promise<void>;
+  duplicateDocument(documentId: string): Promise<void>;
   switchWorkspace(workspaceId: string): Promise<void>;
   createWorkspace(name: string): Promise<void>;
   renameWorkspace(workspaceId: string, name: string): Promise<void>;
@@ -391,6 +400,163 @@ export function useWorkspaceSession(
     }
   }, [documentRepository, flushSave, installSnapshot, repository]);
 
+  const createRemoteDocument = useCallback(async (
+    remoteDocumentRepository: DocumentRepository,
+    createContent: (current: EditorWorkspace) => EditorWorkspace,
+  ) => {
+    if (transitionRef.current) {
+      return;
+    }
+
+    transitionRef.current = true;
+    setIsTransitioning(true);
+    setError("");
+    try {
+      await flushSave();
+      const current = currentRef.current;
+      if (!current || !current.canWrite) {
+        return;
+      }
+
+      const nextContent = createContent(current.content);
+      const document = nextContent.documents.find(
+        (item) => item.id === nextContent.activeDocumentId,
+      );
+      if (!document) {
+        return;
+      }
+
+      const created = await remoteDocumentRepository.create(
+        current.workspaceId,
+        document,
+        nextContent.documents.findIndex((item) => item.id === document.id),
+      );
+      const content = replaceWorkspaceDocument(nextContent, created.document);
+      const documentPublicIds = {
+        ...current.documentPublicIds,
+        [created.document.id]: created.access.publicId,
+      };
+      currentRef.current = {
+        ...current,
+        canWrite: created.access.canWrite,
+        content,
+        documentPublicIds,
+        savedRevision: current.revision,
+      };
+      if (mountedRef.current) {
+        setActiveDocumentCanWrite(created.access.canWrite);
+        setSnapshot((currentSnapshot) => currentSnapshot?.summary.id === current.workspaceId
+          ? {
+              ...currentSnapshot,
+              activeDocumentAccess: created.access,
+              content,
+              documentPublicIds,
+            }
+          : currentSnapshot);
+        setSaveStatus(created.access.canWrite ? repository.target : "readonly");
+      }
+    } catch (createError) {
+      if (mountedRef.current) {
+        setError(errorMessage(createError));
+      }
+    } finally {
+      transitionRef.current = false;
+      if (mountedRef.current) {
+        setIsTransitioning(false);
+      }
+    }
+  }, [flushSave, repository.target]);
+
+  const createDocument = useCallback(async (input?: CreateWorkspaceDocumentInput) => {
+    if (repository.target !== "remote" || !documentRepository) {
+      updateContent((current) => createWorkspaceDocument(current, Date.now(), input));
+      return;
+    }
+
+    await createRemoteDocument(
+      documentRepository,
+      (current) => createWorkspaceDocument(current, Date.now(), input),
+    );
+  }, [createRemoteDocument, documentRepository, repository.target, updateContent]);
+
+  const duplicateDocument = useCallback(async (documentId: string) => {
+    if (repository.target !== "remote" || !documentRepository) {
+      updateContent((current) => duplicateWorkspaceDocument(current, documentId, Date.now()));
+      return;
+    }
+
+    await createRemoteDocument(
+      documentRepository,
+      (current) => duplicateWorkspaceDocument(current, documentId, Date.now()),
+    );
+  }, [createRemoteDocument, documentRepository, repository.target, updateContent]);
+
+  const deleteDocument = useCallback(async (documentId: string) => {
+    if (repository.target !== "remote" || !documentRepository) {
+      updateContent((current) => deleteWorkspaceDocument(current, documentId, Date.now()));
+      return;
+    }
+    if (transitionRef.current) {
+      return;
+    }
+
+    transitionRef.current = true;
+    setIsTransitioning(true);
+    setError("");
+    try {
+      await flushSave();
+      const current = currentRef.current;
+      const publicId = current?.documentPublicIds[documentId];
+      if (!current || !current.canWrite || !publicId || current.content.documents.length <= 1) {
+        return;
+      }
+
+      const deleted = await documentRepository.delete(current.workspaceId, publicId);
+      const documentPublicIds = { ...current.documentPublicIds };
+      delete documentPublicIds[documentId];
+      const activeDocumentId = Object.entries(documentPublicIds).find(
+        ([, candidatePublicId]) => candidatePublicId === deleted.activeDocumentPublicId,
+      )?.[0];
+      if (!activeDocumentId) {
+        throw new Error("删除后的活动文档公开标识缺失");
+      }
+
+      const selected = await documentRepository.load(deleted.activeDocumentPublicId);
+      const content = replaceWorkspaceDocument({
+        ...deleteWorkspaceDocument(current.content, documentId, Date.now()),
+        activeDocumentId,
+      }, selected.document);
+      currentRef.current = {
+        ...current,
+        canWrite: selected.access.canWrite,
+        content,
+        documentPublicIds,
+        savedRevision: current.revision,
+      };
+      if (mountedRef.current) {
+        setActiveDocumentCanWrite(selected.access.canWrite);
+        setSnapshot((currentSnapshot) => currentSnapshot?.summary.id === current.workspaceId
+          ? {
+              ...currentSnapshot,
+              activeDocumentAccess: selected.access,
+              content,
+              documentPublicIds,
+            }
+          : currentSnapshot);
+        setSaveStatus(selected.access.canWrite ? repository.target : "readonly");
+      }
+    } catch (deleteError) {
+      if (mountedRef.current) {
+        setError(errorMessage(deleteError));
+      }
+    } finally {
+      transitionRef.current = false;
+      if (mountedRef.current) {
+        setIsTransitioning(false);
+      }
+    }
+  }, [documentRepository, flushSave, repository.target, updateContent]);
+
   const renameWorkspace = useCallback(async (workspaceId: string, name: string) => {
     setError("");
     try {
@@ -436,6 +602,9 @@ export function useWorkspaceSession(
     updateContent,
     flushSave,
     runServerTransition,
+    createDocument,
+    deleteDocument,
+    duplicateDocument,
     switchWorkspace,
     createWorkspace,
     renameWorkspace,

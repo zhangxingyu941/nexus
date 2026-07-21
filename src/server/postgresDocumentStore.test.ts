@@ -48,6 +48,86 @@ describe("PostgresDocumentStore", () => {
       .rejects.toBeInstanceOf(DocumentNotFoundError);
   });
 
+  it("creates a workspace editor document with a server public id", async () => {
+    const document = {
+      blocks: [{
+        assignee: "",
+        checked: false,
+        children: [],
+        comments: [],
+        content: "New content",
+        createdAt: 2000,
+        data: null,
+        dueDate: "",
+        headingLevel: 1 as const,
+        id: "block-new",
+        parentId: null,
+        status: "unset" as const,
+        type: "paragraph" as const,
+        updatedAt: 2000,
+      }],
+      id: "document-new",
+      title: "New document",
+      updatedAt: 2000,
+    };
+
+    const created = await store.createDocument("editor-1", "workspace-1", document, 1);
+
+    expect(created).toMatchObject({
+      access: {
+        canWrite: true,
+        documentId: "document-new",
+        workspaceId: "workspace-1",
+      },
+      document: {
+        id: "document-new",
+        title: "New document",
+      },
+    });
+    expect(created.access.publicId).toEqual(expect.any(String));
+    await expect(store.loadDocument("editor-1", created.access.publicId)).resolves.toMatchObject({
+      document: { blocks: [expect.objectContaining({ content: "New content" })] },
+    });
+    await expect(pool.query(
+      `SELECT created_by, access_mode, position
+       FROM editor_documents
+       WHERE workspace_id = $1 AND id = $2`,
+      ["workspace-1", "document-new"],
+    )).resolves.toMatchObject({
+      rows: [{ access_mode: "workspace", created_by: "editor-1", position: 1 }],
+    });
+  });
+
+  it("deletes a writable document and selects an accessible replacement", async () => {
+    await store.replaceDocumentPolicy("owner-1", "public-document-1", {
+      accessMode: "workspace",
+      permissions: [],
+    });
+    const created = await store.createDocument("editor-1", "workspace-1", {
+      blocks: [],
+      id: "document-delete",
+      title: "Delete me",
+      updatedAt: 2000,
+    }, 1);
+
+    const deleted = await store.deleteDocument(
+      "editor-1",
+      "workspace-1",
+      created.access.publicId,
+    );
+
+    expect(deleted).toEqual({ activeDocumentPublicId: "public-document-1" });
+    await expect(store.loadDocument("editor-1", created.access.publicId))
+      .rejects.toBeInstanceOf(DocumentNotFoundError);
+    await expect(pool.query(
+      `SELECT id, position
+       FROM editor_documents
+       WHERE workspace_id = $1
+       ORDER BY position ASC`,
+      ["workspace-1"],
+    )).resolves.toMatchObject({ rows: [{ id: "document-1", position: 0 }] });
+  });
+
   it("saves one writable document without changing its public identity or author", async () => {
     const loaded = await store.loadDocument("owner-1", "public-document-1");
     const nextDocument = {

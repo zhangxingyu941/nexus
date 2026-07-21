@@ -12,7 +12,13 @@ export interface DocumentPolicySnapshot {
   policy: DocumentPolicy;
 }
 
+export interface DocumentDeleteSnapshot {
+  activeDocumentPublicId: string;
+}
+
 export interface DocumentRepository {
+  create(workspaceId: string, document: EditorDocument, position: number): Promise<DocumentSnapshot>;
+  delete(workspaceId: string, publicId: string): Promise<DocumentDeleteSnapshot>;
   load(publicId: string): Promise<DocumentSnapshot>;
   loadPolicy(publicId: string): Promise<DocumentPolicySnapshot>;
   save(publicId: string, document: EditorDocument): Promise<DocumentSnapshot>;
@@ -21,6 +27,14 @@ export interface DocumentRepository {
 
 export function createDocumentRepository(): DocumentRepository {
   return {
+    create: (workspaceId, document, position) => requestJson(
+      workspaceDocumentsUrl(workspaceId),
+      jsonRequest("POST", { document, position }),
+    ),
+    delete: (workspaceId, publicId) => requestJson(
+      `${workspaceDocumentsUrl(workspaceId)}/${encodeURIComponent(publicId)}`,
+      jsonRequest("DELETE"),
+    ),
     load: (publicId) => requestJson(documentUrl(publicId), jsonRequest("GET")),
     loadPolicy: (publicId) => requestJson(permissionUrl(publicId), jsonRequest("GET")),
     save: (publicId, document) => requestJson(
@@ -40,4 +54,8 @@ function documentUrl(publicId: string) {
 
 function permissionUrl(publicId: string) {
   return `${documentUrl(publicId)}/permissions`;
+}
+
+function workspaceDocumentsUrl(workspaceId: string) {
+  return `/api/workspaces/${encodeURIComponent(workspaceId)}/documents`;
 }

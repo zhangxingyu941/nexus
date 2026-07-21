@@ -72,6 +72,128 @@ describe("useWorkspaceSession", () => {
     expect(repository.save).not.toHaveBeenCalled();
   });
 
+  it("creates a remote document and records its server public id", async () => {
+    const workspace = createSnapshot("workspace-a", "Alpha", "owner", 1000);
+    const document = workspace.content.documents[0];
+    workspace.documentPublicIds = { [document.id]: "public-document-a" };
+    const repository = createRepository({
+      catalog: createCatalog(workspace.summary),
+      snapshots: { "workspace-a": workspace },
+      target: "remote",
+    });
+    const documentRepository = createDocumentRepository({
+      access: documentAccess(document.id, "public-document-a"),
+      document,
+    });
+    vi.mocked(documentRepository.create).mockImplementation(async (_workspaceId, createdDocument) => ({
+      access: documentAccess(createdDocument.id, "public-document-new"),
+      document: createdDocument,
+    }));
+    const { result } = renderHook(() => useWorkspaceSession(repository, documentRepository));
+    await waitFor(() => expect(result.current.snapshot?.summary.id).toBe("workspace-a"));
+
+    await act(async () => {
+      await result.current.createDocument({ title: "Remote document" });
+    });
+
+    expect(documentRepository.create).toHaveBeenCalledWith(
+      "workspace-a",
+      expect.objectContaining({ title: "Remote document" }),
+      1,
+    );
+    expect(result.current.snapshot?.content).toMatchObject({
+      activeDocumentId: expect.any(String),
+      documents: expect.arrayContaining([expect.objectContaining({ title: "Remote document" })]),
+    });
+    const activeDocumentId = result.current.snapshot!.content.activeDocumentId;
+    expect(result.current.snapshot?.documentPublicIds?.[activeDocumentId]).toBe("public-document-new");
+  });
+
+  it("duplicates a remote document through the server creation endpoint", async () => {
+    const workspace = createSnapshot("workspace-a", "Alpha", "owner", 1000);
+    const document = workspace.content.documents[0];
+    workspace.documentPublicIds = { [document.id]: "public-document-a" };
+    const repository = createRepository({
+      catalog: createCatalog(workspace.summary),
+      snapshots: { "workspace-a": workspace },
+      target: "remote",
+    });
+    const documentRepository = createDocumentRepository({
+      access: documentAccess(document.id, "public-document-a"),
+      document,
+    });
+    vi.mocked(documentRepository.create).mockImplementation(async (_workspaceId, copiedDocument) => ({
+      access: documentAccess(copiedDocument.id, "public-document-copy"),
+      document: copiedDocument,
+    }));
+    const { result } = renderHook(() => useWorkspaceSession(repository, documentRepository));
+    await waitFor(() => expect(result.current.snapshot?.summary.id).toBe("workspace-a"));
+
+    await act(async () => {
+      await result.current.duplicateDocument(document.id);
+    });
+
+    expect(documentRepository.create).toHaveBeenCalledWith(
+      "workspace-a",
+      expect.objectContaining({
+        id: expect.not.stringMatching(new RegExp(`^${document.id}$`)),
+        title: expect.stringContaining("副本"),
+      }),
+      1,
+    );
+    const activeDocumentId = result.current.snapshot!.content.activeDocumentId;
+    expect(result.current.snapshot?.documentPublicIds?.[activeDocumentId]).toBe("public-document-copy");
+  });
+
+  it("deletes a remote document and loads the server-selected replacement", async () => {
+    const workspace = createSnapshot("workspace-a", "Alpha", "owner", 1000);
+    const firstDocument = workspace.content.documents[0];
+    const secondDocument = { ...firstDocument, id: "document-b", title: "Second document" };
+    workspace.content = {
+      ...workspace.content,
+      activeDocumentId: secondDocument.id,
+      documents: [firstDocument, secondDocument],
+    };
+    workspace.documentPublicIds = {
+      [firstDocument.id]: "public-document-a",
+      [secondDocument.id]: "public-document-b",
+    };
+    const repository = createRepository({
+      catalog: createCatalog(workspace.summary),
+      snapshots: { "workspace-a": workspace },
+      target: "remote",
+    });
+    const documentRepository = createDocumentRepository({
+      access: documentAccess(secondDocument.id, "public-document-b"),
+      document: secondDocument,
+    });
+    vi.mocked(documentRepository.load).mockImplementation(async (publicId) => (
+      publicId === "public-document-a"
+        ? { access: documentAccess(firstDocument.id, publicId), document: firstDocument }
+        : { access: documentAccess(secondDocument.id, publicId), document: secondDocument }
+    ));
+    vi.mocked(documentRepository.delete).mockResolvedValue({
+      activeDocumentPublicId: "public-document-a",
+    });
+    const { result } = renderHook(() => useWorkspaceSession(repository, documentRepository));
+    await waitFor(() => expect(result.current.snapshot?.summary.id).toBe("workspace-a"));
+
+    await act(async () => {
+      await result.current.deleteDocument(secondDocument.id);
+    });
+
+    expect(documentRepository.delete).toHaveBeenCalledWith(
+      "workspace-a",
+      "public-document-b",
+    );
+    expect(documentRepository.load).toHaveBeenCalledWith("public-document-a");
+    expect(result.current.snapshot?.content).toMatchObject({
+      activeDocumentId: firstDocument.id,
+      documents: [expect.objectContaining({ id: firstDocument.id })],
+    });
+    expect(result.current.snapshot?.documentPublicIds).not.toHaveProperty(secondDocument.id);
+  });
+
   it("uses the selected document public id when saving a remote workspace", async () => {
     const workspace = createSnapshot("workspace-a", "Alpha", "owner", 1000);
     const firstDocument = workspace.content.documents[0];
@@ -490,10 +612,26 @@ function createDocumentRepository(
   snapshot: Awaited<ReturnType<DocumentRepository["load"]>>,
 ): DocumentRepository {
   return {
+    create: vi.fn(),
+    delete: vi.fn(),
     load: vi.fn().mockResolvedValue(snapshot),
     loadPolicy: vi.fn(),
     save: vi.fn().mockResolvedValue(snapshot),
     updatePolicy: vi.fn(),
+  };
+}
+
+function documentAccess(documentId: string, publicId: string) {
+  return {
+    accessMode: "workspace" as const,
+    canManage: true,
+    canRead: true,
+    canWrite: true,
+    documentId,
+    publicId,
+    role: "owner" as const,
+    source: "workspace-owner" as const,
+    workspaceId: "workspace-a",
   };
 }
 

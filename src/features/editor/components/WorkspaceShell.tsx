@@ -112,6 +112,9 @@ export function WorkspaceShell({ mode, sessionUser, onSignOut }: WorkspaceShellP
         inviteCount={invites.length}
         key={session.snapshot.summary.id}
         membersEnabled={mode === "database"}
+        onCreateDocument={mode === "database" ? session.createDocument : undefined}
+        onDeleteDocument={mode === "database" ? session.deleteDocument : undefined}
+        onDuplicateDocument={mode === "database" ? session.duplicateDocument : undefined}
         onManageWorkspaces={openManager}
         onOpenInvites={mode === "database" ? () => setIsInvitationsOpen(true) : undefined}
         onSignOut={onSignOut}
