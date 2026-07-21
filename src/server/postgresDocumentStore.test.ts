@@ -207,6 +207,39 @@ describe("PostgresDocumentStore", () => {
     });
   });
 
+  it("revokes an active share when leaving link access mode", async () => {
+    await pool.query(
+      "UPDATE editor_documents SET access_mode = 'link' WHERE workspace_id = 'workspace-1' AND id = 'document-1'",
+    );
+    await pool.query(
+      `INSERT INTO document_share_links
+         (id, workspace_id, document_id, token_hash, created_by,
+          expires_at, revoked_at, created_at, updated_at)
+       VALUES
+         ('share-1', 'workspace-1', 'document-1', 'token-hash-1', 'owner-1',
+          9999999999999, NULL, 1000, 1000)`,
+    );
+
+    await store.replaceDocumentPolicy("owner-1", "public-document-1", {
+      accessMode: "private",
+      permissions: [],
+    });
+
+    await expect(pool.query(
+      "SELECT revoked_at FROM document_share_links WHERE id = 'share-1'",
+    )).resolves.toMatchObject({ rows: [{ revoked_at: expect.any(Number) }] });
+    await expect(pool.query(
+      `SELECT event_type, metadata
+       FROM workspace_audit_events
+       WHERE target_id = 'share-1'`,
+    )).resolves.toMatchObject({
+      rows: [{
+        event_type: "document_share.revoked",
+        metadata: expect.objectContaining({ reason: "policy-changed" }),
+      }],
+    });
+  });
+
   it("does not replace a policy when a granted user is no longer a workspace member", async () => {
     await store.replaceDocumentPolicy("owner-1", "public-document-1", {
       accessMode: "private",

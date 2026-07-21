@@ -47,5 +47,25 @@ describe("PostgresAttachmentStore", () => {
       key: "workspace-1/object-1.pdf",
       workspaceId: "workspace-1",
     });
+    await expect(store.listDocumentAttachments("workspace-1", "document-1"))
+      .resolves.toEqual([{
+        documentId: "document-1",
+        key: "workspace-1/object-1.pdf",
+        workspaceId: "workspace-1",
+      }]);
+    await expect(store.findDocumentAttachment(
+      "workspace-1/object-1.pdf",
+      "workspace-1",
+      "document-1",
+    )).resolves.toEqual({
+      documentId: "document-1",
+      key: "workspace-1/object-1.pdf",
+      workspaceId: "workspace-1",
+    });
+    await expect(store.findDocumentAttachment(
+      "workspace-1/object-1.pdf",
+      "workspace-1",
+      "other-document",
+    )).resolves.toBeNull();
   });
 });

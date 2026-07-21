@@ -39,7 +39,7 @@ export function isDocumentPolicy(value: unknown): value is DocumentPolicy {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const input = value as { accessMode?: unknown; permissions?: unknown };
   if (
-    (input.accessMode !== "workspace" && input.accessMode !== "private") ||
+    !isDocumentAccessMode(input.accessMode) ||
     !Array.isArray(input.permissions)
   ) {
     return false;

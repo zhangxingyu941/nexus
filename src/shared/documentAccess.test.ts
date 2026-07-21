@@ -16,12 +16,12 @@ describe("document access contracts", () => {
     expect(isDocumentPermissionRole("owner")).toBe(false);
   });
 
-  it("accepts only unique workspace or private permission policies", () => {
+  it("accepts only unique persisted permission policies", () => {
     expect(isDocumentPolicy({
       accessMode: "private",
       permissions: [{ role: "viewer", userId: "user-1" }],
     })).toBe(true);
-    expect(isDocumentPolicy({ accessMode: "link", permissions: [] })).toBe(false);
+    expect(isDocumentPolicy({ accessMode: "link", permissions: [] })).toBe(true);
     expect(isDocumentPolicy({
       accessMode: "workspace",
       permissions: [

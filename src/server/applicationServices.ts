@@ -18,6 +18,8 @@ import { createWorkspaceInviteRateLimiter } from "./workspaceInviteRateLimiter";
 import type { WorkspaceInviteRateLimiter } from "./workspaceInviteRateLimiter";
 import { WorkspaceInviteTokenService } from "./workspaceInviteTokens";
 import { WorkspacePurgeService } from "./workspacePurgeService";
+import { DocumentShareTokenService } from "./documentShareTokens";
+import { PostgresDocumentShareStore } from "./postgresDocumentShareStore";
 
 let workspaceInviteLimiter: WorkspaceInviteRateLimiter | null = null;
 
@@ -28,12 +30,20 @@ export function createPostgresServices(pool: Pool = getDatabasePool()) {
   );
   const documentStore = new PostgresDocumentStore(pool, documentAuthorization);
   const attachmentStore = new PostgresAttachmentStore(pool);
+  const objectStorage = createObjectStorage();
   const production = process.env.NODE_ENV === "production";
   const workspaceInviteSecret = process.env.AUTH_HASH_SECRET?.trim()
     || (production
       ? ""
       : "development-only-workspace-invite-secret");
   const workspaceInviteTokenService = new WorkspaceInviteTokenService(workspaceInviteSecret);
+  const documentShareTokenService = new DocumentShareTokenService(workspaceInviteSecret);
+  const documentShareStore = new PostgresDocumentShareStore(pool, {
+    attachmentStore,
+    authorization: documentAuthorization,
+    objectStorage,
+    tokenService: documentShareTokenService,
+  });
   const workspaceInviteStore = new PostgresWorkspaceInviteStore(pool, {
     tokenService: workspaceInviteTokenService,
   });
@@ -41,7 +51,7 @@ export function createPostgresServices(pool: Pool = getDatabasePool()) {
   const workspaceLifecycleStore = new PostgresWorkspaceLifecycleStore(pool);
   const workspacePurgeService = new WorkspacePurgeService({
     lifecycleStore: workspaceLifecycleStore,
-    objectStorage: createObjectStorage(),
+    objectStorage,
   });
   const authStore = new PostgresAuthStore(pool, workspaceStore, {
     authCodeSecret: process.env.AUTH_HASH_SECRET,
@@ -58,7 +68,10 @@ export function createPostgresServices(pool: Pool = getDatabasePool()) {
     authStore,
     attachmentStore,
     documentAuthorization,
+    documentShareStore,
+    documentShareTokenService,
     documentStore,
+    objectStorage,
     workspaceInviteLimiter,
     workspaceInviteMailer,
     workspaceInviteStore,

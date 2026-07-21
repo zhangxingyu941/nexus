@@ -12,6 +12,7 @@ import type {
   DocumentPolicy,
 } from "../shared/documentAccess";
 import { DocumentAuthorizationService, DocumentNotFoundError } from "./documentAuthorization";
+import { WorkspaceAuditStore } from "./workspaceAuditStore";
 
 export interface DocumentSnapshot {
   access: DocumentAccess;
@@ -39,6 +40,10 @@ export class DocumentPolicyMemberError extends Error {
 }
 
 export class PostgresDocumentStore {
+  private readonly auditStore = new WorkspaceAuditStore(
+    () => `workspace-audit-${randomUUID()}`,
+  );
+
   constructor(
     private readonly pool: Pool,
     private readonly authorization: DocumentAuthorizationService,
@@ -513,6 +518,39 @@ export class PostgresDocumentStore {
             updatedAt,
           ],
         );
+      }
+
+      if (policy.accessMode !== "link") {
+        const revoked = await client.query(
+          `UPDATE document_share_links
+           SET revoked_at = $1, updated_at = $1
+           WHERE workspace_id = $2 AND document_id = $3 AND revoked_at IS NULL
+           RETURNING id`,
+          [updatedAt, access.workspaceId, access.documentId],
+        );
+        if (revoked.rows.length > 0) {
+          const workspace = await client.query(
+            "SELECT name FROM editor_workspaces WHERE id = $1",
+            [access.workspaceId],
+          );
+          const workspaceName = String(workspace.rows[0]?.name ?? "");
+          for (const shareLink of revoked.rows) {
+            const shareId = String(shareLink.id);
+            await this.auditStore.write(client, {
+              actorUserId: userId,
+              eventType: "document_share.revoked",
+              metadata: {
+                documentId: access.documentId,
+                reason: "policy-changed",
+                shareId,
+              },
+              targetId: shareId,
+              targetType: "document_share",
+              workspaceId: access.workspaceId,
+              workspaceName,
+            });
+          }
+        }
       }
 
       await client.query(

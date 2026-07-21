@@ -159,7 +159,7 @@ describe("document route handlers", () => {
     authStore.getUserBySessionToken.mockResolvedValue({ id: "owner-1" });
 
     const response = await handlers.PATCHPermissions(
-      jsonRequest({ accessMode: "link", permissions: [] }, "PATCH"),
+      jsonRequest({ accessMode: "public", permissions: [] }, "PATCH"),
       "public-document-1",
     );
 
