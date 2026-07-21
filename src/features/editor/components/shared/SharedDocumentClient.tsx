@@ -155,6 +155,7 @@ function SharedDocumentView({
               onToggleTodo={NOOP}
               scrollElementRef={scrollRef}
               sessionUser={null}
+              showBlockActions={false}
               workspaceId="shared"
             />
           </div>

@@ -35,6 +35,8 @@ describe("SharedDocumentClient", () => {
     expect(screen.getByText("公开正文")).toBeInTheDocument();
     expect(screen.getByText("Nexus")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "分享" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("toolbar", { name: "当前块操作" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "打开块评论" })).not.toBeInTheDocument();
     expect(screen.queryByText("协同已连接")).not.toBeInTheDocument();
     expect(screen.queryByText("插入标题、待办、引用或协作评论")).not.toBeInTheDocument();
     expect(fetchSpy).toHaveBeenCalledWith(

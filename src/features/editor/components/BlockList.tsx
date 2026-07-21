@@ -30,6 +30,7 @@ interface BlockListProps {
   onReorder?: (fromId: string, toId: string, position: "before" | "after") => void;
   scrollElementRef: RefObject<HTMLElement | null>;
   sessionUser: EditorSessionUser | null;
+  showBlockActions: boolean;
   workspaceId: string;
 }
 
@@ -75,6 +76,7 @@ export function BlockList({
   onReorder,
   scrollElementRef,
   sessionUser,
+  showBlockActions,
   workspaceId,
 }: BlockListProps) {
   const listRef = useRef<HTMLDivElement>(null);
@@ -179,6 +181,7 @@ export function BlockList({
       onToggleTodo={onToggleTodo}
       onReorder={onReorder}
       sessionUser={sessionUser}
+      showBlockActions={showBlockActions}
       workspaceId={workspaceId}
     />;
   };

@@ -251,6 +251,7 @@ export function DocumentEditor({
               onToggleTodo={onToggleTodo}
               scrollElementRef={documentScrollRef}
               sessionUser={sessionUser}
+              showBlockActions
               workspaceId={workspaceId}
             />
 

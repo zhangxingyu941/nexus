@@ -39,6 +39,7 @@ function LargeBlockList({ focusBlockId = null }: { focusBlockId?: string | null 
         onToggleTodo={noop}
         scrollElementRef={scrollElementRef}
         sessionUser={null}
+        showBlockActions
         workspaceId="workspace-a"
         />
       </div>

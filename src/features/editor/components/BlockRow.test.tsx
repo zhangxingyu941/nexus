@@ -66,6 +66,7 @@ describe("BlockRow mention menu", () => {
             onResolveBlockComment={vi.fn()}
             onToggleTodo={vi.fn()}
             sessionUser={{ id: "me", email: "me@example.com", displayName: "Me" }}
+            showBlockActions
             workspaceId="ws-1"
           />
         </MentionSearchProvider>

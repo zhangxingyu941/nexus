@@ -58,6 +58,7 @@ interface BlockRowProps {
   onToggleTodo: (blockId: string) => void;
   onReorder?: (fromId: string, toId: string, position: "before" | "after") => void;
   sessionUser: EditorSessionUser | null;
+  showBlockActions: boolean;
   workspaceId: string;
 }
 
@@ -91,6 +92,7 @@ export function BlockRow({
   onToggleTodo,
   onReorder,
   sessionUser,
+  showBlockActions,
   workspaceId,
 }: BlockRowProps) {
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
@@ -421,32 +423,34 @@ export function BlockRow({
       ) : <span aria-hidden="true" className="readonly-block-gutter" />}
 
       <div className="block-editor-shell">
-        <BlockActionBar
-          block={block}
-          collabContent={(
-            <BlockCollabPopover
-              block={block}
-              onChangeAssignee={onChangeBlockAssignee}
-              onChangeDueDate={onChangeBlockDueDate}
-              onChangeStatus={onChangeBlockStatus}
-            />
-          )}
-          commentsContent={(
-            <BlockCommentsPopover
-              block={block}
-              commentDraft={commentDraft}
-              isReadOnly={isReadOnly}
-              onChangeCommentDraft={setCommentDraft}
-              onResolveComment={onResolveBlockComment}
-              onSubmitComment={handleSubmitComment}
-            />
-          )}
-          isReadOnly={isReadOnly}
-          isCollabOpen={openMenu === "collab"}
-          isCommentsOpen={openMenu === "comments"}
-          onCollabOpenChange={(open) => setOpenMenu(open ? "collab" : null)}
-          onCommentsOpenChange={(open) => setOpenMenu(open ? "comments" : null)}
-        />
+        {showBlockActions ? (
+          <BlockActionBar
+            block={block}
+            collabContent={(
+              <BlockCollabPopover
+                block={block}
+                onChangeAssignee={onChangeBlockAssignee}
+                onChangeDueDate={onChangeBlockDueDate}
+                onChangeStatus={onChangeBlockStatus}
+              />
+            )}
+            commentsContent={(
+              <BlockCommentsPopover
+                block={block}
+                commentDraft={commentDraft}
+                isReadOnly={isReadOnly}
+                onChangeCommentDraft={setCommentDraft}
+                onResolveComment={onResolveBlockComment}
+                onSubmitComment={handleSubmitComment}
+              />
+            )}
+            isReadOnly={isReadOnly}
+            isCollabOpen={openMenu === "collab"}
+            isCommentsOpen={openMenu === "comments"}
+            onCollabOpenChange={(open) => setOpenMenu(open ? "collab" : null)}
+            onCommentsOpenChange={(open) => setOpenMenu(open ? "comments" : null)}
+          />
+        ) : null}
 
         <div className="block-editor-content">
           {block.type === "image" || block.type === "file" ? (
