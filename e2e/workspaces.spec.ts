@@ -133,7 +133,7 @@ async function createBlankDocument(page: Page) {
 async function seedLegacyWorkspace(page: Page) {
   await page.evaluate(async () => {
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open("notion-block-editor", 1);
+      const request = indexedDB.open("nexus", 1);
       request.onupgradeneeded = () => {
         if (!request.result.objectStoreNames.contains("documents")) {
           request.result.createObjectStore("documents");

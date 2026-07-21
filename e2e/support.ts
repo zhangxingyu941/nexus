@@ -158,7 +158,7 @@ export function runSql(sql: string, variables: Record<string, string | number> =
     "-U",
     "postgres",
     "-d",
-    "notion_block_editor",
+    "nexus",
     "-c",
     sql,
   ]);
@@ -176,7 +176,7 @@ export function queryScalar(sql: string, variables: Record<string, string | numb
     "-U",
     "postgres",
     "-d",
-    "notion_block_editor",
+    "nexus",
     "-A",
     "-t",
     "-c",
@@ -216,7 +216,7 @@ export function cleanupAcceptanceData() {
     "-U",
     "postgres",
     "-d",
-    "notion_block_editor",
+    "nexus",
     "-c",
     "DELETE FROM auth_audit_events WHERE user_id IN (SELECT id FROM app_users WHERE email LIKE 'e2e-%@example.com' OR email LIKE 'collab-%@example.com' OR email LIKE 'workspace-%@example.com' OR email LIKE 'members-%@example.com' OR email LIKE 'deletion-%@example.com'); DELETE FROM editor_workspaces WHERE id IN (SELECT DISTINCT members.workspace_id FROM workspace_members members INNER JOIN app_users users ON users.id = members.user_id WHERE users.email LIKE 'e2e-%@example.com' OR users.email LIKE 'collab-%@example.com' OR users.email LIKE 'workspace-%@example.com' OR users.email LIKE 'members-%@example.com' OR users.email LIKE 'deletion-%@example.com'); DELETE FROM app_users WHERE email LIKE 'e2e-%@example.com' OR email LIKE 'collab-%@example.com' OR email LIKE 'workspace-%@example.com' OR email LIKE 'members-%@example.com' OR email LIKE 'deletion-%@example.com';",
   ]);
@@ -264,7 +264,7 @@ function updatePendingWorkspaceInvite(email: string, assignment: string) {
     "-U",
     "postgres",
     "-d",
-    "notion_block_editor",
+    "nexus",
     "-c",
     `UPDATE workspace_invites SET ${assignment} WHERE id = (SELECT id FROM workspace_invites WHERE email = '${escapedEmail}' AND status = 'pending' ORDER BY created_at DESC LIMIT 1);`,
   ]);

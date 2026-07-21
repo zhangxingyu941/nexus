@@ -126,7 +126,7 @@ test("settles rapid collaborative input without echoing parent snapshots", async
 async function seedSharedLocalWorkspace(page: import("@playwright/test").Page) {
   await page.evaluate(async () => {
     await new Promise<void>((resolve, reject) => {
-      const request = indexedDB.open("notion-block-editor", 2);
+      const request = indexedDB.open("nexus", 2);
       request.onupgradeneeded = () => {
         for (const storeName of ["documents", "workspaceCatalog", "workspaceContents", "preferences"]) {
           if (!request.result.objectStoreNames.contains(storeName)) {

@@ -52,7 +52,7 @@ export class GitHubOAuthService {
     const headers = {
       Accept: "application/vnd.github+json",
       Authorization: `Bearer ${tokens.accessToken()}`,
-      "User-Agent": "notion-block-editor",
+      "User-Agent": "nexus",
       "X-GitHub-Api-Version": "2022-11-28",
     };
     const [userResponse, emailsResponse] = await Promise.all([

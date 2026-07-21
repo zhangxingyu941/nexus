@@ -13,7 +13,7 @@ import {
 import type { StoredWorkspace } from "../model/workspaceTypes";
 import type { WorkspaceRepository } from "./workspaceRepository";
 
-const DATABASE_NAME = "notion-block-editor";
+const DATABASE_NAME = "nexus";
 const DATABASE_VERSION = 2;
 const LEGACY_STORE = "documents";
 const CATALOG_STORE = "workspaceCatalog";

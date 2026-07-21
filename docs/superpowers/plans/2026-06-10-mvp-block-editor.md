@@ -111,7 +111,7 @@
 
 - [ ] **步骤 3：实现仓储层**
 
-使用 `idb` 打开 `notion-block-editor` 数据库，并把一个文档保存到 `default` key 下。
+使用 `idb` 打开 `nexus` 数据库，并把一个文档保存到 `default` key 下。
 
 - [ ] **步骤 4：运行仓储层测试并确认通过**
 

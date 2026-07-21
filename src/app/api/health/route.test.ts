@@ -7,7 +7,7 @@ describe("Next health route", () => {
 
     await expect(response.json()).resolves.toEqual({
       ok: true,
-      service: "notion-block-editor-next",
+      service: "nexus",
     });
     expect(response.status).toBe(200);
   });
