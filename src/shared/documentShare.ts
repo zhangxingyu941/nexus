@@ -1,4 +1,5 @@
 import type {
+  AttachmentBlockData,
   BlockData,
   BlockType,
   HeadingLevel,
@@ -26,10 +27,14 @@ export interface CreatedDocumentShare extends DocumentShareSummary {
   url: string;
 }
 
+export type SharedBlockData =
+  | Exclude<BlockData, AttachmentBlockData>
+  | Omit<AttachmentBlockData, "key">;
+
 export interface SharedBlock {
   children: string[];
   content: string;
-  data: BlockData | null;
+  data: SharedBlockData | null;
   headingLevel: HeadingLevel;
   id: string;
   parentId: string | null;
@@ -39,7 +44,6 @@ export interface SharedBlock {
 export interface SharedDocumentSnapshot {
   document: {
     blocks: SharedBlock[];
-    id: string;
     title: string;
   };
   expiresAt: number;
