@@ -334,14 +334,18 @@ describe("EditorPage", () => {
       },
       policy: { accessMode: "private", permissions: [] },
     };
-    const fetchSpy = vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify(policySnapshot), {
-        headers: { "Content-Type": "application/json" },
-      }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({
-        ...policySnapshot,
-        policy: { accessMode: "workspace", permissions: [] },
-      }), { headers: { "Content-Type": "application/json" } }));
+    const fetchSpy = vi.fn().mockImplementation(async (input: string, init?: RequestInit) => {
+      if (input.endsWith("/share-links")) {
+        return new Response(JSON.stringify({ shareLink: null }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify(
+        init?.method === "PATCH"
+          ? { ...policySnapshot, policy: { accessMode: "workspace", permissions: [] } }
+          : policySnapshot,
+      ), { headers: { "Content-Type": "application/json" } });
+    });
     vi.stubGlobal("fetch", fetchSpy);
     await renderEditor({ documentPublicId: "public-document-1" });
 
@@ -349,14 +353,15 @@ describe("EditorPage", () => {
     const shareDialog = screen.getByRole("dialog", { name: "分享文档" });
 
     expect(await within(shareDialog).findByRole("radio", { name: "仅自己与获授权成员可查看" })).toBeChecked();
+    expect(within(shareDialog).getByRole("radio", { name: "拥有链接的人可查看" }))
+      .toBeInTheDocument();
     await user.click(within(shareDialog).getByRole("radio", { name: "团队可查看" }));
     expect(fetchSpy).toHaveBeenLastCalledWith(
       "/api/documents/public-document-1/permissions",
       expect.objectContaining({ method: "PATCH" }),
     );
-
-    await user.click(within(shareDialog).getByRole("button", { name: "复制链接" }));
-    expect(within(shareDialog).getByText("链接已复制")).toBeInTheDocument();
+    expect(within(shareDialog).queryByRole("button", { name: "复制链接" }))
+      .not.toBeInTheDocument();
   });
 
   it("searches documents from the quick search dialog and switches to a result", async () => {
@@ -942,7 +947,7 @@ describe("EditorPage", () => {
     const todoEditor = await screen.findByLabelText("待办内容");
     expect(todoEditor.tagName).toBe("DIV");
     expect(todoEditor).toHaveAttribute("contenteditable", "true");
-    expect(todoEditor).toHaveFocus();
+    await waitFor(() => expect(todoEditor).toHaveFocus());
   });
 
   it("changes a block to an image and stores the uploaded attachment", async () => {

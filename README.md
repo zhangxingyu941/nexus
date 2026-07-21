@@ -57,6 +57,14 @@
 - 本地文件存储 / S3 对象存储
 - 成员、历史、文件对象和 Yjs 房间全部显式绑定 `workspaceId`
 
+### 文档权限与匿名分享
+- 支持直接文档路由、私有/团队/链接策略，以及显式 editor/viewer 文档授权
+- 仅工作区 owner 可管理匿名链接；默认有效期 24 小时，可选 1 小时、7 天、30 天或最长 365 天的自定义时间
+- 分享链接可重新生成或立即关闭；未知令牌返回 404，已过期、已撤销或被替换的令牌返回 410
+- 256 bit 原始令牌只在创建/重新生成时返回一次，数据库仅保存域隔离 HMAC
+- 匿名页面只读且不加载工作区、评论、历史、成员、任务元数据或 Yjs
+- 附件使用 5 分钟签名代理，每次读取重新验证分享状态，不向客户端暴露 object key
+
 ### 本地数据迁移
 - 浏览器本地模式使用 IndexedDB v2 的工作区目录、内容和偏好对象仓库
 - 首次打开时自动把 v1 `documents/workspace` 或单文档数据迁移为 `Nexus 工作区`
@@ -65,8 +73,13 @@
 
 ### 后续批次
 - 账号设置：显示名称和密码变更、会话查看与撤销，以及经过独立验证的主邮箱变更
-- M7.1：文档级真实分享权限与页面权限已接入服务端，覆盖直接文档路由、私有/团队策略、显式 editor/viewer、文件/历史/Yjs 授权及远程文档生命周期
-- M7.2：匿名只读分享链接（令牌、过期、撤销和签名附件 URL）尚未开始
+- M8：结构化富文本、服务端搜索、通知和 @提及
+
+### 当前验证状态
+- 全量 Vitest：128 个测试文件、785 项通过
+- 真实 PostgreSQL：5 个测试文件、8 项通过
+- M7.1/M7.2 定向 E2E：3 项通过；生产构建和 Docker 健康检查通过
+- 完整 E2E：24 项中 14 项通过；剩余 10 项为已知 M6 协作、旧附件上传/删除和成员导航基线，尚不能标记为完整发布验收通过
 
 ### 部署
 - Docker Compose 一键启动（PostgreSQL + Redis + 迁移 + Web + 协作）
@@ -192,7 +205,7 @@ docker compose run --rm migrate
 
 ## 数据库
 
-### 表结构（19 张）
+### 表结构（22 张）
 
 **认证**
 
@@ -225,6 +238,9 @@ docker compose run --rm migrate
 | `editor_blocks` | 区块（9 种类型 + JSONB 扩展数据） |
 | `block_relationships` | 区块父子嵌套关系 |
 | `block_comments` | 区块评论（支持已解决状态） |
+| `document_permissions` | 文档级 editor/viewer 显式授权 |
+| `document_attachments` | 附件与工作区文档的授权映射 |
+| `document_share_links` | 匿名分享令牌 HMAC、过期和撤销状态 |
 
 **协作与版本**
 
@@ -294,8 +310,12 @@ Get-Content -Raw .\nexus.sql | docker compose exec -T postgres psql -U postgres 
 | `POST` | `/api/workspaces/:workspaceId/restore` | 恢复 7 天保留期内的工作区 |
 | `GET` | `/api/workspaces/:workspaceId/history/:documentId` | 获取指定文档历史 |
 | `POST` | `/api/workspaces/:workspaceId/history/:documentId` | 恢复指定文档版本 |
-| `POST` | `/api/files` | 上传文件，表单必须包含 `workspaceId` |
+| `POST` | `/api/files` | 上传文件，表单必须包含 `workspaceId` 和 `documentId` |
 | `GET` | `/api/files/:workspaceId/:objectKey` | 获取工作区作用域文件 |
+| `GET` / `PATCH` | `/api/documents/:documentId/permissions` | owner 读取或更新文档访问策略 |
+| `GET` / `POST` / `DELETE` | `/api/documents/:documentId/share-links` | owner 读取状态、创建/重新生成或关闭匿名链接 |
+| `GET` | `/api/shared-documents/:token` | 未登录读取匿名只读文档 |
+| `GET` | `/api/shared-files/:shareId/:keyToken` | 读取短期签名的匿名附件 |
 
 协作房间统一使用 `workspace:{workspaceId}:document:{documentId}`。服务端同时验证工作区成员关系和文档归属；文件对象 key 的第一段同样是提交并授权后的工作区 ID。
 
