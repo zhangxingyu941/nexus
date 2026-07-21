@@ -159,6 +159,77 @@ describe("authentication database migration", () => {
     )).rejects.toThrow();
   });
 
+  it("creates idempotent document share link constraints", async () => {
+    await migrateDatabase(pool);
+    await migrateDatabase(pool);
+    await pool.query(
+      `INSERT INTO app_users (id, email, display_name, created_at)
+       VALUES ('share-owner-1', 'share-owner@example.com', 'Share owner', 1000)`,
+    );
+    await pool.query(
+      `INSERT INTO editor_workspaces (id, name, updated_at, created_at)
+       VALUES ('share-workspace-1', 'Share workspace', 1000, 1000)`,
+    );
+    await pool.query(
+      `INSERT INTO workspace_members (workspace_id, user_id, role, created_at)
+       VALUES ('share-workspace-1', 'share-owner-1', 'owner', 1000)`,
+    );
+    await pool.query(
+      `INSERT INTO editor_documents
+         (workspace_id, id, public_id, created_by, access_mode, title, position, updated_at)
+       VALUES
+         ('share-workspace-1', 'share-document-1', 'public-share-document-1',
+          'share-owner-1', 'link', 'Shared document', 0, 1000)`,
+    );
+
+    expect(await columnNames(pool, "document_share_links")).toEqual([
+      "id",
+      "workspace_id",
+      "document_id",
+      "token_hash",
+      "created_by",
+      "expires_at",
+      "revoked_at",
+      "created_at",
+      "updated_at",
+    ]);
+    await pool.query(
+      `INSERT INTO document_share_links
+         (id, workspace_id, document_id, token_hash, created_by,
+          expires_at, revoked_at, created_at, updated_at)
+       VALUES
+         ('share-1', 'share-workspace-1', 'share-document-1', 'hash-1',
+          'share-owner-1', 2000, NULL, 1000, 1000)`,
+    );
+
+    await expect(pool.query(
+      `INSERT INTO document_share_links
+         (id, workspace_id, document_id, token_hash, created_by,
+          expires_at, revoked_at, created_at, updated_at)
+       VALUES
+         ('share-2', 'share-workspace-1', 'share-document-1', 'hash-2',
+          'share-owner-1', 3000, NULL, 1000, 1000)`,
+    )).rejects.toThrow();
+
+    await pool.query(
+      "UPDATE document_share_links SET revoked_at = 1500, updated_at = 1500 WHERE id = 'share-1'",
+    );
+    await expect(pool.query(
+      `INSERT INTO document_share_links
+         (id, workspace_id, document_id, token_hash, created_by,
+          expires_at, revoked_at, created_at, updated_at)
+       VALUES
+         ('share-2', 'share-workspace-1', 'share-document-1', 'hash-2',
+          'share-owner-1', 3000, NULL, 1500, 1500)`,
+    )).resolves.toMatchObject({ rowCount: 1 });
+
+    const migration = await pool.query(
+      "SELECT COUNT(*)::int AS count FROM schema_migrations WHERE id = $1",
+      ["2026-07-21-document-share-links"],
+    );
+    expect(Number(migration.rows[0].count)).toBe(1);
+  });
+
   it("enforces provider account uniqueness", async () => {
     await migrateDatabase(pool);
     await pool.query(

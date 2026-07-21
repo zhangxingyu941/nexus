@@ -109,6 +109,7 @@ const WORKSPACE_SOFT_DELETION_MIGRATION_ID =
 const DOCUMENT_PERMISSIONS_MIGRATION_ID = "2026-07-20-document-permissions";
 const DOCUMENT_PUBLIC_ID_MIGRATION_ID = "2026-07-20-document-public-id";
 const DOCUMENT_ATTACHMENTS_MIGRATION_ID = "2026-07-20-document-attachments";
+const DOCUMENT_SHARE_LINKS_MIGRATION_ID = "2026-07-21-document-share-links";
 const MIGRATION_LOCK_ID = "__migration_lock__";
 
 const WORKSPACE_SCOPED_CONTENT_SCHEMA = [
@@ -360,6 +361,28 @@ const DOCUMENT_ATTACHMENTS_SCHEMA = [
       ON DELETE CASCADE
   )`,
   "CREATE INDEX document_attachments_document_idx ON document_attachments(workspace_id, document_id)",
+];
+
+const DOCUMENT_SHARE_LINKS_SCHEMA = [
+  `CREATE TABLE document_share_links (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    document_id TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_by TEXT NOT NULL REFERENCES app_users(id) ON DELETE RESTRICT,
+    expires_at BIGINT NOT NULL,
+    revoked_at BIGINT,
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT NOT NULL,
+    FOREIGN KEY (workspace_id, document_id)
+      REFERENCES editor_documents(workspace_id, id)
+      ON DELETE CASCADE
+  )`,
+  `CREATE UNIQUE INDEX document_share_links_active_document_idx
+   ON document_share_links(workspace_id, document_id)
+   WHERE revoked_at IS NULL`,
+  `CREATE INDEX document_share_links_document_history_idx
+   ON document_share_links(workspace_id, document_id, created_at DESC)`,
 ];
 
 async function migrateDocumentPermissions(client: PoolClient) {
@@ -667,6 +690,22 @@ export async function migrateDatabase(pool: Pool) {
       await client.query(
         "INSERT INTO schema_migrations (id, applied_at) VALUES ($1, $2)",
         [DOCUMENT_ATTACHMENTS_MIGRATION_ID, Date.now()],
+      );
+    }
+
+    const documentShareLinksResult = await client.query(
+      "SELECT id FROM schema_migrations WHERE id = $1",
+      [DOCUMENT_SHARE_LINKS_MIGRATION_ID],
+    );
+
+    if (documentShareLinksResult.rows.length === 0) {
+      for (const statement of DOCUMENT_SHARE_LINKS_SCHEMA) {
+        await client.query(statement);
+      }
+
+      await client.query(
+        "INSERT INTO schema_migrations (id, applied_at) VALUES ($1, $2)",
+        [DOCUMENT_SHARE_LINKS_MIGRATION_ID, Date.now()],
       );
     }
 
