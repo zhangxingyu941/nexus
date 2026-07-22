@@ -17,3 +17,5 @@ server/data/uploads/
 
 .vercel
 .env.production
+docs/superpowers/plans/
+docs/superpowers/specs/
