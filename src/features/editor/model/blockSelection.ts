@@ -23,30 +23,53 @@ export function resolveBlockSelection(
 ): ResolvedBlockSelection {
   const blocksById = new Map(blocks.map((block) => [block.id, block]));
   const selectedIds = new Set(state.selectedBlockIds.filter((id) => blocksById.has(id)));
-  const pendingIds = [...selectedIds];
-
-  while (pendingIds.length > 0) {
-    const blockId = pendingIds.pop()!;
-    const block = blocksById.get(blockId);
-
-    for (const childId of block?.children ?? []) {
-      if (!blocksById.has(childId) || selectedIds.has(childId)) {
-        continue;
-      }
-
-      selectedIds.add(childId);
-      pendingIds.push(childId);
-    }
-  }
+  const descendantIds = expandSelectedDescendants(blocks, blocksById, selectedIds);
 
   const orderedBlockIds = blocks
     .filter((block) => selectedIds.has(block.id))
     .map((block) => block.id);
   const rootBlockIds = orderedBlockIds.filter(
-    (blockId) => !hasSelectedAncestor(blockId, selectedIds, blocksById),
+    (blockId) =>
+      !descendantIds.has(blockId) && !hasSelectedAncestor(blockId, selectedIds, blocksById),
   );
 
   return { orderedBlockIds, rootBlockIds };
+}
+
+function expandSelectedDescendants(
+  blocks: Block[],
+  blocksById: Map<string, Block>,
+  selectedIds: Set<string>,
+): Set<string> {
+  const descendantIds = new Set<string>();
+  const selectedRootIds = blocks
+    .map((block) => block.id)
+    .filter((blockId) => selectedIds.has(blockId));
+
+  for (const rootId of selectedRootIds) {
+    if (descendantIds.has(rootId)) {
+      continue;
+    }
+
+    const visitedIds = new Set([rootId]);
+    const pendingIds = [rootId];
+
+    while (pendingIds.length > 0) {
+      const blockId = pendingIds.pop()!;
+      for (const childId of blocksById.get(blockId)?.children ?? []) {
+        if (!blocksById.has(childId) || visitedIds.has(childId)) {
+          continue;
+        }
+
+        visitedIds.add(childId);
+        descendantIds.add(childId);
+        selectedIds.add(childId);
+        pendingIds.push(childId);
+      }
+    }
+  }
+
+  return descendantIds;
 }
 
 export function selectBlock(

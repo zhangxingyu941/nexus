@@ -51,6 +51,23 @@ describe("block selection", () => {
     });
   });
 
+  it("removes child roots when parentId is stale but the children relation is valid", () => {
+    const blocks = [
+      block("parent", { children: ["child"] }),
+      block("child", { parentId: null }),
+    ];
+
+    expect(
+      resolveBlockSelection(blocks, {
+        anchorBlockId: "parent",
+        selectedBlockIds: ["parent"],
+      }),
+    ).toEqual({
+      orderedBlockIds: ["parent", "child"],
+      rootBlockIds: ["parent"],
+    });
+  });
+
   it("selects the inclusive visible range from the anchor", () => {
     expect(
       selectBlock(
