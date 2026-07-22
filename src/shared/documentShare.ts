@@ -4,6 +4,7 @@ import type {
   BlockType,
   HeadingLevel,
 } from "../features/editor/model/block";
+import type { RichTextDocument } from "./richText";
 
 export const DEFAULT_DOCUMENT_SHARE_TTL_MS = 24 * 60 * 60_000;
 export const MAX_DOCUMENT_SHARE_TTL_MS = 365 * 24 * 60 * 60_000;
@@ -38,6 +39,7 @@ export interface SharedBlock {
   headingLevel: HeadingLevel;
   id: string;
   parentId: string | null;
+  richText: RichTextDocument | null;
   type: BlockType;
 }
 

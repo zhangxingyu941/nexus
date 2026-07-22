@@ -3285,39 +3285,131 @@ textarea:focus-visible {
   display: flex;
   gap: 2px;
   align-items: center;
-  padding: 3px;
-  border: 1px solid #27272a;
+  max-width: calc(100vw - 24px);
+  padding: 4px;
+  border: 1px solid #e4e4e7;
   border-radius: 7px;
-  background: #18181b;
-  box-shadow: 0 8px 24px rgba(24, 24, 27, 0.28);
+  color: #27272a;
+  background: #fafafa;
+  box-shadow: 0 8px 24px rgba(24, 24, 27, 0.14);
 }
 
 .selection-toolbar-button {
-  min-width: 28px;
-  height: 28px;
-  padding: 0 8px;
+  display: inline-grid;
+  flex: 0 0 32px;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
   border: none;
   border-radius: 5px;
-  color: #fafafa;
-  font-size: 0.8rem;
+  color: #27272a;
   background: transparent;
   cursor: pointer;
 }
 
-.selection-toolbar-button:hover:not(:disabled) {
-  background: #3f3f46;
+.selection-toolbar-button:hover,
+.selection-toolbar-button:focus-visible,
+.selection-toolbar-button[data-active="true"] {
+  color: #18181b;
+  background: #e4e4e7;
+  outline: none;
 }
 
-.selection-toolbar-button:disabled {
-  color: #71717a;
-  cursor: not-allowed;
+.selection-toolbar-button:focus-visible {
+  box-shadow: 0 0 0 2px rgba(113, 113, 122, 0.28);
 }
 
 .selection-toolbar-divider {
   width: 1px;
   height: 18px;
   margin: 0 2px;
-  background: #52525b;
+  background: #d4d4d8;
+}
+
+.link-popover {
+  position: fixed;
+  z-index: 91;
+  display: grid;
+  gap: 7px;
+  width: min(320px, calc(100vw - 24px));
+  padding: 10px;
+  border: 1px solid #e4e4e7;
+  border-radius: 7px;
+  color: #27272a;
+  background: #fafafa;
+  box-shadow: 0 10px 28px rgba(24, 24, 27, 0.16);
+  transform: translateX(-50%);
+}
+
+.link-popover-label {
+  color: #52525b;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.link-popover-input-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 30px;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 4px 0 9px;
+  border: 1px solid #d4d4d8;
+  border-radius: 5px;
+  color: #52525b;
+  background: #ffffff;
+}
+
+.link-popover-input-row:focus-within {
+  border-color: #a1a1aa;
+  box-shadow: 0 0 0 2px rgba(161, 161, 170, 0.2);
+}
+
+.link-popover-input-row input {
+  min-width: 0;
+  border: 0;
+  color: #18181b;
+  background: transparent;
+  font-size: 0.84rem;
+  outline: none;
+}
+
+.link-popover-icon-button,
+.link-popover-actions a,
+.link-popover-actions button {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 5px;
+  color: #3f3f46;
+  background: transparent;
+  cursor: pointer;
+}
+
+.link-popover-icon-button:hover,
+.link-popover-icon-button:focus-visible,
+.link-popover-actions a:hover,
+.link-popover-actions a:focus-visible,
+.link-popover-actions button:hover,
+.link-popover-actions button:focus-visible {
+  color: #18181b;
+  background: #e4e4e7;
+  outline: none;
+}
+
+.link-popover-actions {
+  display: flex;
+  gap: 3px;
+  padding-top: 1px;
+}
+
+.link-popover-error {
+  margin: 0;
+  color: #b91c1c;
+  font-size: 0.76rem;
 }
 
 /* Divider / List / Toggle / Formula / LinkCard 块 */

@@ -13,6 +13,13 @@ import type {
 } from "../shared/documentAccess";
 import { DocumentAuthorizationService, DocumentNotFoundError } from "./documentAuthorization";
 import { WorkspaceAuditStore } from "./workspaceAuditStore";
+import {
+  normalizeBlockForStorage,
+  normalizeDocumentForStorage,
+  readDocumentRichText,
+  readStoredRichText,
+} from "./richTextBlockStorage";
+import { projectRichTextContent } from "../shared/richText";
 
 export interface DocumentSnapshot {
   access: DocumentAccess;
@@ -264,7 +271,7 @@ export class PostgresDocumentStore {
 
     const [blockResult, commentResult, relationshipResult] = await Promise.all([
       this.pool.query(
-        `SELECT id, type, heading_level, content, data, checked, assignee, due_date,
+        `SELECT id, type, heading_level, content, rich_text, data, checked, assignee, due_date,
                 status, parent_id, position, created_at, updated_at
          FROM editor_blocks
          WHERE workspace_id = $1 AND document_id = $2
@@ -320,22 +327,28 @@ export class PostgresDocumentStore {
     }
 
     const document: EditorDocument = {
-      blocks: blockResult.rows.map((block) => ({
+      blocks: blockResult.rows.map((block) => {
+        const type = block.type as Block["type"];
+        const content = String(block.content);
+        const richText = readStoredRichText(type, block.rich_text, content);
+        return {
         assignee: String(block.assignee),
         checked: Boolean(block.checked),
         children: childrenByBlock.get(String(block.id)) ?? [],
         comments: commentsByBlock.get(String(block.id)) ?? [],
-        content: String(block.content),
+        content: richText ? projectRichTextContent(richText) : content,
         createdAt: Number(block.created_at),
         data: block.data && typeof block.data === "object" ? block.data as Block["data"] : null,
         dueDate: String(block.due_date),
         headingLevel: Number(block.heading_level) as HeadingLevel,
         id: String(block.id),
         parentId: block.parent_id === null ? null : String(block.parent_id),
+        richText,
         status: block.status as Block["status"],
-        type: block.type as Block["type"],
+        type,
         updatedAt: Number(block.updated_at),
-      })),
+      };
+      }),
       id: String(row.id),
       title: String(row.title),
       updatedAt: Number(row.updated_at),
@@ -445,7 +458,7 @@ export class PostgresDocumentStore {
       throw new DocumentNotFoundError();
     }
 
-    const restored = snapshot as EditorDocument;
+    const restored = readDocumentRichText(snapshot as EditorDocument);
     const updatedAt = Date.now();
     return this.saveDocument(userId, publicId, {
       ...restored,
@@ -604,30 +617,32 @@ export class PostgresDocumentStore {
     document: EditorDocument,
   ) {
     for (const [position, block] of document.blocks.entries()) {
+      const storedBlock = normalizeBlockForStorage(block);
       await client.query(
         `INSERT INTO editor_blocks
-         (workspace_id, id, document_id, type, heading_level, content, data, checked, assignee, due_date,
+         (workspace_id, id, document_id, type, heading_level, content, rich_text, data, checked, assignee, due_date,
           status, parent_id, position, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, $12, $13, $14, $15, $16)`,
         [
           workspaceId,
-          block.id,
+          storedBlock.id,
           document.id,
-          block.type,
-          block.headingLevel,
-          block.content,
-          block.data ? JSON.stringify(block.data) : null,
-          block.checked,
-          block.assignee,
-          block.dueDate,
-          block.status,
-          block.parentId,
+          storedBlock.type,
+          storedBlock.headingLevel,
+          storedBlock.content,
+          storedBlock.richText ? JSON.stringify(storedBlock.richText) : null,
+          storedBlock.data ? JSON.stringify(storedBlock.data) : null,
+          storedBlock.checked,
+          storedBlock.assignee,
+          storedBlock.dueDate,
+          storedBlock.status,
+          storedBlock.parentId,
           position,
-          block.createdAt,
-          block.updatedAt,
+          storedBlock.createdAt,
+          storedBlock.updatedAt,
         ],
       );
-      for (const comment of block.comments) {
+      for (const comment of storedBlock.comments) {
         await client.query(
           `INSERT INTO block_comments
            (workspace_id, id, block_id, author, body, time_label, created_at, resolved, resolved_at)
@@ -682,7 +697,8 @@ export class PostgresDocumentStore {
     userId: string,
     document: EditorDocument,
   ) {
-    const snapshot = JSON.stringify(document);
+    const normalizedDocument = normalizeDocumentForStorage(document);
+    const snapshot = JSON.stringify(normalizedDocument);
     const snapshotHash = createHash("sha256").update(snapshot).digest("hex");
     const latest = await client.query(
       `SELECT snapshot_hash
@@ -704,11 +720,11 @@ export class PostgresDocumentStore {
         workspaceId,
         `version-${randomUUID()}`,
         document.id,
-        document.title,
+        normalizedDocument.title,
         snapshot,
         snapshotHash,
         userId,
-        document.updatedAt,
+        normalizedDocument.updatedAt,
       ],
     );
   }

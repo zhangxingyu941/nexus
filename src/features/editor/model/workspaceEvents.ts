@@ -1,4 +1,11 @@
 import type { Block, EditorWorkspace } from "./block";
+import {
+  createRichTextFromPlainText,
+  normalizeRichText,
+  projectRichTextContent,
+  type RichTextDocument,
+} from "../../../shared/richText";
+import { isRichTextBlockType } from "./documentBlockOperations";
 
 export interface DocumentCreatedEvent {
   documentId: string;
@@ -11,6 +18,7 @@ export interface BlockContentUpdatedEvent {
   blockId: string;
   content: string;
   documentId: string;
+  richText: RichTextDocument | null;
   type: "block.content.updated";
   updatedAt: number;
   workspaceUpdatedAt: number;
@@ -21,6 +29,7 @@ export interface RemoteBlockContentPatch {
   checked: boolean;
   content: string;
   documentId: string;
+  richText: RichTextDocument | null;
   updatedAt: number;
 }
 
@@ -76,11 +85,15 @@ export function createBlockContentUpdatedEvent(
     for (const block of document.blocks) {
       const beforeBlock = findBlock(before, beforeDocument.id, block.id);
 
-      if (beforeBlock && beforeBlock.content !== block.content) {
+      if (beforeBlock && (
+        beforeBlock.content !== block.content ||
+        !richTextEqual(beforeBlock.richText, block.richText)
+      )) {
         return {
           blockId: block.id,
           content: block.content,
           documentId: document.id,
+          richText: cloneRichText(block.richText),
           type: "block.content.updated",
           updatedAt: block.updatedAt,
           workspaceUpdatedAt: after.updatedAt,
@@ -116,18 +129,24 @@ export function applyRemoteBlockContentPatch(
     const blocks = document.blocks.map((block) => {
       if (
         block.id !== patch.blockId ||
-        patch.updatedAt <= block.updatedAt ||
-        (block.content === patch.content && block.checked === patch.checked)
+        patch.updatedAt < block.updatedAt ||
+        (
+          block.content === patch.content &&
+          block.checked === patch.checked &&
+          richTextEqual(block.richText, patch.richText)
+        )
       ) {
         return block;
       }
 
       changed = true;
       documentChanged = true;
+      const richText = normalizeRemoteRichText(block, patch.richText, patch.content);
       return {
         ...block,
         checked: patch.checked,
-        content: patch.content,
+        content: richText ? projectRichTextContent(richText) : patch.content,
+        richText,
         updatedAt: patch.updatedAt,
       };
     });
@@ -155,6 +174,7 @@ function cloneRemoteBlock(block: Block): Block {
     ...block,
     children: [...block.children],
     comments: block.comments.map((comment) => ({ ...comment })),
+    richText: cloneRichText(block.richText),
   };
 }
 
@@ -171,10 +191,35 @@ function mergeRemoteBlock(localBlock: Block | undefined, remoteBlock: Block): Bl
     checked: localBlock.checked,
     comments: localBlock.comments.map((comment) => ({ ...comment })),
     content: localBlock.content,
+    richText: cloneRichText(localBlock.richText),
     dueDate: localBlock.dueDate,
     status: localBlock.status,
     updatedAt: localBlock.updatedAt,
   };
+}
+
+function cloneRichText(value: RichTextDocument | null) {
+  return value ? structuredClone(value) : null;
+}
+
+function richTextEqual(left: RichTextDocument | null, right: RichTextDocument | null) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function normalizeRemoteRichText(
+  block: Block,
+  value: RichTextDocument | null | undefined,
+  content: string,
+): RichTextDocument | null {
+  if (!isRichTextBlockType(block.type)) {
+    return null;
+  }
+
+  try {
+    return value ? normalizeRichText(value) : createRichTextFromPlainText(content);
+  } catch {
+    return createRichTextFromPlainText(content);
+  }
 }
 
 export function applyRemoteDocumentStructurePatch(

@@ -3,9 +3,13 @@ import type { EditorDocument } from "../../../features/editor/model/block";
 import { DocumentNotFoundError } from "../../../server/documentAuthorization";
 import { DocumentPolicyMemberError } from "../../../server/postgresDocumentStore";
 import { getSessionToken } from "../../../server/sessionCookie";
-import { isDocumentPayload } from "../../../server/workspacePayload";
+import {
+  WorkspacePayloadValidationError,
+  parseDocumentPayload,
+} from "../../../server/workspacePayload";
 import type { DocumentPolicy } from "../../../shared/documentAccess";
 import { isDocumentPolicy } from "../../../shared/documentAccess";
+import { RichTextValidationError } from "../../../shared/richText";
 
 interface DocumentAuthStore {
   getUserBySessionToken(token: string): Promise<{ id: string } | null>;
@@ -49,11 +53,17 @@ export function createDocumentRouteHandlers({
 
       const payload = await parseJson(request);
       if (payload instanceof NextResponse) return payload;
-      const document = payload && typeof payload === "object" && "document" in payload
+      const documentValue = payload && typeof payload === "object" && "document" in payload
         ? (payload as { document: unknown }).document
         : undefined;
-      if (!isDocumentPayload(document)) {
-        return NextResponse.json({ error: "文档数据格式不正确" }, { status: 400 });
+      let document: EditorDocument;
+      try {
+        document = parseDocumentPayload(documentValue);
+      } catch (error) {
+        if (error instanceof RichTextValidationError || error instanceof WorkspacePayloadValidationError) {
+          return NextResponse.json({ error: error.message }, { status: 400 });
+        }
+        throw error;
       }
 
       try {

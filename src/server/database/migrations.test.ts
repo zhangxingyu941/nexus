@@ -230,6 +230,48 @@ describe("authentication database migration", () => {
     expect(Number(migration.rows[0].count)).toBe(1);
   });
 
+  it("adds nullable structured rich text without backfilling existing blocks", async () => {
+    await migrateDatabase(pool);
+    await pool.query(
+      `INSERT INTO app_users (id, email, display_name, created_at)
+       VALUES ('rich-owner', 'rich-owner@example.com', 'Rich owner', 1000)`,
+    );
+    await pool.query(
+      `INSERT INTO editor_workspaces (id, name, updated_at, created_at)
+       VALUES ('rich-workspace', 'Rich workspace', 1000, 1000)`,
+    );
+    await pool.query(
+      `INSERT INTO workspace_members (workspace_id, user_id, role, created_at)
+       VALUES ('rich-workspace', 'rich-owner', 'owner', 1000)`,
+    );
+    await pool.query(
+      `INSERT INTO editor_documents
+         (workspace_id, id, public_id, created_by, title, position, updated_at)
+       VALUES ('rich-workspace', 'rich-document', 'public-rich-document', 'rich-owner', 'Rich', 0, 1000)`,
+    );
+    await pool.query(
+      `INSERT INTO editor_blocks
+         (workspace_id, id, document_id, type, content, checked, assignee, due_date,
+          status, parent_id, position, created_at, updated_at)
+       VALUES
+         ('rich-workspace', 'rich-block', 'rich-document', 'paragraph', 'legacy', false, '', '',
+          'unset', NULL, 0, 1000, 1000)`,
+    );
+
+    await migrateDatabase(pool);
+
+    expect(await columnNames(pool, "editor_blocks")).toContain("rich_text");
+    await expect(pool.query(
+      "SELECT rich_text FROM editor_blocks WHERE workspace_id = $1 AND id = $2",
+      ["rich-workspace", "rich-block"],
+    )).resolves.toMatchObject({ rows: [{ rich_text: null }] });
+    const migration = await pool.query(
+      "SELECT COUNT(*)::int AS count FROM schema_migrations WHERE id = $1",
+      ["2026-07-22-structured-rich-text"],
+    );
+    expect(Number(migration.rows[0].count)).toBe(1);
+  });
+
   it("enforces provider account uniqueness", async () => {
     await migrateDatabase(pool);
     await pool.query(

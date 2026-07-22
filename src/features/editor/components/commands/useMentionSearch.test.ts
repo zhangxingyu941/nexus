@@ -3,6 +3,7 @@ import { renderHook } from "@testing-library/react";
 import { useMentionSearch } from "./useMentionSearch";
 import type { Block, EditorDocument } from "../../model/block";
 import type { DatabaseWorkspaceMember } from "../../session/sessionTypes";
+import { createRichTextFromPlainText } from "@/shared/richText";
 
 const members: DatabaseWorkspaceMember[] = [
   { id: "user-1", email: "alice@example.com", displayName: "Alice", role: "owner" },
@@ -12,9 +13,14 @@ const documents: EditorDocument[] = [
   { id: "doc-1", title: "设计文档", blocks: [], updatedAt: 0 },
 ];
 
-const tasks: Block[] = [
+const legacyTasks: Array<Omit<Block, "richText">> = [
   { id: "task-1", type: "todo", headingLevel: 1, content: "实现登录", parentId: null, children: [], checked: false, data: null, comments: [], assignee: "", dueDate: "", status: "unset", createdAt: 0, updatedAt: 0 },
 ];
+
+const tasks: Block[] = legacyTasks.map((task) => ({
+  ...task,
+  richText: createRichTextFromPlainText(task.content),
+}));
 
 describe("useMentionSearch", () => {
   it("returns empty array for empty query", () => {

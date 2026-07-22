@@ -1,4 +1,5 @@
 import type { Block } from "../model/block";
+import type { RichTextDocument } from "../../../shared/richText";
 import type * as Y from "yjs";
 
 export type CollaborationConnectionState = "disabled" | "connecting" | "connected" | "offline";
@@ -21,6 +22,7 @@ export interface BlockContentRecord {
   checked: boolean;
   content: string;
   documentId: string;
+  richText?: RichTextDocument | null;
   updatedAt: number;
 }
 

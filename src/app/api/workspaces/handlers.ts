@@ -6,7 +6,11 @@ import {
   WorkspacePermissionError,
 } from "../../../server/postgresWorkspaceStore";
 import { getSessionToken } from "../../../server/sessionCookie";
-import { isWorkspacePayload } from "../../../server/workspacePayload";
+import {
+  WorkspacePayloadValidationError,
+  parseWorkspacePayload,
+} from "../../../server/workspacePayload";
+import { RichTextValidationError } from "../../../shared/richText";
 import { WorkspaceNameValidationError } from "../../../shared/workspace";
 
 interface WorkspaceRouteDependencies {
@@ -88,11 +92,17 @@ export function createWorkspaceRouteHandlers({
 
       const payload = await parseJson(request);
       if (payload instanceof NextResponse) return payload;
-      const content = payload && typeof payload === "object" && "content" in payload
+      const contentValue = payload && typeof payload === "object" && "content" in payload
         ? (payload as { content: unknown }).content
         : undefined;
-      if (!isWorkspacePayload(content)) {
-        return jsonError("工作区数据格式不正确", 400);
+      let content;
+      try {
+        content = parseWorkspacePayload(contentValue);
+      } catch (error) {
+        if (error instanceof RichTextValidationError || error instanceof WorkspacePayloadValidationError) {
+          return jsonError(error.message, 400);
+        }
+        throw error;
       }
 
       try {

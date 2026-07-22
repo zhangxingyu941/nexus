@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
+import { createRichTextFromPlainText } from "@/shared/richText";
 import { TodoBlockEditor } from "./TodoBlockEditor";
 
 function renderTodo(collaborationDocument: Y.Doc | null = null) {
@@ -10,6 +11,7 @@ function renderTodo(collaborationDocument: Y.Doc | null = null) {
       checked={false}
       collaborationDocument={collaborationDocument}
       content="Ship the editor"
+      richText={createRichTextFromPlainText("Ship the editor")}
       focusRequest={false}
       isReadOnly={false}
       onChange={vi.fn()}

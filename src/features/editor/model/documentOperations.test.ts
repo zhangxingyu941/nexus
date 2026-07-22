@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createRichTextFromPlainText, type RichTextDocument } from "../../../shared/richText";
 import {
   changeBlockType,
   createDocumentFromTemplate,
@@ -17,6 +18,7 @@ import {
   toggleTodo,
   addBlockComment,
   updateBlockContent,
+  updateBlockRichText,
   updateBlockData,
   updateDocumentTitle,
 } from "./documentOperations";
@@ -35,6 +37,7 @@ describe("document operations", () => {
       type: "paragraph",
       headingLevel: 1,
       content: "",
+      richText: createRichTextFromPlainText(""),
       checked: false,
       parentId: null,
       children: [],
@@ -106,6 +109,27 @@ describe("document operations", () => {
     expect(next.updatedAt).toBe(3000);
   });
 
+  it("updates structured rich text even when the plain text projection is unchanged", () => {
+    const document = createDefaultDocument(1000);
+    const targetId = document.blocks[0].id;
+    const richText: RichTextDocument = {
+      content: [{
+        content: [{ marks: [{ type: "bold" as const }], text: "Project notes", type: "text" as const }],
+        type: "paragraph" as const,
+      }],
+      type: "doc" as const,
+    };
+    const withText = updateBlockRichText(document, targetId, {
+      content: "Project notes",
+      richText: createRichTextFromPlainText("Project notes"),
+    }, 2000);
+
+    const next = updateBlockRichText(withText, targetId, { content: "Project notes", richText }, 3000);
+
+    expect(next.blocks[0]).toMatchObject({ content: "Project notes", richText, updatedAt: 3000 });
+    expect(next.updatedAt).toBe(3000);
+  });
+
   it("updates the document title and timestamp", () => {
     const document = createDefaultDocument(1000);
 
@@ -161,6 +185,7 @@ describe("document operations", () => {
     });
     expect(codeDocument.blocks[0]).toMatchObject({
       type: "code",
+      richText: null,
       checked: false,
       updatedAt: 3000,
     });

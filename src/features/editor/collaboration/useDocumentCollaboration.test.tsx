@@ -2,8 +2,9 @@ import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BlockContentRecord, DocumentStructureRecord } from "./collaborationTypes";
 import { getDefaultCollaborationUrl, useDocumentCollaboration } from "./useDocumentCollaboration";
-import { changeBlockType, insertBlockAfter, updateBlockContent, updateDocumentTitle } from "../model/documentOperations";
+import { changeBlockType, insertBlockAfter, updateBlockContent, updateBlockRichText, updateDocumentTitle } from "../model/documentOperations";
 import { createDefaultWorkspace, createWorkspaceDocument } from "../model/workspaceOperations";
+import { createRichTextFromPlainText, type RichTextDocument } from "@/shared/richText";
 
 const websocketMock = vi.hoisted(() => {
   type Handler = (event: unknown) => void;
@@ -177,6 +178,47 @@ describe("useDocumentCollaboration", () => {
     });
 
     expect(onRemotePatches).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it("publishes a same-timestamp mark-only local update", () => {
+    const onRemotePatches = vi.fn();
+    const document = createDefaultWorkspace(1000).documents[0];
+    const block = document.blocks[0];
+    const plain = updateBlockRichText(document, block.id, {
+      content: "same",
+      richText: createRichTextFromPlainText("same"),
+    }, 2000);
+    const bold: RichTextDocument = {
+      content: [{
+        content: [{ marks: [{ type: "bold" }], text: "same", type: "text" }],
+        type: "paragraph",
+      }],
+      type: "doc",
+    };
+    const formatted = updateBlockRichText(plain, block.id, {
+      content: "same",
+      richText: bold,
+    }, 2000);
+    const { rerender, unmount } = renderHook(
+      ({ currentDocument }) => useDocumentCollaboration({
+        document: currentDocument,
+        onRemotePatches,
+        workspaceId: "workspace-a",
+      }),
+      { initialProps: { currentDocument: plain } },
+    );
+    const provider = websocketMock.instances[0];
+    const blockContentMap = provider.doc.getMap("block-content") as {
+      get: (key: string) => BlockContentRecord | undefined;
+    };
+
+    act(() => {
+      provider.emit("sync", true);
+    });
+    rerender({ currentDocument: formatted });
+
+    expect(blockContentMap.get(block.id)?.richText).toEqual(bold);
     unmount();
   });
 
@@ -418,6 +460,7 @@ describe("useDocumentCollaboration", () => {
         checked: secondDocument.blocks[0].checked,
         content: secondDocument.blocks[0].content,
         documentId: secondDocument.id,
+        richText: secondDocument.blocks[0].richText,
         updatedAt: secondDocument.blocks[0].updatedAt,
       },
     ]);

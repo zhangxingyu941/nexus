@@ -7,6 +7,8 @@ import type {
   SharedBlockData,
   SharedDocumentSnapshot,
 } from "../shared/documentShare";
+import { projectRichTextContent, toAnonymousRichText } from "../shared/richText";
+import { readStoredRichText } from "./richTextBlockStorage";
 
 interface SharedDocumentSnapshotOptions {
   expiresAt: number;
@@ -19,19 +21,25 @@ export function createSharedDocumentSnapshot(
 ): SharedDocumentSnapshot {
   return {
     document: {
-      blocks: document.blocks.map((block) => ({
-        children: [...block.children],
-        content: block.content,
-        data: createSharedBlockData(
-          block.type,
-          block.data,
-          options.signedAttachmentUrls,
-        ),
-        headingLevel: block.headingLevel,
-        id: block.id,
-        parentId: block.parentId,
-        type: block.type,
-      })),
+      blocks: document.blocks.map((block) => {
+        const storedRichText = readStoredRichText(block.type, block.richText, block.content);
+        const richText = storedRichText ? toAnonymousRichText(storedRichText) : null;
+
+        return {
+          children: [...block.children],
+          content: richText ? projectRichTextContent(richText) : block.content,
+          data: createSharedBlockData(
+            block.type,
+            block.data,
+            options.signedAttachmentUrls,
+          ),
+          headingLevel: block.headingLevel,
+          id: block.id,
+          parentId: block.parentId,
+          richText,
+          type: block.type,
+        };
+      }),
       title: document.title,
     },
     expiresAt: options.expiresAt,

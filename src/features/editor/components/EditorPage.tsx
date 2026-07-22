@@ -6,6 +6,7 @@ import { MentionSearchProvider } from "./MentionSearchContext";
 import { useMentionSearchFn } from "./commands/useMentionSearch";
 import type { WorkspaceSummary } from "../../../shared/workspace";
 import type { Block, BlockData, BlockStatus, BlockType, EditorDocument, EditorWorkspace, HeadingLevel, MoveDirection } from "../model/block";
+import type { RichTextUpdate } from "@/shared/richText";
 import {
   addBlockComment,
   changeBlockType,
@@ -23,6 +24,7 @@ import {
   setBlockStatus,
   toggleTodo,
   updateBlockContent,
+  updateBlockRichText,
   updateBlockData,
   updateDocumentTitle,
 } from "../model/documentOperations";
@@ -339,6 +341,13 @@ export function EditorPage({
     [applyActiveDocumentChange],
   );
 
+  const handleChangeRichText = useCallback(
+    (blockId: string, update: RichTextUpdate) => {
+      applyActiveDocumentChange((current) => updateBlockRichText(current, blockId, update, Date.now()));
+    },
+    [applyActiveDocumentChange],
+  );
+
   const handleChangeType = useCallback(
     (blockId: string, type: BlockType, headingLevel?: HeadingLevel) => {
       applyActiveDocumentChange((current) =>
@@ -534,6 +543,7 @@ export function EditorPage({
         onChangeBlockStatus={handleChangeBlockStatus}
         onChangeBlockData={handleChangeBlockData}
         onChangeContent={handleChangeContent}
+        onChangeRichText={handleChangeRichText}
         onChangeTitle={handleChangeTitle}
         onChangeType={handleChangeType}
         onFocusedBlock={() => setFocusBlockId(null)}

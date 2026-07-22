@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createRichTextFromPlainText } from "../../../shared/richText";
 import { createDemoWorkspaceFixture } from "../../../test/fixtures/workspace";
 import { updateBlockContent, updateDocumentTitle } from "./documentOperations";
 import {
@@ -267,6 +268,28 @@ describe("workspace operations", () => {
       headingLevel: 1,
       status: "unset",
     });
+    expect(normalized.documents[0].blocks[0].richText).toEqual(
+      createRichTextFromPlainText(normalized.documents[0].blocks[0].content),
+    );
+  });
+
+  it("falls back to the plain text projection when stored rich text is malformed", () => {
+    const workspace = createDefaultWorkspace(1000);
+    const normalized = normalizeWorkspace({
+      ...workspace,
+      documents: workspace.documents.map((document) => ({
+        ...document,
+        blocks: document.blocks.map((block) => ({
+          ...block,
+          content: "Safe fallback",
+          richText: { content: [{ content: [{ type: "image" }], type: "paragraph" }], type: "doc" } as never,
+        })),
+      })),
+    });
+
+    expect(normalized.documents[0].blocks[0].richText).toEqual(
+      createRichTextFromPlainText("Safe fallback"),
+    );
   });
 
   it("preserves valid heading levels and normalizes invalid levels to H1", () => {

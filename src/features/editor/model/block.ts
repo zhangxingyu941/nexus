@@ -1,3 +1,5 @@
+import type { RichTextDocument } from "../../../shared/richText";
+
 export type BlockType =
   | "paragraph"
   | "heading"
@@ -83,6 +85,7 @@ export interface Block {
   type: BlockType;
   headingLevel: HeadingLevel;
   content: string;
+  richText: RichTextDocument | null;
   data: BlockData | null;
   checked: boolean;
   comments: BlockComment[];

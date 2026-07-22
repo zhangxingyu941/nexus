@@ -10,13 +10,25 @@ import { getCursorColor } from "../collaboration/remoteCursorColors";
 import type { CollaborationDocument } from "../collaboration/collaborationTypes";
 import { getBlockCollaborationField } from "../collaboration/yjsWorkspaceMapping";
 import type { BlockType, HeadingLevel } from "../model/block";
+import {
+  createRichTextFromPlainText,
+  normalizeRichText,
+  projectRichTextContent,
+  type RichTextDocument,
+  type RichTextUpdate,
+} from "@/shared/richText";
 import { isSlashCommandTrigger, resolveMarkdownShortcut } from "./markdownShortcuts";
 import type { EditorPopoverAnchor } from "./commands/EditorCommandPopover";
 import type { MentionItem } from "./commands/useMentionSearch";
 import { SelectionToolbar } from "./commands/SelectionToolbar";
+import { LinkPopover } from "./commands/LinkPopover";
 import Mention from "../extensions/mention";
+import {
+  NEXUS_RICH_TEXT_CLIPBOARD_TYPE,
+  parseRichTextClipboard,
+} from "./richTextPaste";
 
-interface RichTextBlockEditorProps {
+interface RichTextBlockEditorCommonProps {
   ariaLabel?: string;
   blockId: string;
   collaborationDocument: CollaborationDocument | null;
@@ -24,8 +36,6 @@ interface RichTextBlockEditorProps {
   focusRequest: boolean;
   isReadOnly?: boolean;
   sessionUser?: { id: string; name: string; color: string };
-  variant: "paragraph" | "heading" | "quote" | "code" | "todo";
-  onChange: (content: string) => void;
   onEnter: () => void;
   onFocused: () => void;
   onMarkdownShortcut: (type: BlockType, headingLevel?: HeadingLevel) => void;
@@ -35,11 +45,25 @@ interface RichTextBlockEditorProps {
   onComment?: (selectedText: string) => void;
 }
 
+type RichTextBlockEditorProps = RichTextBlockEditorCommonProps & (
+  | {
+      onChange: (content: string) => void;
+      richText?: null;
+      variant: "code";
+    }
+  | {
+      onChange: (update: RichTextUpdate) => void;
+      richText?: RichTextDocument | null;
+      variant: "paragraph" | "heading" | "quote" | "todo";
+    }
+);
+
 export function RichTextBlockEditor({
   ariaLabel = "块内容",
   blockId,
   collaborationDocument,
   content,
+  richText,
   focusRequest,
   isReadOnly = false,
   sessionUser,
@@ -55,6 +79,12 @@ export function RichTextBlockEditor({
 }: RichTextBlockEditorProps) {
   const { provider } = useCollaborationSession();
   const [selectionAnchor, setSelectionAnchor] = useState<{ left: number; top: number } | null>(null);
+  const [selectionRange, setSelectionRange] = useState<{ from: number; to: number } | null>(null);
+  const [linkPopover, setLinkPopover] = useState<{
+    anchor: { left: number; top: number };
+    href: string;
+    range: { from: number; to: number };
+  } | null>(null);
   const placeholder = {
     code: "输入代码",
     heading: "标题",
@@ -63,19 +93,39 @@ export function RichTextBlockEditor({
     todo: "待办内容",
   }[variant];
   const collaborationField = useMemo(() => getBlockCollaborationField(blockId), [blockId]);
+  const initialRichText = useMemo(
+    () => variant === "code" ? null : resolveRichText(richText, content),
+    [content, richText, variant],
+  );
+  const editorContent = variant === "code" ? content : initialRichText;
   const initializedCollaborationRef = useRef<{
     document: CollaborationDocument;
     field: string;
   } | null>(null);
+  const emitChange = (nextContent: string) => {
+    if (variant === "code") {
+      onChange(nextContent);
+      return;
+    }
+
+    onChange({
+      content: nextContent,
+      richText: createRichTextFromPlainText(nextContent),
+    });
+  };
   const extensions = useMemo(
     () => [
       StarterKit.configure({
         heading: false,
         history: collaborationDocument ? false : undefined,
+        ...(variant === "code" ? {
+          bold: false,
+          code: false,
+          italic: false,
+          strike: false,
+        } : {}),
       }),
-      Link.configure({
-        openOnClick: false,
-      }),
+      ...(variant === "code" ? [] : [Link.configure({ openOnClick: false })]),
       ...(collaborationDocument
         ? [
             Collaboration.configure({
@@ -122,18 +172,18 @@ export function RichTextBlockEditor({
             }),
           ]
         : []),
-      Mention,
+      ...(variant === "code" ? [] : [Mention]),
       Placeholder.configure({
         placeholder,
       }),
     ],
-    [collaborationDocument, collaborationField, placeholder, provider, sessionUser],
+    [collaborationDocument, collaborationField, placeholder, provider, sessionUser, variant],
   );
 
   const editor = useEditor({
     editable: !isReadOnly,
     extensions,
-    content,
+    content: editorContent,
     editorProps: {
       attributes: {
         "aria-label": ariaLabel,
@@ -150,7 +200,7 @@ export function RichTextBlockEditor({
         if (event.key === " " && shortcutCommand) {
           event.preventDefault();
           view.dispatch(view.state.tr.delete(0, view.state.doc.content.size));
-          onChange("");
+          emitChange("");
           onMarkdownShortcut(shortcutCommand.type, shortcutCommand.headingLevel);
           return true;
         }
@@ -179,6 +229,38 @@ export function RichTextBlockEditor({
 
         return false;
       },
+      handlePaste(_view, event) {
+        if (variant === "code" || !event.clipboardData) {
+          return false;
+        }
+
+        event.preventDefault();
+        const pasted = parseRichTextClipboard(event.clipboardData);
+        queueMicrotask(() => {
+          editor?.chain().focus().insertContent(pasted.content[0].content ?? []).run();
+        });
+        return true;
+      },
+      handleDOMEvents: {
+        copy(view, event) {
+          if (variant === "code" || !event.clipboardData) {
+            return false;
+          }
+
+          try {
+            const { from, to } = view.state.selection;
+            const selected = view.state.doc.slice(from, to).content.toJSON();
+            const copied = normalizeRichText({
+              content: [{ ...(selected.length > 0 ? { content: selected } : {}), type: "paragraph" }],
+              type: "doc",
+            });
+            event.clipboardData.setData(NEXUS_RICH_TEXT_CLIPBOARD_TYPE, JSON.stringify(copied));
+          } catch {
+            // The browser's ordinary text and HTML clipboard formats remain available.
+          }
+          return false;
+        },
+      },
     },
     onUpdate({ editor: activeEditor }) {
       if (isReadOnly) {
@@ -191,24 +273,38 @@ export function RichTextBlockEditor({
       if (isSlashCommandTrigger(text)) {
         const caret = activeEditor.view.coordsAtPos(activeEditor.state.selection.from);
         activeEditor.commands.setContent("");
-        onChange("");
+        emitChange("");
         onOpenCommandMenu({ bottom: caret.bottom, left: caret.left, top: caret.top });
         return;
       }
 
       if (shortcutCommand) {
         activeEditor.commands.setContent("");
-        onChange("");
+        emitChange("");
         onMarkdownShortcut(shortcutCommand.type, shortcutCommand.headingLevel);
         return;
       }
 
       // MVP 只持久化纯文本，为后续块模型和协同层保留简单边界。
-      onChange(text);
+      if (variant === "code") {
+        emitChange(text);
+        return;
+      }
+
+      try {
+        const nextRichText = normalizeRichText(activeEditor.getJSON());
+        onChange({
+          content: projectRichTextContent(nextRichText),
+          richText: nextRichText,
+        });
+      } catch {
+        emitChange(text);
+      }
     },
     onSelectionUpdate({ editor: activeEditor }) {
       if (isReadOnly) {
         setSelectionAnchor(null);
+        setSelectionRange(null);
         return;
       }
 
@@ -216,6 +312,7 @@ export function RichTextBlockEditor({
 
       if (empty || from === to) {
         setSelectionAnchor(null);
+        setSelectionRange(null);
         return;
       }
 
@@ -225,6 +322,11 @@ export function RichTextBlockEditor({
       const top = Math.min(start.top, end.top) - 8;
 
       setSelectionAnchor({ left, top });
+      setSelectionRange({ from, to });
+    },
+    onBlur() {
+      setSelectionAnchor(null);
+      setSelectionRange(null);
     },
   }, [blockId, collaborationDocument, isReadOnly]);
 
@@ -234,13 +336,25 @@ export function RichTextBlockEditor({
     }
 
     // 聚焦时 TipTap 是输入源，不能用延迟到达的父状态覆盖更新的本地文本。
-    if (!editor || editor.getText() === content || editor.isFocused) {
+    if (!editor || editor.isFocused) {
       return;
     }
 
     // 外部状态恢复或类型切换后，同步 TipTap 内部文档，避免显示旧内容。
-    editor.commands.setContent(content);
-  }, [collaborationDocument, content, editor]);
+    if (variant === "code") {
+      if (editor.getText() !== content) {
+        editor.commands.setContent(content);
+      }
+      return;
+    }
+
+    const currentRichText = getEditorRichText(editor);
+    if (currentRichText && JSON.stringify(currentRichText) === JSON.stringify(initialRichText)) {
+      return;
+    }
+
+    editor.commands.setContent(initialRichText);
+  }, [collaborationDocument, content, editor, initialRichText, variant]);
 
   useEffect(() => {
     if (!editor || !onMentionApiReady) {
@@ -301,10 +415,10 @@ export function RichTextBlockEditor({
     const fragment = collaborationDocument.getXmlFragment(collaborationField);
 
     // Seed persisted text once. After initialization the Yjs fragment is the only collaborative text source.
-    if (fragment.length === 0 && content && editor.getText() !== content) {
-      editor.commands.setContent(content);
+    if (fragment.length === 0) {
+      editor.commands.setContent(editorContent);
     }
-  }, [collaborationDocument, collaborationField, content, editor]);
+  }, [collaborationDocument, collaborationField, editor, editorContent]);
 
   useLayoutEffect(() => {
     if (!editor || !focusRequest || isReadOnly) {
@@ -318,29 +432,69 @@ export function RichTextBlockEditor({
   return (
     <>
       <EditorContent editor={editor} />
-      <SelectionToolbar
+      {variant !== "code" ? <SelectionToolbar
+        activeMarks={{
+          bold: Boolean(editor?.isActive?.("bold")),
+          code: Boolean(editor?.isActive?.("code")),
+          italic: Boolean(editor?.isActive?.("italic")),
+          link: Boolean(editor?.isActive?.("link")),
+          strike: Boolean(editor?.isActive?.("strike")),
+        }}
         anchor={selectionAnchor}
-        canLink={!isReadOnly}
         onBold={() => editor?.chain().focus().toggleBold().run()}
+        onCode={() => editor?.chain().focus().toggleCode().run()}
         onComment={onComment ? () => onComment(editor?.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, " ") ?? "") : undefined}
         onItalic={() => editor?.chain().focus().toggleItalic().run()}
         onLink={() => {
-          const previous = editor?.getAttributes("link").href as string | undefined;
-          const href = typeof window !== "undefined" ? window.prompt("链接地址", previous ?? "https://") : null;
-
-          if (href === null) {
+          if (!editor || !selectionAnchor || !selectionRange) {
             return;
           }
-
-          if (href === "") {
-            editor?.chain().focus().extendMarkRange("link").unsetLink().run();
-            return;
-          }
-
-          editor?.chain().focus().extendMarkRange("link").setLink({ href }).run();
+          const href = editor.getAttributes("link").href;
+          setSelectionAnchor(null);
+          setSelectionRange(null);
+          setLinkPopover({
+            anchor: selectionAnchor,
+            href: typeof href === "string" ? href : "",
+            range: selectionRange,
+          });
         }}
         onStrike={() => editor?.chain().focus().toggleStrike().run()}
-      />
+      /> : null}
+      {linkPopover ? <LinkPopover
+        anchor={linkPopover.anchor}
+        initialHref={linkPopover.href}
+        onClose={() => {
+          setLinkPopover(null);
+          editor?.chain().focus().setTextSelection(linkPopover.range).run();
+        }}
+        onSubmit={(href) => {
+          const chain = editor?.chain().focus().setTextSelection(linkPopover.range);
+          if (!chain) {
+            return;
+          }
+          if (href) {
+            chain.setLink({ href }).run();
+          } else {
+            chain.extendMarkRange("link").unsetLink().run();
+          }
+        }}
+      /> : null}
     </>
   );
+}
+
+function resolveRichText(value: RichTextDocument | null | undefined, content: string) {
+  try {
+    return normalizeRichText(value ?? createRichTextFromPlainText(content));
+  } catch {
+    return createRichTextFromPlainText(content);
+  }
+}
+
+function getEditorRichText(editor: { getJSON: () => unknown }) {
+  try {
+    return normalizeRichText(editor.getJSON());
+  } catch {
+    return null;
+  }
 }

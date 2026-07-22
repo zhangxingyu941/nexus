@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { createRichTextFromPlainText, type RichTextDocument } from "../../../shared/richText";
 import {
   createDefaultWorkspace,
   createWorkspaceDocument,
   updateActiveDocument,
 } from "./workspaceOperations";
-import { insertBlockAfter, updateBlockContent, updateDocumentTitle } from "./documentOperations";
+import { insertBlockAfter, updateBlockContent, updateBlockRichText, updateDocumentTitle } from "./documentOperations";
 import {
   applyRemoteDocumentStructurePatch,
   applyRemoteBlockContentPatch,
@@ -39,6 +40,7 @@ describe("workspace events", () => {
       blockId,
       content: "Remote text",
       documentId: before.activeDocumentId,
+      richText: createRichTextFromPlainText("Remote text"),
       type: "block.content.updated",
       updatedAt: 2000,
       workspaceUpdatedAt: 2000,
@@ -59,11 +61,76 @@ describe("workspace events", () => {
         blockId,
         content: "Event stream text",
         documentId: before.activeDocumentId,
+        richText: createRichTextFromPlainText("Event stream text"),
         type: "block.content.updated",
         updatedAt: 2000,
         workspaceUpdatedAt: 2000,
       },
     ]);
+  });
+
+  it("creates a content event when only rich text marks change", () => {
+    const before = createDefaultWorkspace(1000);
+    const blockId = before.documents[0].blocks[0].id;
+    const richText: RichTextDocument = {
+      content: [{
+        content: [{ marks: [{ type: "bold" as const }], text: "same", type: "text" as const }],
+        type: "paragraph" as const,
+      }],
+      type: "doc" as const,
+    };
+    const base = updateActiveDocument(
+      before,
+      (document) => updateBlockRichText(document, blockId, {
+        content: "same",
+        richText: createRichTextFromPlainText("same"),
+      }, 1500),
+      1500,
+    );
+    const after = updateActiveDocument(
+      base,
+      (document) => updateBlockRichText(document, blockId, { content: "same", richText }, 2000),
+      2000,
+    );
+
+    expect(createBlockContentUpdatedEvent(base, after)).toMatchObject({
+      blockId,
+      content: "same",
+      richText,
+      updatedAt: 2000,
+    });
+  });
+
+  it("applies a same-timestamp remote mark-only update", () => {
+    const base = createDefaultWorkspace(1000);
+    const document = base.documents[0];
+    const block = document.blocks[0];
+    const plain = updateBlockRichText(document, block.id, {
+      content: "same",
+      richText: createRichTextFromPlainText("same"),
+    }, 2000);
+    const richText: RichTextDocument = {
+      content: [{
+        content: [{ marks: [{ type: "bold" }], text: "same", type: "text" }],
+        type: "paragraph",
+      }],
+      type: "doc",
+    };
+
+    const updated = applyRemoteBlockContentPatch({
+      ...base,
+      documents: [plain],
+      updatedAt: 2000,
+    }, {
+      blockId: block.id,
+      checked: block.checked,
+      content: "same",
+      documentId: document.id,
+      richText,
+      updatedAt: 2000,
+    });
+
+    expect(updated.documents[0].blocks[0].richText).toEqual(richText);
   });
 
   it("applies a remote block content patch without switching the active document", () => {
@@ -76,6 +143,7 @@ describe("workspace events", () => {
       checked: inactiveDocument.blocks[0].checked,
       content: "Background window text",
       documentId: inactiveDocument.id,
+      richText: createRichTextFromPlainText("Background window text"),
       updatedAt: 3000,
     });
 
@@ -103,6 +171,7 @@ describe("workspace events", () => {
       checked: localDocument.blocks[0].checked,
       content: "Old remote",
       documentId: localDocument.id,
+      richText: createRichTextFromPlainText("Old remote"),
       updatedAt: 2000,
     });
 
@@ -119,6 +188,7 @@ describe("workspace events", () => {
       checked: activeDocument.blocks[0].checked,
       content: "Wrong document payload",
       documentId: inactiveDocument.id,
+      richText: createRichTextFromPlainText("Wrong document payload"),
       updatedAt: 3000,
     });
 
@@ -149,6 +219,7 @@ describe("workspace events", () => {
       checked: true,
       content: document.blocks[0].content,
       documentId: document.id,
+      richText: document.blocks[0].richText,
       updatedAt: 3000,
     });
 

@@ -29,6 +29,7 @@ function LargeBlockList({ focusBlockId = null }: { focusBlockId?: string | null 
         onChangeBlockDueDate={noop}
         onChangeBlockStatus={noop}
         onChangeContent={noop}
+        onChangeRichText={noop}
         onChangeType={noop}
         onDelete={noop}
         onFocusedBlock={noop}

@@ -15,6 +15,7 @@ export {
   deleteBlock,
   insertBlockAfter,
   indentBlock,
+  isRichTextBlockType,
   moveBlock,
   outdentBlock,
   reorderBlock,
@@ -26,6 +27,7 @@ export {
   toggleTodo,
   touchDocument,
   updateBlockContent,
+  updateBlockRichText,
   updateBlockData,
   updateDocumentTitle,
 } from "./documentBlockOperations";

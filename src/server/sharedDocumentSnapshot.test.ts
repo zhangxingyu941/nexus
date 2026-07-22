@@ -1,12 +1,14 @@
 // @vitest-environment node
 
 import { describe, expect, it } from "vitest";
+import { createRichTextFromPlainText } from "../shared/richText";
 import type { EditorDocument } from "../features/editor/model/block";
 import { createSharedDocumentSnapshot } from "./sharedDocumentSnapshot";
 
 describe("createSharedDocumentSnapshot", () => {
   it("keeps public content while stripping private task and identity fields", () => {
-    const snapshot = createSharedDocumentSnapshot(documentFixture(), {
+    const document = documentFixture();
+    const snapshot = createSharedDocumentSnapshot(document, {
       expiresAt: 100_000,
       signedAttachmentUrls: new Map([
         [
@@ -26,6 +28,7 @@ describe("createSharedDocumentSnapshot", () => {
             headingLevel: 1,
             id: "paragraph-1",
             parentId: null,
+            richText: createRichTextFromPlainText(document.blocks[0].content),
             type: "paragraph",
           },
           {
@@ -41,6 +44,7 @@ describe("createSharedDocumentSnapshot", () => {
             headingLevel: 1,
             id: "image-1",
             parentId: null,
+            richText: null,
             type: "image",
           },
           {
@@ -50,6 +54,7 @@ describe("createSharedDocumentSnapshot", () => {
             headingLevel: 1,
             id: "file-1",
             parentId: null,
+            richText: null,
             type: "file",
           },
           {
@@ -64,6 +69,7 @@ describe("createSharedDocumentSnapshot", () => {
             headingLevel: 1,
             id: "link-1",
             parentId: null,
+            richText: null,
             type: "linkCard",
           },
         ],
@@ -89,6 +95,47 @@ describe("createSharedDocumentSnapshot", () => {
     const sharedLink = snapshot.document.blocks[3].data;
 
     expect(sharedLink).not.toBe(document.blocks[3].data);
+  });
+
+  it("keeps public formatting while degrading mention targets to text", () => {
+    const document = documentFixture();
+    document.blocks[0] = {
+      ...document.blocks[0],
+      content: "Owner: @Ada",
+      richText: {
+        content: [{
+          content: [
+            { marks: [{ type: "bold" }], text: "Owner: ", type: "text" },
+            { attrs: { kind: "person", label: "Ada", targetId: "person-internal-1" }, type: "mention" },
+          ],
+          type: "paragraph",
+        }],
+        type: "doc",
+      },
+    };
+
+    const snapshot = createSharedDocumentSnapshot(document, {
+      expiresAt: 100_000,
+      signedAttachmentUrls: new Map(),
+    });
+
+    expect(snapshot.document.blocks[0]).toMatchObject({
+      content: "Owner: @Ada",
+      richText: {
+        content: [{
+          content: [
+            { marks: [{ type: "bold" }], text: "Owner: ", type: "text" },
+            { text: "@Ada", type: "text" },
+          ],
+          type: "paragraph",
+        }],
+        type: "doc",
+      },
+    });
+    const serializedRichText = JSON.stringify(snapshot.document.blocks[0].richText);
+    expect(serializedRichText).not.toContain("person-internal-1");
+    expect(serializedRichText).not.toContain('"targetId"');
+    expect(serializedRichText).not.toContain('"kind"');
   });
 });
 
@@ -168,6 +215,7 @@ function block(overrides: Partial<EditorDocument["blocks"][number]>) {
     headingLevel: 1 as const,
     id: "block-1",
     parentId: null,
+    richText: null,
     status: "unset" as const,
     type: "paragraph" as const,
     updatedAt: 1000,

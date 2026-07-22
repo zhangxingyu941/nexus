@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
 import type { EditorWorkspace } from "../model/block";
+import { createRichTextFromPlainText } from "@/shared/richText";
 import { createDemoWorkspaceFixture } from "../../../test/fixtures/workspace";
 import { createDefaultWorkspace, createWorkspaceDocument } from "../model/workspaceOperations";
 import { EditorPage } from "./EditorPage";
@@ -545,7 +546,14 @@ describe("EditorPage", () => {
     const restoredDocument = {
       ...currentDocument,
       blocks: currentDocument.blocks.map((block, index) =>
-        index === 0 ? { ...block, content: "历史正文", updatedAt: 3000 } : block,
+        index === 0
+          ? {
+              ...block,
+              content: "历史正文",
+              richText: createRichTextFromPlainText("历史正文"),
+              updatedAt: 3000,
+            }
+          : block,
       ),
       title: "历史标题",
       updatedAt: 3000,

@@ -11,6 +11,7 @@ function createCopiedBlocks(blocks: Block[], now: number): Block[] {
 
   return blocks.map((block) => ({
     ...block,
+    richText: block.richText ? structuredClone(block.richText) : null,
     id: idMap.get(block.id) ?? `block-${now}`,
     parentId: block.parentId ? (idMap.get(block.parentId) ?? null) : null,
     children: block.children

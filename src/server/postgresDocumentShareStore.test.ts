@@ -173,6 +173,40 @@ describe("PostgresDocumentShareStore", () => {
     })).rejects.toBeInstanceOf(DocumentShareGoneError);
   });
 
+  it("keeps public rich text while removing mention identifiers", async () => {
+    await pool.query(
+      "UPDATE editor_blocks SET rich_text = $1::jsonb WHERE workspace_id = $2 AND id = $3",
+      [JSON.stringify({
+        content: [{
+          content: [
+            { marks: [{ type: "italic" }], text: "Assigned to ", type: "text" },
+            { attrs: { kind: "person", label: "Ada", targetId: "person-internal-1" }, type: "mention" },
+          ],
+          type: "paragraph",
+        }],
+        type: "doc",
+      }), "workspace-1", "block-1"],
+    );
+    await store.replaceManagedLink("owner-1", "public-document-1", now + 60 * 60_000);
+
+    const snapshot = await store.loadSharedDocument("raw-token-1");
+
+    expect(snapshot.document.blocks[0]).toMatchObject({
+      content: "Assigned to @Ada",
+      richText: {
+        content: [{
+          content: [
+            { marks: [{ type: "italic" }], text: "Assigned to ", type: "text" },
+            { text: "@Ada", type: "text" },
+          ],
+          type: "paragraph",
+        }],
+        type: "doc",
+      },
+    });
+    expect(JSON.stringify(snapshot)).not.toContain("person-internal-1");
+  });
+
   it("distinguishes unknown and expired tokens", async () => {
     await expect(store.loadSharedDocument("unknown-token"))
       .rejects.toBeInstanceOf(DocumentShareNotFoundError);

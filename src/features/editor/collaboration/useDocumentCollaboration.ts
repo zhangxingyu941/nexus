@@ -103,12 +103,13 @@ function writeRecordsToMap(map: Y.Map<BlockContentRecord>, records: BlockContent
     if (
       current?.content === record.content &&
       current.documentId === record.documentId &&
+      JSON.stringify(current.richText ?? null) === JSON.stringify(record.richText ?? null) &&
       current.updatedAt === record.updatedAt
     ) {
       return;
     }
 
-    if (current && current.updatedAt >= record.updatedAt) {
+    if (current && current.updatedAt > record.updatedAt) {
       return;
     }
 

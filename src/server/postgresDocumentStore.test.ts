@@ -1,5 +1,6 @@
 import type { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createRichTextFromPlainText, type RichTextDocument } from "../shared/richText";
 import { createPgMemPool } from "../test/pgMemDatabase";
 import { migrateDatabase } from "./database/migrations";
 import {
@@ -36,9 +37,56 @@ describe("PostgresDocumentStore", () => {
         workspaceId: "workspace-1",
       },
       document: {
-        blocks: [expect.objectContaining({ content: "Private content", id: "block-1" })],
+        blocks: [expect.objectContaining({
+          content: "Private content",
+          id: "block-1",
+          richText: createRichTextFromPlainText("Private content"),
+        })],
         id: "document-1",
         title: "Private document",
+      },
+    });
+  });
+
+  it("writes normalized JSONB and recomputes the plain text projection", async () => {
+    const loaded = await store.loadDocument("owner-1", "public-document-1");
+    const richText: RichTextDocument = {
+      content: [{
+        content: [{ marks: [{ type: "bold" as const }], text: "Trusted DB text", type: "text" as const }],
+        type: "paragraph" as const,
+      }],
+      type: "doc" as const,
+    };
+
+    await store.saveDocument("owner-1", "public-document-1", {
+      ...loaded.document,
+      blocks: [{ ...loaded.document.blocks[0], content: "forged", richText, updatedAt: 2000 }],
+      updatedAt: 2000,
+    });
+
+    await expect(store.loadDocument("owner-1", "public-document-1")).resolves.toMatchObject({
+      document: { blocks: [expect.objectContaining({ content: "Trusted DB text", richText })] },
+    });
+    await expect(pool.query(
+      "SELECT content, rich_text FROM editor_blocks WHERE workspace_id = $1 AND id = $2",
+      ["workspace-1", "block-1"],
+    )).resolves.toMatchObject({
+      rows: [{ content: "Trusted DB text", rich_text: richText }],
+    });
+  });
+
+  it("falls back to plain text when stored rich text is malformed", async () => {
+    await pool.query(
+      "UPDATE editor_blocks SET rich_text = $1::jsonb WHERE workspace_id = $2 AND id = $3",
+      [JSON.stringify({ content: [], type: "doc" }), "workspace-1", "block-1"],
+    );
+
+    await expect(store.loadDocument("owner-1", "public-document-1")).resolves.toMatchObject({
+      document: {
+        blocks: [expect.objectContaining({
+          content: "Private content",
+          richText: createRichTextFromPlainText("Private content"),
+        })],
       },
     });
   });
@@ -62,6 +110,7 @@ describe("PostgresDocumentStore", () => {
         headingLevel: 1 as const,
         id: "block-new",
         parentId: null,
+        richText: createRichTextFromPlainText("New content"),
         status: "unset" as const,
         type: "paragraph" as const,
         updatedAt: 2000,
@@ -135,6 +184,7 @@ describe("PostgresDocumentStore", () => {
       blocks: [{
         ...loaded.document.blocks[0],
         content: "Updated private content",
+        richText: createRichTextFromPlainText("Updated private content"),
         updatedAt: 2000,
       }],
       title: "Updated private document",
@@ -163,13 +213,23 @@ describe("PostgresDocumentStore", () => {
     const initial = await store.loadDocument("owner-1", "public-document-1");
     const firstVersionDocument = {
       ...initial.document,
-      blocks: [{ ...initial.document.blocks[0], content: "First version", updatedAt: 2000 }],
+      blocks: [{
+        ...initial.document.blocks[0],
+        content: "First version",
+        richText: createRichTextFromPlainText("First version"),
+        updatedAt: 2000,
+      }],
       updatedAt: 2000,
     };
     await store.saveDocument("owner-1", "public-document-1", firstVersionDocument);
     const secondVersionDocument = {
       ...firstVersionDocument,
-      blocks: [{ ...firstVersionDocument.blocks[0], content: "Second version", updatedAt: 3000 }],
+      blocks: [{
+        ...firstVersionDocument.blocks[0],
+        content: "Second version",
+        richText: createRichTextFromPlainText("Second version"),
+        updatedAt: 3000,
+      }],
       updatedAt: 3000,
     };
     await store.saveDocument("owner-1", "public-document-1", secondVersionDocument);
@@ -186,6 +246,31 @@ describe("PostgresDocumentStore", () => {
         blocks: [expect.objectContaining({ content: "First version" })],
       },
     });
+  });
+
+  it("records a new version when only rich text marks change", async () => {
+    const initial = await store.loadDocument("owner-1", "public-document-1");
+    const plain = createRichTextFromPlainText("same");
+    await store.saveDocument("owner-1", "public-document-1", {
+      ...initial.document,
+      blocks: [{ ...initial.document.blocks[0], content: "same", richText: plain, updatedAt: 2000 }],
+      updatedAt: 2000,
+    });
+    const bold: RichTextDocument = {
+      content: [{
+        content: [{ marks: [{ type: "bold" as const }], text: "same", type: "text" as const }],
+        type: "paragraph" as const,
+      }],
+      type: "doc" as const,
+    };
+    await store.saveDocument("owner-1", "public-document-1", {
+      ...initial.document,
+      blocks: [{ ...initial.document.blocks[0], content: "same", richText: bold, updatedAt: 3000 }],
+      updatedAt: 3000,
+    });
+
+    const versions = await store.listDocumentVersions("owner-1", "public-document-1");
+    expect(versions).toHaveLength(2);
   });
 
   it("loads and replaces a managed document policy", async () => {

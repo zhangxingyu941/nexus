@@ -17,6 +17,8 @@ import type { ObjectStorage, StoredObject } from "./objectStorage";
 import type { PostgresAttachmentStore } from "./postgresAttachmentStore";
 import { createSharedDocumentSnapshot } from "./sharedDocumentSnapshot";
 import { WorkspaceAuditStore } from "./workspaceAuditStore";
+import { readStoredRichText } from "./richTextBlockStorage";
+import { projectRichTextContent } from "../shared/richText";
 
 interface DocumentShareStoreOptions {
   appUrl?: string;
@@ -397,7 +399,7 @@ export class PostgresDocumentShareStore {
         [workspaceId, documentId],
       ),
       this.pool.query(
-        `SELECT id, type, heading_level, content, data, checked, assignee, due_date,
+        `SELECT id, type, heading_level, content, rich_text, data, checked, assignee, due_date,
                 status, parent_id, position, created_at, updated_at
          FROM editor_blocks
          WHERE workspace_id = $1 AND document_id = $2
@@ -430,24 +432,31 @@ export class PostgresDocumentShareStore {
     }
 
     return {
-      blocks: blockResult.rows.map((block): Block => ({
-        assignee: String(block.assignee),
-        checked: Boolean(block.checked),
-        children: childrenByBlock.get(String(block.id)) ?? [],
-        comments: [],
-        content: String(block.content),
-        createdAt: Number(block.created_at),
-        data: block.data && typeof block.data === "object"
-          ? block.data as Block["data"]
-          : null,
-        dueDate: String(block.due_date),
-        headingLevel: Number(block.heading_level) as HeadingLevel,
-        id: String(block.id),
-        parentId: block.parent_id === null ? null : String(block.parent_id),
-        status: block.status as Block["status"],
-        type: block.type as Block["type"],
-        updatedAt: Number(block.updated_at),
-      })),
+      blocks: blockResult.rows.map((block): Block => {
+        const type = block.type as Block["type"];
+        const content = String(block.content);
+        const richText = readStoredRichText(type, block.rich_text, content);
+
+        return {
+          assignee: String(block.assignee),
+          checked: Boolean(block.checked),
+          children: childrenByBlock.get(String(block.id)) ?? [],
+          comments: [],
+          content: richText ? projectRichTextContent(richText) : content,
+          createdAt: Number(block.created_at),
+          data: block.data && typeof block.data === "object"
+            ? block.data as Block["data"]
+            : null,
+          dueDate: String(block.due_date),
+          headingLevel: Number(block.heading_level) as HeadingLevel,
+          id: String(block.id),
+          parentId: block.parent_id === null ? null : String(block.parent_id),
+          richText,
+          status: block.status as Block["status"],
+          type,
+          updatedAt: Number(block.updated_at),
+        };
+      }),
       id: String(document.id),
       title: String(document.title),
       updatedAt: Number(document.updated_at),

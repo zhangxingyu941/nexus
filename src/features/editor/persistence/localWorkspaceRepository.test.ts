@@ -1,6 +1,7 @@
 import { openDB } from "idb";
 import { describe, expect, it } from "vitest";
-import { createDefaultDocument, updateBlockContent } from "../model/documentOperations";
+import type { RichTextDocument } from "../../../shared/richText";
+import { createDefaultDocument, updateBlockContent, updateBlockRichText } from "../model/documentOperations";
 import { createDefaultWorkspace, createWorkspaceDocument, normalizeWorkspace } from "../model/workspaceOperations";
 import { createLocalWorkspaceRepository } from "./localWorkspaceRepository";
 
@@ -80,6 +81,38 @@ describe("local workspace repository", () => {
       content: { documents: [expect.objectContaining({ title: "未命名文档" })] },
       summary: { name: "Nexus 工作区", role: "owner" },
     });
+  });
+
+  it("keeps the IndexedDB schema at v2 while preserving rich text", async () => {
+    const databaseName = uniqueDatabaseName("rich-text");
+    const repository = createLocalWorkspaceRepository({ databaseName, now: () => 2000 });
+    const initial = await repository.load("local-default");
+    const document = initial.content.documents[0];
+    const richText: RichTextDocument = {
+      content: [{
+        content: [{ marks: [{ type: "bold" as const }], text: "Local formatted text", type: "text" as const }],
+        type: "paragraph" as const,
+      }],
+      type: "doc" as const,
+    };
+    const workspace = {
+      ...initial.content,
+      documents: [updateBlockRichText(document, document.blocks[0].id, {
+        content: "Local formatted text",
+        richText,
+      }, 3000)],
+      updatedAt: 3000,
+    };
+
+    await repository.save("local-default", workspace);
+
+    const database = await openDB(databaseName);
+    expect(database.version).toBe(2);
+    database.close();
+    await expect(createLocalWorkspaceRepository({ databaseName }).load("local-default"))
+      .resolves.toMatchObject({
+        content: { documents: [{ blocks: [expect.objectContaining({ richText })] }] },
+      });
   });
 
   it("renames and selects existing workspaces while rejecting missing IDs", async () => {

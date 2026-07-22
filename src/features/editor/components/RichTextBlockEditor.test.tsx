@@ -1,6 +1,8 @@
-import { render } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { createRichTextFromPlainText, type RichTextDocument } from "@/shared/richText";
 import { RichTextBlockEditor } from "./RichTextBlockEditor";
 
 type TiptapExtensionConfig = {
@@ -13,7 +15,7 @@ type TiptapExtensionConfig = {
 };
 
 type TiptapEditorOptions = {
-  content: string;
+  content: unknown;
   editable: boolean;
   editorProps: {
     handleKeyDown: (view: {
@@ -27,12 +29,20 @@ type TiptapEditorOptions = {
     }, event: KeyboardEvent) => boolean;
   };
   extensions: TiptapExtensionConfig[];
+  onBlur: () => void;
+  onSelectionUpdate: (payload: {
+    editor: {
+      state: { selection: { empty: boolean; from: number; to: number } };
+      view: { coordsAtPos: (position: number) => { left: number; top: number } };
+    };
+  }) => void;
   onUpdate: (payload: {
     editor: {
       commands: {
         setContent: (content: string) => void;
       };
       getText: () => string;
+      getJSON: () => unknown;
     };
   }) => void;
 };
@@ -44,6 +54,7 @@ const tiptapMock = vi.hoisted(() => {
       setContent: vi.fn(),
     },
     getText: vi.fn(() => ""),
+    getJSON: vi.fn(() => ({ content: [{ type: "paragraph" }], type: "doc" })),
     isFocused: false,
   };
   const useEditor = vi.fn((_: TiptapEditorOptions, _deps?: unknown[]) => editor);
@@ -61,6 +72,7 @@ describe("RichTextBlockEditor", () => {
     tiptapMock.useEditor.mockClear();
     tiptapMock.editor.commands.setContent.mockClear();
     tiptapMock.editor.getText.mockReturnValue("");
+    tiptapMock.editor.getJSON.mockReturnValue({ content: [{ type: "paragraph" }], type: "doc" });
     tiptapMock.editor.isFocused = false;
   });
 
@@ -95,7 +107,7 @@ describe("RichTextBlockEditor", () => {
       document: ydoc,
       field: "block-content:block-1",
     });
-    expect(editorOptions.content).toBe("Initial content");
+    expect(editorOptions.content).toEqual(createRichTextFromPlainText("Initial content"));
     expect(editorOptions.extensions[0].options.history).toBe(false);
     expect(tiptapMock.useEditor.mock.calls[0][1]).toEqual(["block-1", ydoc, false]);
   });
@@ -121,7 +133,7 @@ describe("RichTextBlockEditor", () => {
     expect(editorOptions.extensions.some((extension) => extension.name === "link")).toBe(true);
   });
 
-  it("reports plain text updates to the workspace state", () => {
+  it("reports normalized editor JSON even when its text projection is unchanged", () => {
     const onChange = vi.fn();
 
     render(
@@ -147,10 +159,54 @@ describe("RichTextBlockEditor", () => {
           setContent: vi.fn(),
         },
         getText: () => "Updated content",
+        getJSON: () => ({
+          content: [{
+            content: [{ marks: [{ type: "bold" }], text: "Updated content", type: "text" }],
+            type: "paragraph",
+          }],
+          type: "doc",
+        }),
       },
     });
 
-    expect(onChange).toHaveBeenCalledWith("Updated content");
+    expect(onChange).toHaveBeenCalledWith({
+      content: "Updated content",
+      richText: {
+        content: [{
+          content: [{ marks: [{ type: "bold" }], text: "Updated content", type: "text" }],
+          type: "paragraph",
+        }],
+        type: "doc",
+      },
+    });
+  });
+
+  it("initializes a text block from structured JSON", () => {
+    const richText: RichTextDocument = {
+      content: [{
+        content: [{ marks: [{ type: "italic" }], text: "Formatted", type: "text" }],
+        type: "paragraph",
+      }],
+      type: "doc",
+    };
+
+    render(
+      <RichTextBlockEditor
+        blockId="block-structured"
+        collaborationDocument={null}
+        content="Formatted"
+        focusRequest={false}
+        onChange={vi.fn()}
+        onEnter={vi.fn()}
+        onFocused={vi.fn()}
+        onMarkdownShortcut={vi.fn()}
+        onOpenCommandMenu={vi.fn()}
+        richText={richText}
+        variant="paragraph"
+      />,
+    );
+
+    expect(tiptapMock.useEditor.mock.calls[0][0].content).toEqual(richText);
   });
 
   it("opens the command menu at the current caret coordinates", () => {
@@ -262,6 +318,41 @@ describe("RichTextBlockEditor", () => {
     expect(tiptapMock.editor.commands.setContent).not.toHaveBeenCalled();
   });
 
+  it("hides the selection toolbar when the editor loses focus", () => {
+    render(
+      <TooltipProvider>
+        <RichTextBlockEditor
+          blockId="block-1"
+          collaborationDocument={null}
+          content="Selected"
+          focusRequest={false}
+          onChange={vi.fn()}
+          onEnter={vi.fn()}
+          onFocused={vi.fn()}
+          onMarkdownShortcut={vi.fn()}
+          onOpenCommandMenu={vi.fn()}
+          variant="paragraph"
+        />
+      </TooltipProvider>,
+    );
+    const editorOptions = tiptapMock.useEditor.mock.calls[0][0];
+
+    act(() => {
+      editorOptions.onSelectionUpdate({
+        editor: {
+          state: { selection: { empty: false, from: 1, to: 4 } },
+          view: { coordsAtPos: (position) => ({ left: position * 10, top: 80 }) },
+        },
+      });
+    });
+    expect(screen.getByRole("toolbar", { name: "Text formatting" })).toBeVisible();
+
+    act(() => {
+      editorOptions.onBlur();
+    });
+    expect(screen.queryByRole("toolbar", { name: "Text formatting" })).not.toBeInTheDocument();
+  });
+
   it("only considers persisted content when an empty collaboration fragment first initializes", () => {
     const ydoc = new Y.Doc();
     const props = {
@@ -276,6 +367,7 @@ describe("RichTextBlockEditor", () => {
       variant: "paragraph" as const,
     };
     const { rerender } = render(<RichTextBlockEditor {...props} content="" />);
+    tiptapMock.editor.commands.setContent.mockClear();
 
     rerender(<RichTextBlockEditor {...props} content="delayed parent snapshot" />);
 
@@ -308,6 +400,7 @@ describe("RichTextBlockEditor", () => {
       editor: {
         commands: { setContent: vi.fn() },
         getText: () => "Ignored update",
+        getJSON: () => ({ content: [{ type: "paragraph" }], type: "doc" }),
       },
     });
     expect(onChange).not.toHaveBeenCalled();

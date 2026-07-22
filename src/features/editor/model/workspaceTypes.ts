@@ -61,7 +61,8 @@ export interface WorkspaceCollaborator {
   color: "green" | "blue" | "red" | "amber";
 }
 
-export type StoredBlock = Omit<Partial<Block>, "type"> & {
+export type StoredBlock = Omit<Partial<Block>, "richText" | "type"> & {
+  richText?: unknown;
   type?: string;
 };
 

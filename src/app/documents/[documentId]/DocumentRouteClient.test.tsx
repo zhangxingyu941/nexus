@@ -1,7 +1,10 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ApiRequestError } from "@/features/editor/persistence/apiClient";
+import type { DocumentSnapshot } from "@/features/editor/persistence/documentRepository";
 import { createDefaultWorkspace } from "@/features/editor/model/workspaceOperations";
+import type { RichTextUpdate } from "@/shared/richText";
 import { DocumentRouteClient } from "./DocumentRouteClient";
 
 const documentRepositoryMock = vi.hoisted(() => ({
@@ -17,14 +20,31 @@ vi.mock("@/features/editor/components/DocumentEditor", () => ({
   DocumentEditor: ({
     document,
     isReadOnly,
+    onChangeRichText,
     workspaceMembers,
   }: {
-    document: { title: string };
+    document: { blocks: Array<{ id: string }>; title: string };
     isReadOnly: boolean;
+    onChangeRichText: (blockId: string, update: RichTextUpdate) => void;
     workspaceMembers: unknown[];
   }) => (
     <main aria-label="文档编辑器">
       <h1>{document.title}</h1>
+      <button
+        onClick={() => onChangeRichText(document.blocks[0].id, {
+          content: "Persistent format",
+          richText: {
+            content: [{
+              content: [{ marks: [{ type: "bold" }], text: "Persistent format", type: "text" }],
+              type: "paragraph",
+            }],
+            type: "doc",
+          },
+        })}
+        type="button"
+      >
+        Apply structured format
+      </button>
       <span>{isReadOnly ? "只读" : "可编辑"}</span>
       <span>{workspaceMembers.length} 位成员</span>
     </main>
@@ -35,7 +55,7 @@ vi.mock("../../AuthScreen", () => ({
 }));
 
 const document = { ...createDefaultWorkspace(1000).documents[0], title: "预算草案" };
-const snapshot = {
+const snapshot: DocumentSnapshot = {
   access: {
     accessMode: "private" as const,
     canManage: false,
@@ -67,6 +87,29 @@ describe("DocumentRouteClient", () => {
     expect(workspaceMemberRepositoryMock.loadWorkspaceMembers).toHaveBeenCalledWith("workspace-1");
   });
 
+  it("saves structured text changes from the document editor", async () => {
+    const user = userEvent.setup();
+    const repository = createRepository({
+      ...snapshot,
+      access: { ...snapshot.access, canWrite: true, role: "editor" as const },
+    });
+    documentRepositoryMock.createDocumentRepository.mockReturnValue(repository);
+    workspaceMemberRepositoryMock.loadWorkspaceMembers.mockResolvedValueOnce([]);
+
+    render(<DocumentRouteClient publicId="public-document-1" />);
+    await user.click(await screen.findByRole("button", { name: "Apply structured format" }));
+
+    await waitFor(() => expect(repository.save).toHaveBeenCalledWith(
+      "public-document-1",
+      expect.objectContaining({
+        blocks: [expect.objectContaining({
+          content: "Persistent format",
+          richText: expect.objectContaining({ type: "doc" }),
+        })],
+      }),
+    ));
+  });
+
   it("shows the existing authentication flow when the document API returns 401", async () => {
     const repository = createRepository();
     vi.mocked(repository.load).mockRejectedValueOnce(
@@ -93,9 +136,9 @@ describe("DocumentRouteClient", () => {
   });
 });
 
-function createRepository() {
+function createRepository(loadedSnapshot = snapshot) {
   return {
-    load: vi.fn().mockResolvedValue(snapshot),
+    load: vi.fn().mockResolvedValue(loadedSnapshot),
     loadPolicy: vi.fn(),
     save: vi.fn().mockResolvedValue(snapshot),
     updatePolicy: vi.fn(),

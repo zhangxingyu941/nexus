@@ -6,6 +6,7 @@ import type {
   CollaborationPresence,
 } from "../collaboration/collaborationTypes";
 import type { BlockData, BlockStatus, BlockType, EditorDocument, HeadingLevel, MoveDirection } from "../model/block";
+import type { RichTextUpdate } from "@/shared/richText";
 import type { WorkspaceActivity, WorkspaceCollaborator } from "../model/workspaceOperations";
 import type {
   DatabaseWorkspaceMember,
@@ -51,6 +52,7 @@ interface DocumentEditorProps {
   onChangeBlockStatus: (blockId: string, status: BlockStatus) => void;
   onChangeBlockData: (blockId: string, data: BlockData | null) => void;
   onChangeContent: (blockId: string, content: string) => void;
+  onChangeRichText: (blockId: string, update: RichTextUpdate) => void;
   onChangeTitle: (title: string) => void;
   onChangeType: (blockId: string, type: BlockType, headingLevel?: HeadingLevel) => void;
   onDelete: (blockId: string) => void;
@@ -91,6 +93,7 @@ export function DocumentEditor({
   onChangeBlockStatus,
   onChangeBlockData,
   onChangeContent,
+  onChangeRichText,
   onChangeTitle,
   onChangeType,
   onDelete,
@@ -240,6 +243,7 @@ export function DocumentEditor({
               onChangeBlockStatus={onChangeBlockStatus}
               onChangeBlockData={onChangeBlockData}
               onChangeContent={onChangeContent}
+              onChangeRichText={onChangeRichText}
               onChangeType={onChangeType}
               onDelete={onDelete}
               onFocusedBlock={onFocusedBlock}

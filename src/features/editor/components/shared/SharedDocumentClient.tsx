@@ -144,6 +144,7 @@ function SharedDocumentView({
               onChangeBlockDueDate={NOOP}
               onChangeBlockStatus={NOOP}
               onChangeContent={NOOP}
+              onChangeRichText={NOOP}
               onChangeType={NOOP}
               onDelete={NOOP}
               onFocusedBlock={NOOP}
@@ -204,6 +205,7 @@ function toEditorBlock(block: SharedBlock): Block {
     headingLevel: block.headingLevel,
     id: block.id,
     parentId: block.parentId,
+    richText: block.richText ? structuredClone(block.richText) : null,
     status: "unset",
     type: block.type,
     updatedAt: 0,

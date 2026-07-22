@@ -48,7 +48,16 @@ describe("RichTextBlockEditor collaboration integration", () => {
     await user.click(editor);
     await user.keyboard("collab content");
 
-    await waitFor(() => expect(onChange).toHaveBeenLastCalledWith("collab content"));
+    await waitFor(() => expect(onChange).toHaveBeenLastCalledWith({
+      content: "collab content",
+      richText: {
+        content: [{
+          content: [{ text: "collab content", type: "text" }],
+          type: "paragraph",
+        }],
+        type: "doc",
+      },
+    }));
   });
 
   it("keeps CRDT content when a delayed parent snapshot arrives during rapid input", async () => {

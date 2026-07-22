@@ -3,6 +3,7 @@ import type { RefObject } from "react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CollaborationDocument } from "../collaboration/collaborationTypes";
 import type { Block, BlockData, BlockStatus, BlockType, HeadingLevel } from "../model/block";
+import type { RichTextUpdate } from "@/shared/richText";
 import type { EditorSessionUser } from "../session/sessionTypes";
 import { BlockRow } from "./BlockRow";
 
@@ -19,6 +20,7 @@ interface BlockListProps {
   onChangeBlockStatus: (blockId: string, status: BlockStatus) => void;
   onChangeBlockData: (blockId: string, data: BlockData | null) => void;
   onChangeContent: (blockId: string, content: string) => void;
+  onChangeRichText: (blockId: string, update: RichTextUpdate) => void;
   onChangeType: (blockId: string, type: BlockType, headingLevel?: HeadingLevel) => void;
   onDelete: (blockId: string) => void;
   onFocusedBlock: () => void;
@@ -65,6 +67,7 @@ export function BlockList({
   onChangeBlockStatus,
   onChangeBlockData,
   onChangeContent,
+  onChangeRichText,
   onChangeType,
   onDelete,
   onFocusedBlock,
@@ -171,6 +174,7 @@ export function BlockList({
       onChangeBlockStatus={onChangeBlockStatus}
       onChangeBlockData={onChangeBlockData}
       onChangeContent={onChangeContent}
+      onChangeRichText={onChangeRichText}
       onChangeType={onChangeType}
       onDelete={onDelete}
       onFocused={onFocusedBlock}

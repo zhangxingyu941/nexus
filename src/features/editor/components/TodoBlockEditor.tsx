@@ -1,5 +1,6 @@
 import type { CollaborationDocument } from "../collaboration/collaborationTypes";
 import type { BlockType, HeadingLevel } from "../model/block";
+import type { RichTextDocument, RichTextUpdate } from "@/shared/richText";
 import type { EditorSessionUser } from "../session/sessionTypes";
 import type { EditorPopoverAnchor } from "./commands/EditorCommandPopover";
 import type { MentionItem } from "./commands/useMentionSearch";
@@ -10,10 +11,11 @@ interface TodoBlockEditorProps {
   checked: boolean;
   collaborationDocument: CollaborationDocument | null;
   content: string;
+  richText: RichTextDocument | null;
   focusRequest: boolean;
   isReadOnly: boolean;
   onToggle: () => void;
-  onChange: (content: string) => void;
+  onChange: (update: RichTextUpdate) => void;
   onEnter: () => void;
   onFocused: () => void;
   onMarkdownShortcut: (type: BlockType, headingLevel?: HeadingLevel) => void;
@@ -28,6 +30,7 @@ export function TodoBlockEditor({
   checked,
   collaborationDocument,
   content,
+  richText,
   focusRequest,
   isReadOnly,
   onToggle,
@@ -64,6 +67,7 @@ export function TodoBlockEditor({
         onOpenCommandMenu={onOpenCommandMenu}
         onOpenMentionMenu={onOpenMentionMenu}
         onMentionApiReady={onMentionApiReady}
+        richText={richText}
         sessionUser={sessionUser}
         variant="todo"
       />

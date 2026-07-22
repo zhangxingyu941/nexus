@@ -140,6 +140,59 @@ describe("document route handlers", () => {
     );
   });
 
+  it("normalizes rich text and recomputes content before saving", async () => {
+    const { authStore, documentStore, handlers } = createHandlers();
+    authStore.getUserBySessionToken.mockResolvedValue({ id: "editor-1" });
+    documentStore.saveDocument.mockResolvedValue({ saved: true });
+    const document = documentPayload();
+    document.blocks = [blockPayload({
+      content: "forged",
+      richText: {
+        content: [{
+          content: [{ marks: [{ type: "bold" }], text: "Trusted", type: "text" }],
+          type: "paragraph",
+        }],
+        type: "doc",
+      },
+    })];
+
+    const response = await handlers.PUT(jsonRequest({ document }), "public-document-1");
+
+    expect(response.status).toBe(200);
+    expect(documentStore.saveDocument).toHaveBeenCalledWith(
+      "editor-1",
+      "public-document-1",
+      expect.objectContaining({
+        blocks: [expect.objectContaining({ content: "Trusted", richText: document.blocks[0].richText })],
+      }),
+    );
+  });
+
+  it("returns a stable rich text error for an unsafe link", async () => {
+    const { authStore, documentStore, handlers } = createHandlers();
+    authStore.getUserBySessionToken.mockResolvedValue({ id: "editor-1" });
+    const document = documentPayload();
+    document.blocks = [blockPayload({
+      richText: {
+        content: [{
+          content: [{
+            marks: [{ attrs: { href: "javascript:alert(1)" }, type: "link" }],
+            text: "unsafe",
+            type: "text",
+          }],
+          type: "paragraph",
+        }],
+        type: "doc",
+      },
+    })];
+
+    const response = await handlers.PUT(jsonRequest({ document }), "public-document-1");
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "富文本链接不安全" });
+    expect(documentStore.saveDocument).not.toHaveBeenCalled();
+  });
+
   it("hides a policy from a document reader without manage access", async () => {
     const { authStore, documentStore, handlers } = createHandlers();
     authStore.getUserBySessionToken.mockResolvedValue({ id: "editor-1" });
@@ -190,12 +243,37 @@ describe("document route handlers", () => {
   });
 });
 
-function documentPayload() {
+function documentPayload(): {
+  blocks: Array<Record<string, unknown>>;
+  id: string;
+  title: string;
+  updatedAt: number;
+} {
   return {
     blocks: [],
     id: "document-1",
     title: "Private document",
     updatedAt: 1000,
+  };
+}
+
+function blockPayload(overrides: Record<string, unknown> = {}) {
+  return {
+    assignee: "",
+    checked: false,
+    children: [],
+    comments: [],
+    content: "Document body",
+    createdAt: 1000,
+    data: null,
+    dueDate: "",
+    headingLevel: 1,
+    id: "block-1",
+    parentId: null,
+    status: "unset",
+    type: "paragraph",
+    updatedAt: 1000,
+    ...overrides,
   };
 }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { changeBlockType, insertBlockAfter, updateBlockData, updateDocumentTitle } from "../model/documentOperations";
+import { createRichTextFromPlainText, type RichTextDocument } from "../../../shared/richText";
+import { changeBlockType, insertBlockAfter, updateBlockData, updateBlockRichText, updateDocumentTitle } from "../model/documentOperations";
 import { createDefaultWorkspace, createWorkspaceDocument } from "../model/workspaceOperations";
 import {
   createBlockContentRecords,
@@ -31,9 +32,67 @@ describe("Yjs workspace mapping", () => {
         checked: document.blocks[0].checked,
         content: "",
         documentId: document.id,
+        richText: document.blocks[0].richText,
         updatedAt: document.blocks[0].updatedAt,
       },
     ]);
+  });
+
+  it("creates remote patches when only rich text marks change", () => {
+    const document = createDefaultWorkspace(1000).documents[0];
+    const block = document.blocks[0];
+    const withText = updateBlockRichText(document, block.id, {
+      content: "same",
+      richText: createRichTextFromPlainText("same"),
+    }, 1500);
+    const richText: RichTextDocument = {
+      content: [{
+        content: [{ marks: [{ type: "bold" as const }], text: "same", type: "text" as const }],
+        type: "paragraph" as const,
+      }],
+      type: "doc" as const,
+    };
+
+    expect(createRemotePatchesFromRecords(withText, [{
+      blockId: block.id,
+      checked: block.checked,
+      content: "same",
+      documentId: document.id,
+      richText,
+      updatedAt: 2000,
+    }])).toEqual([{
+      blockId: block.id,
+      checked: block.checked,
+      content: "same",
+      documentId: document.id,
+      richText,
+      updatedAt: 2000,
+    }]);
+  });
+
+  it("creates a remote patch for a same-timestamp mark-only update", () => {
+    const document = createDefaultWorkspace(1000).documents[0];
+    const block = document.blocks[0];
+    const plain = updateBlockRichText(document, block.id, {
+      content: "same",
+      richText: createRichTextFromPlainText("same"),
+    }, 2000);
+    const richText: RichTextDocument = {
+      content: [{
+        content: [{ marks: [{ type: "bold" }], text: "same", type: "text" }],
+        type: "paragraph",
+      }],
+      type: "doc",
+    };
+
+    expect(createRemotePatchesFromRecords(plain, [{
+      blockId: block.id,
+      checked: block.checked,
+      content: "same",
+      documentId: document.id,
+      richText,
+      updatedAt: 2000,
+    }])).toEqual([expect.objectContaining({ richText, updatedAt: 2000 })]);
   });
 
   it("creates remote patches only for changed records", () => {
@@ -51,7 +110,7 @@ describe("Yjs workspace mapping", () => {
           updatedAt: 3000,
         },
       ]),
-    ).toEqual([
+    ).toMatchObject([
       {
         blockId: block.id,
         checked: block.checked,
@@ -114,7 +173,7 @@ describe("Yjs workspace mapping", () => {
           updatedAt: 3000,
         },
       ]),
-    ).toEqual([
+    ).toMatchObject([
       {
         blockId: block.id,
         checked: true,

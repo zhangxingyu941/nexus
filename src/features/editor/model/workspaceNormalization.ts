@@ -2,10 +2,19 @@ import type { Block, BlockComment, BlockData, BlockType, EditorDocument, EditorW
 import { createDefaultBlockData, createDefaultDocument } from "./documentOperations";
 import { createDefaultWorkspace } from "./workspaceDocuments";
 import type { StoredBlock, StoredBlockComment, StoredDocument, StoredWorkspace } from "./workspaceTypes";
+import {
+  createRichTextFromPlainText,
+  normalizeRichText,
+  projectRichTextContent,
+  type RichTextDocument,
+} from "../../../shared/richText";
+import { isRichTextBlockType } from "./documentBlockOperations";
 
 function isBlockType(type: unknown): type is Block["type"] {
   return type === "paragraph" || type === "heading" || type === "todo" || type === "quote" || type === "code" ||
-    type === "image" || type === "file" || type === "table" || type === "kanban";
+    type === "image" || type === "file" || type === "table" || type === "kanban" || type === "divider" ||
+    type === "bulletedList" || type === "numberedList" || type === "toggle" || type === "formula" ||
+    type === "linkCard";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -88,12 +97,15 @@ function normalizeBlockData(type: BlockType, data: unknown): BlockData | null {
 
 function normalizeBlock(block: StoredBlock, fallbackNow: number, fallbackIndex: number): Block {
   const type = isBlockType(block.type) ? block.type : "paragraph";
+  const fallbackContent = typeof block.content === "string" ? block.content : "";
+  const richText = normalizeStoredRichText(type, block.richText, fallbackContent);
 
   return {
     id: block.id ?? `block-${fallbackNow}-${fallbackIndex}`,
     type,
     headingLevel: normalizeHeadingLevel(block.headingLevel),
-    content: block.content ?? "",
+    content: richText ? projectRichTextContent(richText) : fallbackContent,
+    richText,
     data: normalizeBlockData(type, block.data),
     checked: block.checked ?? false,
     comments: (block.comments ?? []).map((comment) => normalizeBlockComment(comment)),
@@ -105,6 +117,24 @@ function normalizeBlock(block: StoredBlock, fallbackNow: number, fallbackIndex: 
     createdAt: block.createdAt ?? fallbackNow,
     updatedAt: block.updatedAt ?? fallbackNow,
   };
+}
+
+function normalizeStoredRichText(
+  type: BlockType,
+  value: unknown,
+  content: string,
+): RichTextDocument | null {
+  if (!isRichTextBlockType(type)) {
+    return null;
+  }
+
+  try {
+    return value === null || value === undefined
+      ? createRichTextFromPlainText(content)
+      : normalizeRichText(value);
+  } catch {
+    return createRichTextFromPlainText(content);
+  }
 }
 
 function normalizeBlockComment(comment: StoredBlockComment): BlockComment {

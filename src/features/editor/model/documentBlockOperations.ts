@@ -1,4 +1,10 @@
 import type { Block, BlockData, BlockStatus, BlockType, EditorDocument, HeadingLevel, MoveDirection } from "./block";
+import {
+  createRichTextFromPlainText,
+  normalizeRichText,
+  projectRichTextContent,
+  type RichTextUpdate,
+} from "../../../shared/richText";
 
 export function createBlockId(now: number) {
   return `block-${now}`;
@@ -32,12 +38,17 @@ export function createDefaultBlockData(type: BlockType): BlockData | null {
   return null;
 }
 
+export function isRichTextBlockType(type: BlockType) {
+  return type === "paragraph" || type === "heading" || type === "quote" || type === "todo";
+}
+
 export function createBlock(type: BlockType, now: number, content = "", blockId = createBlockId(now)): Block {
   return {
     id: blockId,
     type,
     headingLevel: 1,
     content,
+    richText: isRichTextBlockType(type) ? createRichTextFromPlainText(content) : null,
     data: createDefaultBlockData(type),
     checked: false,
     comments: [],
@@ -231,6 +242,32 @@ export function updateBlockContent(
     return {
       ...block,
       content,
+      richText: isRichTextBlockType(block.type) ? createRichTextFromPlainText(content) : null,
+      updatedAt: now,
+    };
+  });
+
+  return changed ? touchDocument(document, blocks, now) : document;
+}
+
+export function updateBlockRichText(
+  document: EditorDocument,
+  blockId: string,
+  update: RichTextUpdate,
+  now = Date.now(),
+): EditorDocument {
+  let changed = false;
+  const blocks = document.blocks.map((block) => {
+    if (block.id !== blockId || !isRichTextBlockType(block.type)) {
+      return block;
+    }
+
+    const richText = normalizeRichText(update.richText);
+    changed = true;
+    return {
+      ...block,
+      content: projectRichTextContent(richText),
+      richText,
       updatedAt: now,
     };
   });
@@ -275,6 +312,9 @@ export function changeBlockType(
       headingLevel: type === "heading" ? headingLevel : 1,
       checked: type === "todo" ? block.checked : false,
       data: block.type === type ? block.data : createDefaultBlockData(type),
+      richText: isRichTextBlockType(type)
+        ? block.richText ?? createRichTextFromPlainText(block.content)
+        : null,
       updatedAt: now,
     };
   });

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AuthScreen } from "../../AuthScreen";
 import { DocumentEditor } from "@/features/editor/components/DocumentEditor";
 import type { BlockData, BlockStatus, BlockType, EditorDocument, HeadingLevel, MoveDirection } from "@/features/editor/model/block";
+import type { RichTextUpdate } from "@/shared/richText";
 import {
   addBlockComment,
   changeBlockType,
@@ -20,6 +21,7 @@ import {
   setBlockStatus,
   toggleTodo,
   updateBlockContent,
+  updateBlockRichText,
   updateBlockData,
   updateDocumentTitle,
 } from "@/features/editor/model/documentOperations";
@@ -191,6 +193,9 @@ export function DocumentRouteClient({ publicId }: DocumentRouteClientProps) {
       )}
       onChangeContent={(blockId, content) => updateDocument((current) =>
         updateBlockContent(current, blockId, content, now()),
+      )}
+      onChangeRichText={(blockId, update: RichTextUpdate) => updateDocument((current) =>
+        updateBlockRichText(current, blockId, update, now()),
       )}
       onChangeTitle={(title) => updateDocument((current) => updateDocumentTitle(current, title, now()))}
       onChangeType={(blockId, type: BlockType, headingLevel?: HeadingLevel) => updateDocument((current) =>

@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createRichTextFromPlainText } from "@/shared/richText";
 import { SharedDocumentClient } from "./SharedDocumentClient";
 
 const snapshot = {
@@ -12,6 +13,7 @@ const snapshot = {
       headingLevel: 1 as const,
       id: "block-1",
       parentId: null,
+      richText: createRichTextFromPlainText("公开正文"),
       type: "paragraph" as const,
     }],
     title: "公开方案",

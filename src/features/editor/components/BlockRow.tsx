@@ -4,6 +4,7 @@ import { searchEditorCommands } from "../commands/editorCommands";
 import type { EditorCommandDefinition } from "../commands/editorCommands";
 import type { CollaborationDocument } from "../collaboration/collaborationTypes";
 import type { Block, BlockData, BlockStatus, BlockType, HeadingLevel, MoveDirection } from "../model/block";
+import { createRichTextFromPlainText, type RichTextUpdate } from "@/shared/richText";
 import type { EditorSessionUser } from "../session/sessionTypes";
 import { getCursorColor } from "../collaboration/remoteCursorColors";
 import { useMentionSearchContext } from "./MentionSearchContext";
@@ -48,6 +49,7 @@ interface BlockRowProps {
   onChangeBlockStatus: (blockId: string, status: BlockStatus) => void;
   onChangeBlockData: (blockId: string, data: BlockData | null) => void;
   onChangeContent: (blockId: string, content: string) => void;
+  onChangeRichText: (blockId: string, update: RichTextUpdate) => void;
   onChangeType: (blockId: string, type: BlockType, headingLevel?: HeadingLevel) => void;
   onDelete: (blockId: string) => void;
   onFocused: () => void;
@@ -82,6 +84,7 @@ export function BlockRow({
   onChangeBlockStatus,
   onChangeBlockData,
   onChangeContent,
+  onChangeRichText,
   onChangeType,
   onDelete,
   onFocused,
@@ -520,9 +523,9 @@ export function BlockRow({
               content={block.content}
               focusRequest={focusRequest || restoreEditorFocus}
               isReadOnly={isReadOnly}
-              onChange={(content) => {
-                syncMentionFromText(content, content.length);
-                onChangeContent(block.id, content);
+              onChange={(update) => {
+                syncMentionFromText(update.content, update.content.length);
+                onChangeRichText(block.id, update);
               }}
               onEnter={() => onAddAfter(block.id)}
               onFocused={handleEditorFocused}
@@ -531,7 +534,31 @@ export function BlockRow({
               onOpenMentionMenu={openMentionMenu}
               onMentionApiReady={(api) => { mentionApiRef.current = api; }}
               onToggle={() => onToggleTodo(block.id)}
+              richText={block.richText ?? createRichTextFromPlainText(block.content)}
               sessionUser={cursorUser}
+            />
+          ) : block.type === "code" ? (
+            <RichTextBlockEditor
+              blockId={block.id}
+              collaborationDocument={collaborationDocument}
+              content={block.content}
+              focusRequest={focusRequest || restoreEditorFocus}
+              isReadOnly={isReadOnly}
+              onChange={(content) => onChangeContent(block.id, content)}
+              onEnter={() => onAddAfter(block.id)}
+              onFocused={handleEditorFocused}
+              onMarkdownShortcut={(type, headingLevel) => onChangeType(block.id, type, headingLevel)}
+              onOpenCommandMenu={openSlashMenu}
+              onComment={(selectedText) => {
+                if (!selectedText) {
+                  return;
+                }
+                setCommentDraft(selectedText);
+                setOpenMenu("comments");
+              }}
+              richText={null}
+              sessionUser={cursorUser}
+              variant="code"
             />
           ) : (
             <RichTextBlockEditor
@@ -540,9 +567,9 @@ export function BlockRow({
               content={block.content}
               focusRequest={focusRequest || restoreEditorFocus}
               isReadOnly={isReadOnly}
-              onChange={(content) => {
-                syncMentionFromText(content, content.length);
-                onChangeContent(block.id, content);
+              onChange={(update) => {
+                syncMentionFromText(update.content, update.content.length);
+                onChangeRichText(block.id, update);
               }}
               onEnter={() => onAddAfter(block.id)}
               onFocused={handleEditorFocused}
@@ -557,6 +584,7 @@ export function BlockRow({
                 setCommentDraft(selectedText);
                 setOpenMenu("comments");
               }}
+              richText={block.richText ?? createRichTextFromPlainText(block.content)}
               sessionUser={cursorUser}
               variant={block.type}
             />

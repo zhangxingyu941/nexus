@@ -1,4 +1,11 @@
 import type { Block, BlockData, EditorDocument } from "../model/block";
+import {
+  createRichTextFromPlainText,
+  normalizeRichText,
+  projectRichTextContent,
+  type RichTextDocument,
+} from "../../../shared/richText";
+import { isRichTextBlockType } from "../model/documentOperations";
 import type { RemoteBlockContentPatch, RemoteDocumentStructurePatch } from "../model/workspaceOperations";
 import type { BlockContentRecord, DocumentStructureRecord } from "./collaborationTypes";
 
@@ -16,6 +23,7 @@ export function createBlockContentRecords(document: EditorDocument): BlockConten
     checked: block.checked,
     content: block.content,
     documentId: document.id,
+    richText: cloneRichText(block.richText),
     updatedAt: block.updatedAt,
   }));
 }
@@ -52,6 +60,7 @@ function cloneBlock(block: Block): Block {
     children: [...block.children],
     comments: block.comments.map((comment) => ({ ...comment })),
     data: cloneBlockData(block.data),
+    richText: cloneRichText(block.richText),
   };
 }
 
@@ -92,18 +101,53 @@ export function createRemotePatchesFromRecords(
     .filter((record) => record.documentId === document.id)
     .filter((record) => {
       const localBlock = document.blocks.find((block) => block.id === record.blockId);
+      const richText = localBlock ? normalizeRecordRichText(localBlock, record.richText, record.content) : null;
+      const content = richText ? projectRichTextContent(richText) : record.content;
 
       return (
         localBlock &&
-        record.updatedAt > localBlock.updatedAt &&
-        (localBlock.content !== record.content || localBlock.checked !== record.checked)
+        record.updatedAt >= localBlock.updatedAt &&
+        (
+          localBlock.content !== content ||
+          localBlock.checked !== record.checked ||
+          !richTextEqual(localBlock.richText, richText)
+        )
       );
     })
-    .map((record) => ({
-      blockId: record.blockId,
-      checked: record.checked,
-      content: record.content,
-      documentId: record.documentId,
-      updatedAt: record.updatedAt,
-    }));
+    .map((record) => {
+      const localBlock = document.blocks.find((block) => block.id === record.blockId) as Block;
+      const richText = normalizeRecordRichText(localBlock, record.richText, record.content);
+      return {
+        blockId: record.blockId,
+        checked: record.checked,
+        content: richText ? projectRichTextContent(richText) : record.content,
+        documentId: record.documentId,
+        richText,
+        updatedAt: record.updatedAt,
+      };
+    });
+}
+
+function cloneRichText(value: RichTextDocument | null) {
+  return value ? structuredClone(value) : null;
+}
+
+function richTextEqual(left: RichTextDocument | null, right: RichTextDocument | null) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function normalizeRecordRichText(
+  block: Block,
+  value: RichTextDocument | null | undefined,
+  content: string,
+): RichTextDocument | null {
+  if (!isRichTextBlockType(block.type)) {
+    return null;
+  }
+
+  try {
+    return value ? normalizeRichText(value) : createRichTextFromPlainText(content);
+  } catch {
+    return createRichTextFromPlainText(content);
+  }
 }

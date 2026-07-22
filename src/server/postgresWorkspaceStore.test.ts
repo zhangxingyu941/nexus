@@ -1,6 +1,7 @@
 import type { Pool } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { changeBlockType } from "../features/editor/model/documentOperations";
+import { createRichTextFromPlainText, type RichTextDocument } from "../shared/richText";
+import { changeBlockType, updateBlockRichText } from "../features/editor/model/documentOperations";
 import { createDefaultWorkspace, createWorkspaceDocument } from "../features/editor/model/workspaceOperations";
 import { createPgMemPool } from "../test/pgMemDatabase";
 import { migrateDatabase } from "./database/migrations";
@@ -47,6 +48,12 @@ describe("PostgresWorkspaceStore", () => {
     expect(await countRows(pool, "editor_documents")).toBe(1);
     expect(await countRows(pool, "editor_blocks")).toBe(1);
     await expect(pool.query(
+      "SELECT rich_text FROM editor_blocks WHERE workspace_id = $1",
+      ["workspace-test"],
+    )).resolves.toMatchObject({
+      rows: [{ rich_text: createRichTextFromPlainText("") }],
+    });
+    await expect(pool.query(
       `SELECT created_by, public_id
        FROM editor_documents
        WHERE workspace_id = $1`,
@@ -56,6 +63,34 @@ describe("PostgresWorkspaceStore", () => {
         created_by: "owner-1",
         public_id: expect.stringMatching(/^document-/),
       }],
+    });
+  });
+
+  it("round-trips structured rich text through a workspace save", async () => {
+    await seedUser(pool, "owner-1", "owner@example.com", "Owner");
+    await store.ensurePersonalWorkspace("owner-1", "Owner workspace");
+    const loaded = await store.loadWorkspace("owner-1", "workspace-test");
+    const document = loaded.content.documents[0];
+    const richText: RichTextDocument = {
+      content: [{
+        content: [{ marks: [{ type: "italic" as const }], text: "Workspace rich text", type: "text" as const }],
+        type: "paragraph" as const,
+      }],
+      type: "doc" as const,
+    };
+    const updatedDocument = updateBlockRichText(document, document.blocks[0].id, {
+      content: "Workspace rich text",
+      richText,
+    }, 4000);
+
+    await store.saveWorkspace("owner-1", "workspace-test", {
+      ...loaded.content,
+      documents: [updatedDocument],
+      updatedAt: 4000,
+    });
+
+    await expect(store.loadWorkspace("owner-1", "workspace-test")).resolves.toMatchObject({
+      content: { documents: [{ blocks: [expect.objectContaining({ richText })] }] },
     });
   });
 
@@ -361,6 +396,7 @@ describe("PostgresWorkspaceStore", () => {
         columns: [{ id: "name", name: "名称" }],
         rows: [{ id: "row-1", cells: { name: "数据库路线图" } }],
       },
+      richText: null,
       type: "table",
     };
     workspace.documents[0].blocks[0].comments = [
