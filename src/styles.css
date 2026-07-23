@@ -3514,31 +3514,28 @@ textarea:focus-visible {
 }
 
 .list-block li {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  min-width: 0;
 }
 
-.list-block li input {
-  flex: 1 1 auto;
+.list-block li textarea {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 1.8em;
+  overflow: hidden;
   border: none;
   background: transparent;
   font: inherit;
+  line-height: inherit;
+  overflow-wrap: anywhere;
   padding: 2px 0;
+  resize: none;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
-.list-block li input:focus {
+.list-block li textarea:focus {
   outline: none;
-}
-
-.list-block-add,
-.list-block-enter {
-  margin-top: 4px;
-  border: none;
-  background: transparent;
-  color: #2563eb;
-  cursor: pointer;
-  font-size: 0.8rem;
 }
 
 .toggle-block summary {

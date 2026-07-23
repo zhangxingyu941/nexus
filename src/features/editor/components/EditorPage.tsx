@@ -359,7 +359,7 @@ export function EditorPage({
   );
 
   const handleAddAfter = useCallback(
-    (blockId: string) => {
+    (blockId: string, type?: BlockType) => {
       if (!activeDocument) {
         return;
       }
@@ -373,7 +373,7 @@ export function EditorPage({
           current
             ? updateActiveDocument(
                 current,
-                (document) => insertBlockAfter(document, blockId, now, nextBlockId),
+                (document) => insertBlockAfter(document, blockId, now, nextBlockId, type),
                 Date.now(),
               )
             : current,

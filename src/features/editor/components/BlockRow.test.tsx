@@ -32,6 +32,53 @@ const workspaceMembers: DatabaseWorkspaceMember[] = [
 ];
 
 describe("BlockRow mention menu", () => {
+  it("continues a list with another block of the same type", () => {
+    const onAddAfter = vi.fn();
+    const listBlock = { ...baseBlock, type: "bulletedList" as const, content: "First item", richText: null };
+
+    render(
+      <TooltipProvider>
+        <MentionSearchProvider value={() => []}>
+          <BlockRow
+            block={listBlock}
+            canIndent={false}
+            canOutdent={false}
+            collaborationDocument={null}
+            depth={0}
+            documentId="document-1"
+            focusRequest={false}
+            isFirst
+            isLast
+            isReadOnly={false}
+            onAddAfter={onAddAfter}
+            onAddBlockComment={vi.fn()}
+            onChangeBlockAssignee={vi.fn()}
+            onChangeBlockData={vi.fn()}
+            onChangeBlockDueDate={vi.fn()}
+            onChangeBlockStatus={vi.fn()}
+            onChangeContent={vi.fn()}
+            onChangeRichText={vi.fn()}
+            onChangeType={vi.fn()}
+            onDelete={vi.fn()}
+            onFocused={vi.fn()}
+            onIndent={vi.fn()}
+            onMove={vi.fn()}
+            onOutdent={vi.fn()}
+            onResolveBlockComment={vi.fn()}
+            onToggleTodo={vi.fn()}
+            sessionUser={{ id: "me", email: "me@example.com", displayName: "Me" }}
+            showBlockActions
+            workspaceId="ws-1"
+          />
+        </MentionSearchProvider>
+      </TooltipProvider>,
+    );
+
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "列表项" }), { key: "Enter" });
+
+    expect(onAddAfter).toHaveBeenCalledWith("block-1", "bulletedList");
+  });
+
   it("selects a block from the gutter and exposes its selected state", async () => {
     const onSelectBlock = vi.fn();
 

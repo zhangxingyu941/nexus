@@ -94,6 +94,17 @@ describe("document operations", () => {
     expect(next.updatedAt).toBe(2000);
   });
 
+  it("inserts a block with the requested type", () => {
+    const document = createDefaultDocument(1000);
+    const next = insertBlockAfter(document, document.blocks[0].id, 2000, "block-list", "numberedList");
+
+    expect(next.blocks[1]).toMatchObject({
+      id: "block-list",
+      type: "numberedList",
+      richText: null,
+    });
+  });
+
   it("updates only the target block content", () => {
     const document = insertBlockAfter(createDefaultDocument(1000), "block-1000", 2000);
     const targetId = document.blocks[1].id;

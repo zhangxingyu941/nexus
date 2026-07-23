@@ -100,6 +100,7 @@ export function RichTextBlockEditor({
   const editorContent = variant === "code" ? content : initialRichText;
   const initializedCollaborationRef = useRef<{
     document: CollaborationDocument;
+    editor: unknown;
     field: string;
   } | null>(null);
   const emitChange = (nextContent: string) => {
@@ -402,6 +403,7 @@ export function RichTextBlockEditor({
 
     if (
       initializedCollaboration?.document === collaborationDocument &&
+      initializedCollaboration.editor === editor &&
       initializedCollaboration.field === collaborationField
     ) {
       return;
@@ -409,6 +411,7 @@ export function RichTextBlockEditor({
 
     initializedCollaborationRef.current = {
       document: collaborationDocument,
+      editor,
       field: collaborationField,
     };
 

@@ -15,7 +15,7 @@ interface BlockListProps {
   documentId: string;
   focusBlockId: string | null;
   isReadOnly: boolean;
-  onAddAfter: (blockId: string) => void;
+  onAddAfter: (blockId: string, type?: BlockType) => void;
   onAddBlockComment: (blockId: string, body: string) => void;
   onChangeBlockAssignee: (blockId: string, assignee: string) => void;
   onChangeBlockDueDate: (blockId: string, dueDate: string) => void;

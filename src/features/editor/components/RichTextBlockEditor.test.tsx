@@ -374,6 +374,41 @@ describe("RichTextBlockEditor", () => {
     expect(tiptapMock.editor.commands.setContent).not.toHaveBeenCalled();
   });
 
+  it("seeds the replacement editor after collaboration becomes available", () => {
+    const ydoc = new Y.Doc();
+    const previousEditor = {
+      ...tiptapMock.editor,
+      commands: { ...tiptapMock.editor.commands, setContent: vi.fn() },
+    };
+    const collaborationEditor = {
+      ...tiptapMock.editor,
+      commands: { ...tiptapMock.editor.commands, setContent: vi.fn() },
+    };
+    const props = {
+      blockId: "block-1",
+      collaborationDocument: ydoc,
+      content: "Imported heading",
+      focusRequest: false,
+      onChange: vi.fn(),
+      onEnter: vi.fn(),
+      onFocused: vi.fn(),
+      onMarkdownShortcut: vi.fn(),
+      onOpenCommandMenu: vi.fn(),
+      variant: "heading" as const,
+    };
+
+    tiptapMock.useEditor
+      .mockReturnValueOnce(previousEditor)
+      .mockReturnValueOnce(collaborationEditor);
+    const { rerender } = render(<RichTextBlockEditor {...props} />);
+
+    rerender(<RichTextBlockEditor {...props} />);
+
+    expect(collaborationEditor.commands.setContent).toHaveBeenCalledWith(
+      createRichTextFromPlainText("Imported heading"),
+    );
+  });
+
   it("disables TipTap updates in read-only mode", () => {
     const onChange = vi.fn();
 

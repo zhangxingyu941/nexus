@@ -76,11 +76,12 @@ export function insertBlockAfter(
   blockId: string,
   now = Date.now(),
   nextBlockId = createBlockId(now),
+  type: BlockType = "paragraph",
 ): EditorDocument {
   const index = document.blocks.findIndex((block) => block.id === blockId);
   const targetBlock = document.blocks[index];
   const nextBlock: Block = {
-    ...createBlock("paragraph", now),
+    ...createBlock(type, now),
     id: nextBlockId,
     parentId: targetBlock?.parentId ?? null,
   };

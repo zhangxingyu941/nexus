@@ -50,7 +50,7 @@ interface DocumentEditorProps {
   workspaceMembers: DatabaseWorkspaceMember[];
   workspaceId: string;
   titleFocusRequest: number;
-  onAddAfter: (blockId: string) => void;
+  onAddAfter: (blockId: string, type?: BlockType) => void;
   onBlockSelectionAction?: (action: BlockSelectionToolbarAction, blockIds: string[]) => boolean;
   onBlockSelectionTypeChange?: (type: BlockType, blockIds: string[]) => boolean;
   onBlockClipboardPaste?: (clipboardData: DataTransfer, targetBlockId: string) => boolean;

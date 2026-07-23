@@ -48,7 +48,7 @@ interface BlockRowProps {
   isReadOnly: boolean;
   isSelected?: boolean;
   isSelectionActive?: boolean;
-  onAddAfter: (blockId: string) => void;
+  onAddAfter: (blockId: string, type?: BlockType) => void;
   onAddBlockComment: (blockId: string, body: string) => void;
   onChangeBlockAssignee: (blockId: string, assignee: string) => void;
   onChangeBlockDueDate: (blockId: string, dueDate: string) => void;
@@ -487,7 +487,7 @@ export function BlockRow({
               content={block.content}
               isReadOnly={isReadOnly}
               onChange={(content) => onChangeContent(block.id, content)}
-              onEnter={() => onAddAfter(block.id)}
+              onEnter={(type) => onAddAfter(block.id, type)}
               type={block.type}
             />
           ) : block.type === "toggle" ? (

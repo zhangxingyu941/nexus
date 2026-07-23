@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { BlockData, BlockType } from "../../model/block";
 
 interface DividerEditorProps {
@@ -19,74 +19,67 @@ interface ListBlockEditorProps {
   isReadOnly: boolean;
   type: "bulletedList" | "numberedList";
   onChange: (content: string) => void;
-  onEnter: () => void;
+  onEnter: (type: "bulletedList" | "numberedList") => void;
 }
 
 export function ListBlockEditor({ content, isReadOnly, type, onChange, onEnter }: ListBlockEditorProps) {
-  const items = content.split("\n").filter((line) => line.length > 0);
   const ordered = type === "numberedList";
+  const editorRef = useRef<HTMLTextAreaElement | null>(null);
+  const resizeEditor = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
 
-  const updateItem = (index: number, value: string) => {
-    const next = [...items];
-    next[index] = value;
-    onChange(next.join("\n"));
-  };
+    editor.style.height = "0px";
+    editor.style.height = `${editor.scrollHeight}px`;
+  }, []);
 
-  const addItem = () => {
-    onChange([...items, ""].join("\n"));
-  };
+  useLayoutEffect(() => {
+    resizeEditor();
+  }, [content, resizeEditor]);
+
+  useLayoutEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", resizeEditor);
+      return () => window.removeEventListener("resize", resizeEditor);
+    }
+
+    const observer = new ResizeObserver(resizeEditor);
+    observer.observe(editor);
+    return () => observer.disconnect();
+  }, [resizeEditor]);
+
+  const editor = (
+    <textarea
+      aria-label="列表项"
+      disabled={isReadOnly}
+      onChange={(event) => onChange(event.target.value)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          onEnter(type);
+        }
+      }}
+      ref={editorRef}
+      rows={1}
+      value={content}
+      wrap="soft"
+    />
+  );
 
   return (
     <div className={`list-block list-block-${type}`}>
       {ordered ? (
         <ol>
-          {items.map((item, index) => (
-            <li key={index}>
-              <input
-                aria-label={`列表项 ${index + 1}`}
-                disabled={isReadOnly}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    addItem();
-                  }
-                }}
-                onChange={(event) => updateItem(index, event.target.value)}
-                value={item}
-              />
-            </li>
-          ))}
+          <li>{editor}</li>
         </ol>
       ) : (
         <ul>
-          {items.map((item, index) => (
-            <li key={index}>
-              <input
-                aria-label={`列表项 ${index + 1}`}
-                disabled={isReadOnly}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    addItem();
-                  }
-                }}
-                onChange={(event) => updateItem(index, event.target.value)}
-                value={item}
-              />
-            </li>
-          ))}
+          <li>{editor}</li>
         </ul>
       )}
-      {!isReadOnly ? (
-        <button className="list-block-add" onClick={addItem} type="button">
-          + 添加项
-        </button>
-      ) : null}
-      {!isReadOnly ? (
-        <button className="list-block-enter" onClick={onEnter} type="button">
-          ⏎ 新增块
-        </button>
-      ) : null}
     </div>
   );
 }
