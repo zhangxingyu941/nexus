@@ -285,6 +285,40 @@ describe("authentication database migration", () => {
     expect(Number(migration.rows[0].count)).toBe(1);
   });
 
+  it("allows every editor block type that Markdown import can persist", async () => {
+    await migrateDatabase(pool);
+    await pool.query(
+      "INSERT INTO app_users (id, email, display_name, created_at) VALUES ($1, $2, $3, $4)",
+      ["markdown-owner", "markdown-owner@example.com", "Markdown owner", 1000],
+    );
+    await pool.query(
+      `INSERT INTO editor_workspaces (id, name, updated_at, created_at)
+       VALUES ($1, $2, $3, $4)`,
+      ["markdown-workspace", "Markdown workspace", 1000, 1000],
+    );
+    await pool.query(
+      `INSERT INTO workspace_members (workspace_id, user_id, role, created_at)
+       VALUES ($1, $2, 'owner', $3)`,
+      ["markdown-workspace", "markdown-owner", 1000],
+    );
+    await pool.query(
+      `INSERT INTO editor_documents
+         (workspace_id, id, public_id, created_by, access_mode, title, position, updated_at)
+       VALUES ($1, $2, $3, $4, 'workspace', $5, $6, $7)`,
+      ["markdown-workspace", "markdown-document", "markdown-public", "markdown-owner", "Markdown", 0, 1000],
+    );
+
+    for (const [index, type] of ["divider", "bulletedList", "numberedList", "toggle", "formula", "linkCard"].entries()) {
+      await pool.query(
+        `INSERT INTO editor_blocks
+           (workspace_id, id, document_id, type, heading_level, content, rich_text, data, checked, assignee, due_date,
+            status, parent_id, position, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, 1, '', NULL, NULL, false, '', '', 'unset', NULL, $5, 1000, 1000)`,
+        ["markdown-workspace", `markdown-block-${index}`, "markdown-document", type, index],
+      );
+    }
+  });
+
   it("enforces provider account uniqueness", async () => {
     await migrateDatabase(pool);
     await pool.query(

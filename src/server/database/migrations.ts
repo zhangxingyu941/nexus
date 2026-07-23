@@ -113,6 +113,7 @@ const DOCUMENT_SHARE_LINKS_MIGRATION_ID = "2026-07-21-document-share-links";
 const STRUCTURED_RICH_TEXT_MIGRATION_ID = "2026-07-22-structured-rich-text";
 const DOCUMENT_ATTACHMENT_RESERVATIONS_MIGRATION_ID =
   "2026-07-22-document-attachment-reservations";
+const EDITOR_BLOCK_TYPES_MIGRATION_ID = "2026-07-23-editor-block-types";
 const MIGRATION_LOCK_ID = "__migration_lock__";
 
 const WORKSPACE_SCOPED_CONTENT_SCHEMA = [
@@ -394,6 +395,17 @@ const STRUCTURED_RICH_TEXT_SCHEMA = [
 
 const DOCUMENT_ATTACHMENT_RESERVATIONS_SCHEMA = [
   "ALTER TABLE document_attachments ADD COLUMN cleanup_pending BOOLEAN NOT NULL DEFAULT FALSE",
+];
+
+const EDITOR_BLOCK_TYPES_SCHEMA = [
+  "ALTER TABLE editor_blocks DROP CONSTRAINT editor_blocks_type_check",
+  `ALTER TABLE editor_blocks
+   ADD CONSTRAINT editor_blocks_type_check
+   CHECK (type IN (
+     'paragraph', 'heading', 'todo', 'quote', 'code',
+     'image', 'file', 'table', 'kanban', 'divider',
+     'bulletedList', 'numberedList', 'toggle', 'formula', 'linkCard'
+   ))`,
 ];
 
 async function migrateDocumentPermissions(client: PoolClient) {
@@ -749,6 +761,22 @@ export async function migrateDatabase(pool: Pool) {
       await client.query(
         "INSERT INTO schema_migrations (id, applied_at) VALUES ($1, $2)",
         [DOCUMENT_ATTACHMENT_RESERVATIONS_MIGRATION_ID, Date.now()],
+      );
+    }
+
+    const editorBlockTypesResult = await client.query(
+      "SELECT id FROM schema_migrations WHERE id = $1",
+      [EDITOR_BLOCK_TYPES_MIGRATION_ID],
+    );
+
+    if (editorBlockTypesResult.rows.length === 0) {
+      for (const statement of EDITOR_BLOCK_TYPES_SCHEMA) {
+        await client.query(statement);
+      }
+
+      await client.query(
+        "INSERT INTO schema_migrations (id, applied_at) VALUES ($1, $2)",
+        [EDITOR_BLOCK_TYPES_MIGRATION_ID, Date.now()],
       );
     }
 
