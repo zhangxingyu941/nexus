@@ -1,32 +1,32 @@
-# Markdown Complete Support Design
+# Markdown 完整支持设计
 
-Status: approved
-Date: 2026-07-23
+状态：已确认
+日期：2026-07-23
 
-## Purpose
+## 目标
 
-Extend the existing document-level Markdown import and export flow so CommonMark and GFM content is either represented by a native Nexus block or preserved losslessly in a safe Markdown block. Add client-side Mermaid and mathematical rendering without executing raw HTML, SVG, iframe, scripts, or arbitrary third-party extensions.
+扩展现有的文档级 Markdown 导入和导出流程，使 CommonMark 与 GFM 内容要么转换为 Nexus 原生块，要么无损保留在安全的 Markdown 块中。增加客户端 Mermaid 和数学公式渲染，但绝不执行原始 HTML、SVG、iframe、脚本或任意第三方扩展。
 
-This design supersedes the raw-HTML rejection and unsupported-node rejection portions of `2026-07-22-m8-editor-operations-markdown-design-zh.md`. Existing limits, authorization, archive validation, and atomic import behavior remain in force.
+本设计取代 `2026-07-22-m8-editor-operations-markdown-design-zh.md` 中“原始 HTML 必须拒绝”和“不支持节点必须拒绝”的部分。既有的大小限制、授权、压缩包校验和原子导入行为继续生效。
 
-## Scope
+## 范围
 
-Supported authoring and round trips include:
+支持下列内容的编辑与往返转换：
 
-- CommonMark block and inline syntax.
-- GFM tables, task lists, strikethrough, autolinks, and footnotes.
-- Display and inline mathematics.
-- Mermaid fenced diagrams rendered in the client.
-- Local image and attachment archives using the existing asset flow.
-- Front matter, raw HTML, SVG, iframe, PlantUML, Vega, and unknown extension syntax preserved as source.
+- CommonMark 的块级和行内语法。
+- GFM 表格、任务列表、删除线、自动链接和脚注。
+- 块级与行内数学公式。
+- 在客户端渲染的 Mermaid 围栏图表。
+- 使用现有资源流程的本地图片和附件压缩包。
+- 保留为源码的 front matter、原始 HTML、SVG、iframe、PlantUML、Vega 和未知扩展语法。
 
-"Complete support" means no accepted Markdown source is silently dropped. It does not mean every third-party Markdown extension executes in the application. Mermaid is the only diagram extension rendered in this milestone. Other extensions remain editable and export unchanged.
+“完整支持”指任何被接受的 Markdown 源码都不会被静默丢弃，并不表示应用会执行所有第三方 Markdown 扩展。本里程碑仅渲染 Mermaid；其他扩展保持可编辑并在导出时原样写回。
 
-## Architecture
+## 架构
 
-### Native and source-preserving blocks
+### 原生块与源码保留块
 
-Keep the current mappings for headings, paragraphs, quotes, lists, todos, tables, code, dividers, images, attachments, and supported rich-text marks. Add a `markdown` block type with a `BlockData` variant:
+标题、段落、引用、列表、待办、表格、代码、分隔线、图片、附件和已支持的富文本标记继续沿用当前映射。新增 `markdown` 块类型及其 `BlockData` 变体：
 
 ```ts
 type MarkdownBlockFlavor = "footnote" | "frontmatter" | "mermaid" | "rawHtml" | "unknownExtension";
@@ -38,70 +38,70 @@ interface MarkdownBlockData {
 }
 ```
 
-`Block.content` stores the exact source slice for the Markdown block. `language` stores a fenced-code language when applicable; it is an empty string for non-code fragments. The source is not normalized before storage or export.
+Markdown 块的 `Block.content` 保存精确的源码切片。`language` 保存围栏代码块的语言；非代码片段使用空字符串。保存和导出都不得规范化这段源码。
 
-The importer examines every top-level mdast node and its descendants. If an entire node can map to the current native model, it does so. If it contains a construct that cannot map without changing meaning, the importer creates one Markdown block from that node's original source range instead. This protects inline footnote references, inline math, raw HTML, and unknown inline extensions from partial conversion.
+导入器检查每个顶层 mdast 节点及其后代。整个节点能够无损映射到现有原生模型时才转为原生块；若其中包含无法保持原意的结构，则根据该节点在原文中的范围创建一个 Markdown 块。这样行内脚注引用、行内公式、原始 HTML 和未知行内扩展不会发生部分转换和文本丢失。
 
-### Parsing and serialization
+### 解析与序列化
 
-The shared Markdown module remains the only place that translates between document data and Markdown. It uses Unified with the CommonMark parser, `remark-gfm`, and `remark-math`.
+共享 Markdown 模块仍是文档数据与 Markdown 之间唯一的转换位置，使用 Unified、CommonMark 解析器、`remark-gfm` 和 `remark-math`。
 
-Import uses mdast source positions to slice the original text for preserved blocks. The first top-level H1 continues to become the document title only when that H1 maps natively. A preserved H1-like fragment stays in the body so its source is never altered.
+导入使用 mdast 源码位置切取保留块的原文。仅当第一个顶层 H1 可原生映射时，才将它用作文档标题；被保留的 H1 片段仍留在正文中，以确保源文不被改写。
 
-Export serializes native blocks to deterministic Markdown. Markdown blocks append their stored source directly, with exactly one separating blank line when adjacent block output requires it. This makes preserved content survive import-export-import unchanged.
+导出将原生块序列化为确定性的 Markdown。Markdown 块直接写回存储的源码，仅在相邻块输出需要时补一个空行。这保证保留内容经过“导入-导出-导入”后保持不变。
 
-### Rendering
+### 渲染
 
-`MarkdownBlockEditor` has Preview and Source modes. Source mode is a normal editable textarea. Preview mode uses a client-only renderer:
+`MarkdownBlockEditor` 提供“预览”和“源码”模式。源码模式使用普通可编辑文本框；预览模式使用仅在客户端运行的渲染器：
 
-- Math uses `remark-math`, `rehype-katex`, and KaTeX CSS.
-- Mermaid dynamically loads Mermaid only in the browser and renders with `securityLevel: "strict"`.
-- Invalid Mermaid source reports an inline diagnostic and leaves the source visible.
-- Footnotes and unknown extensions render as readable source when no safe semantic renderer exists.
-- Raw HTML, SVG, iframe, and script are escaped and displayed as source. The renderer never enables `rehype-raw` or injects untrusted HTML.
+- 数学公式使用 `remark-math`、`rehype-katex` 和 KaTeX CSS。
+- Mermaid 仅在浏览器中动态加载，并以 `securityLevel: "strict"` 渲染。
+- Mermaid 源码无效时显示行内诊断，同时保留源码。
+- 无安全语义渲染器的脚注和未知扩展以可读源码显示。
+- 原始 HTML、SVG、iframe 和脚本以转义后的源码显示；渲染器不得启用 `rehype-raw`，也不得注入不可信 HTML。
 
-No renderer fetches remote content during import or preview. Existing local archive assets continue to use authorized file URLs; remote images remain safe links.
+导入和预览期间均不得抓取远程内容。现有本地压缩包资源继续使用已授权文件 URL；远程图片继续降级为安全链接。
 
-## User Experience
+## 用户体验
 
-Normal Markdown retains the existing block-level editor. Complex syntax appears as a dedicated Markdown block with Preview and Source controls. Switching modes does not change its source. The command menu includes Markdown and Mermaid block creation so users can author preserved and rendered content without importing a file.
+普通 Markdown 保持现有的块级编辑体验。复杂语法显示为独立 Markdown 块，并提供“预览 / 源码”切换。切换模式不得修改源码。命令菜单增加 Markdown 块和 Mermaid 块，使用户无需导入文件也能创建保留内容和可渲染图表。
 
-When an import falls back to a Markdown block, the preview reports a warning containing the source line and a reason such as `markdown_preserved`. This warning does not block importing. Syntax, size, authorization, archive, and unsafe-link failures continue to block atomically.
+导入退回到 Markdown 块时，预览会显示包含源码行号和原因（如 `markdown_preserved`）的警告。该警告不阻塞导入；语法、大小、授权、压缩包和不安全链接错误仍应原子性阻塞导入。
 
-## Security and Limits
+## 安全与限制
 
-- Mermaid is isolated to a client-side component and configured for strict security.
-- Raw HTML is neither parsed into DOM nor executed.
-- Markdown links use the existing safe-protocol validation.
-- The server reparses Markdown and does not trust browser conversion results.
-- Current source, block count, nesting, archive, and attachment limits remain unchanged.
-- A malformed Mermaid diagram is a non-blocking display diagnostic. It never prevents source editing or export.
+- Mermaid 隔离在客户端组件中，并使用严格安全配置。
+- 原始 HTML 不得解析进 DOM 或执行。
+- Markdown 链接复用现有的安全协议校验。
+- 服务端重新解析 Markdown，不能信任浏览器的转换结果。
+- 现有源码大小、块数量、嵌套深度、压缩包和附件限制保持不变。
+- Mermaid 图表语法错误是非阻塞展示诊断，不能阻止源码编辑或导出。
 
-## Compatibility
+## 兼容性
 
-Existing documents contain no `markdown` block. Old documents continue to load unchanged. The new block type must be accepted by local persistence, PostgreSQL validation, collaboration structure mapping, clipboard validation, templates, command definitions, shared read-only views, and Markdown export.
+既有文档不包含 `markdown` 块，必须继续正常加载。新块类型需要被本地持久化、PostgreSQL 校验、协作结构映射、剪贴板校验、模板、命令定义、共享只读视图和 Markdown 导出接受。
 
-An older client that does not recognize a new block type is not expected to render it. Deployment therefore requires server and web client rollout together. The database stores the existing discriminated block payload, so no data migration is required beyond allowing the new type and data variant in validation.
+不认识新块类型的旧客户端不要求渲染该块，因此部署时需同时发布服务端和 Web 客户端。数据库继续存储现有的判别式块载荷，只需扩展类型与数据变体的校验，无需数据迁移。
 
-## Tests
+## 测试
 
-Add focused tests for:
+增加以下聚焦测试：
 
-- CommonMark/GFM fixtures covering footnotes, strikethrough, autolinks, tables, task lists, nested content, and source ranges.
-- Display and inline math import, preview, and deterministic export.
-- Valid Mermaid preview, invalid Mermaid diagnostic, and source-mode editing.
-- Raw HTML, SVG, and iframe preservation without DOM execution.
-- PlantUML, Vega, front matter, and arbitrary fenced-language round trips.
-- Unknown inline extensions causing preservation of the complete source node rather than text loss.
-- Import-export-import semantic equality for native blocks and byte-preservation for Markdown blocks.
-- Current Markdown archive, authorization, collaboration initialization, clipboard, and shared-view behavior.
-- Browser-level import of a document that contains Mermaid, a footnote, math, and raw HTML, followed by a delayed collaboration connection.
+- 覆盖脚注、删除线、自动链接、表格、任务列表、嵌套内容和源码范围的 CommonMark/GFM 固件。
+- 块级和行内数学公式的导入、预览和确定性导出。
+- 有效 Mermaid 的预览、无效 Mermaid 的诊断和源码模式编辑。
+- 原始 HTML、SVG 和 iframe 的保留，确保不会执行 DOM 内容。
+- PlantUML、Vega、front matter 和任意围栏语言的往返转换。
+- 未知行内扩展会保留完整源码节点，而不是丢失部分文本。
+- 原生块的“导入-导出-导入”语义一致性，以及 Markdown 块的字节级保留。
+- 既有 Markdown 压缩包、授权、协作初始化、剪贴板和共享视图行为。
+- 在浏览器中导入含 Mermaid、脚注、公式和原始 HTML 的文档后，再连接延迟到达的协作状态。
 
-## Acceptance Criteria
+## 验收标准
 
-1. Any CommonMark/GFM input either maps to a native block or is retained in a Markdown block; it is never silently omitted.
-2. Mermaid fenced blocks render in Preview mode, retain editable source, and export as their original fence.
-3. Mathematical Markdown renders safely and exports without changing its intended notation.
-4. Raw HTML, SVG, iframe, and scripts never execute in the application but export unchanged.
-5. An invalid diagram shows a local diagnostic without losing content or blocking export.
-6. Markdown import remains atomic for blocking errors, and the delayed collaboration initialization cannot replace imported content.
+1. 任意 CommonMark/GFM 输入要么映射为原生块，要么保留在 Markdown 块中，绝不静默省略。
+2. Mermaid 围栏块能在预览模式渲染、保留可编辑源码，并以原始围栏形式导出。
+3. 数学 Markdown 安全渲染，导出时不改变其预期记法。
+4. 原始 HTML、SVG、iframe 和脚本在应用中绝不执行，但导出时保持原样。
+5. 无效图表显示局部诊断，不丢失内容，也不阻塞导出。
+6. Markdown 导入在阻塞错误下仍是原子的，延迟协作初始化不得替换已导入内容。
