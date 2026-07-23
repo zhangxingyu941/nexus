@@ -124,6 +124,38 @@ describe("markdown document conversion", () => {
     expect(result.resources).toEqual([{ alt: "架构图", url: "https://example.com/diagram.png" }]);
   });
 
+  it("maps standalone archive assets to attachment blocks", () => {
+    const result = parseMarkdownDocument(
+      "![Diagram](assets/diagram.png)\n\n[Notes](assets/notes.txt)",
+      {
+        assets: new Map([
+          ["assets/diagram.png", {
+            key: "workspace-1/diagram.png",
+            mimeType: "image/png",
+            name: "diagram.png",
+            path: "assets/diagram.png",
+            size: 12,
+          }],
+          ["assets/notes.txt", {
+            key: "workspace-1/notes.txt",
+            mimeType: "text/plain",
+            name: "notes.txt",
+            path: "assets/notes.txt",
+            size: 5,
+          }],
+        ]),
+        filename: "archive.zip",
+        now: 10,
+      },
+    );
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.document?.blocks).toMatchObject([
+      { data: { key: "workspace-1/diagram.png", kind: "image" }, type: "image" },
+      { data: { key: "workspace-1/notes.txt", kind: "file" }, type: "file" },
+    ]);
+  });
+
   it("serializes supported text blocks deterministically", () => {
     const document: EditorDocument = {
       blocks: [

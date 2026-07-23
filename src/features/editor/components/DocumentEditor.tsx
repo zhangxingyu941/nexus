@@ -27,6 +27,8 @@ import type { CommentFilter } from "./document/documentEditorTypes";
 import { HistoryPanel } from "./document/HistoryPanel";
 import { MembersPopover } from "./document/MembersPopover";
 import { SharePopover } from "./document/SharePopover";
+import { MarkdownTransferDialog } from "./MarkdownTransferDialog";
+import { MarkdownTransferClientError, createMarkdownTransferRepository, type MarkdownTransferTarget } from "../persistence/markdownTransferRepository";
 
 interface DocumentEditorProps {
   activities: WorkspaceActivity[];
@@ -39,6 +41,7 @@ interface DocumentEditorProps {
   focusBlockId: string | null;
   inviteCount: number;
   isWorkspaceNavigationOpen: boolean;
+  markdownTarget?: MarkdownTransferTarget;
   isReadOnly: boolean;
   onSignOut?: () => void;
   onOpenInvites?: () => void;
@@ -63,6 +66,7 @@ interface DocumentEditorProps {
   onDelete: (blockId: string) => void;
   onFocusedBlock: () => void;
   onIndent: (blockId: string) => void;
+  onMarkdownImported?: (document: EditorDocument) => void;
   onMove: (blockId: string, direction: MoveDirection) => void;
   onOutdent: (blockId: string) => void;
   onReorder?: (rootBlockIds: string[], targetBlockId: string, position: "before" | "after") => boolean | void;
@@ -83,6 +87,7 @@ export function DocumentEditor({
   focusBlockId,
   inviteCount,
   isWorkspaceNavigationOpen,
+  markdownTarget = "local",
   isReadOnly,
   onSignOut,
   onOpenInvites,
@@ -107,6 +112,7 @@ export function DocumentEditor({
   onDelete,
   onFocusedBlock,
   onIndent,
+  onMarkdownImported,
   onMove,
   onOutdent,
   onReorder,
@@ -122,6 +128,8 @@ export function DocumentEditor({
   const [isMembersOpen, setIsMembersOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [isShortcutOpen, setIsShortcutOpen] = useState(false);
+  const [isMarkdownImportOpen, setIsMarkdownImportOpen] = useState(false);
+  const [markdownTransferError, setMarkdownTransferError] = useState("");
   const [commentFilter, setCommentFilter] = useState<CommentFilter>("open");
   const titleInputRef = useRef<HTMLTextAreaElement | null>(null);
   const documentScrollRef = useRef<HTMLDivElement | null>(null);
@@ -143,6 +151,25 @@ export function DocumentEditor({
   const visibleBlockComments =
     commentFilter === "open" ? blockComments.filter((comment) => !comment.resolved) : blockComments;
   const onlineCollaborators = collaborators.filter((collaborator) => collaborator.status !== "away");
+  const markdownTransferRepository = useMemo(
+    () => createMarkdownTransferRepository(markdownTarget),
+    [markdownTarget],
+  );
+
+  const exportMarkdown = async () => {
+    setMarkdownTransferError("");
+    try {
+      const exported = await markdownTransferRepository.exportDocument(workspaceId, documentPublicId, document);
+      const url = URL.createObjectURL(exported.blob);
+      const anchor = globalThis.document.createElement("a");
+      anchor.href = url;
+      anchor.download = exported.filename;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setMarkdownTransferError(error instanceof MarkdownTransferClientError ? error.message : "Markdown export failed");
+    }
+  };
 
   useEffect(() => {
     const titleInput = titleInputRef.current;
@@ -244,6 +271,13 @@ export function DocumentEditor({
         isShortcutsOpen={isShortcutOpen}
         isWorkspaceNavigationOpen={isWorkspaceNavigationOpen}
         inviteCount={inviteCount}
+        markdownExportEnabled={markdownTarget === "local" || Boolean(documentPublicId)}
+        markdownImportEnabled={!isReadOnly}
+        onExportMarkdown={() => void exportMarkdown()}
+        onImportMarkdown={() => {
+          setMarkdownTransferError("");
+          setIsMarkdownImportOpen(true);
+        }}
         onOpenInvites={onOpenInvites}
         onSignOut={onSignOut}
         openCommentCount={openCommentCount}
@@ -372,6 +406,18 @@ export function DocumentEditor({
           workspaceMembers={workspaceMembers}
         />
       ) : null}
+
+      <MarkdownTransferDialog
+        onImported={(imported) => {
+          onMarkdownImported?.(imported);
+          setIsMarkdownImportOpen(false);
+        }}
+        onOpenChange={setIsMarkdownImportOpen}
+        open={isMarkdownImportOpen}
+        target={markdownTarget}
+        workspaceId={workspaceId}
+      />
+      {markdownTransferError ? <p className="fixed bottom-4 right-4 z-50 text-sm text-destructive" role="alert">{markdownTransferError}</p> : null}
 
       <EditorShortcutCenter isOpen={isShortcutOpen} onOpenChange={setIsShortcutOpen} />
 

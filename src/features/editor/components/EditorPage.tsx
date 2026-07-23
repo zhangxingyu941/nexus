@@ -69,6 +69,7 @@ import type {
   EditorSessionUser,
 } from "../session/sessionTypes";
 import type { WorkspaceSaveStatus } from "../session/useWorkspaceSession";
+import type { MarkdownTransferTarget } from "../persistence/markdownTransferRepository";
 import { DocumentEditor } from "./DocumentEditor";
 import type { BlockSelectionToolbarAction } from "./BlockSelectionToolbar";
 import { useBlockClipboard } from "./useBlockClipboard";
@@ -106,10 +107,12 @@ function nextTimestamp(document: EditorDocument) {
 interface EditorPageProps {
   inviteCount?: number;
   membersEnabled: boolean;
+  markdownTarget?: MarkdownTransferTarget;
   onCreateDocument?: (input?: CreateWorkspaceDocumentInput) => Promise<void> | void;
   onDeleteDocument?: (documentId: string) => Promise<void> | void;
   onDuplicateDocument?: (documentId: string) => Promise<void> | void;
   onManageWorkspaces: () => void;
+  onMarkdownImported?: () => Promise<void> | void;
   onOpenInvites?: () => void;
   onSignOut?: () => void;
   onWorkspaceChange: (updater: (current: EditorWorkspace) => EditorWorkspace) => void;
@@ -125,10 +128,12 @@ interface EditorPageProps {
 export function EditorPage({
   inviteCount = 0,
   membersEnabled,
+  markdownTarget = "local",
   onCreateDocument,
   onDeleteDocument,
   onDuplicateDocument,
   onManageWorkspaces,
+  onMarkdownImported,
   onOpenInvites,
   onSignOut,
   onWorkspaceChange,
@@ -778,6 +783,7 @@ export function EditorPage({
         inviteCount={inviteCount}
         isWorkspaceNavigationOpen={isSidebarOpen}
         isReadOnly={!canWriteActiveDocument}
+        markdownTarget={markdownTarget}
         onOpenInvites={onOpenInvites}
         onSignOut={onSignOut}
         onAddAfter={handleAddAfter}
@@ -795,6 +801,18 @@ export function EditorPage({
         onChangeType={handleChangeType}
         onFocusedBlock={() => setFocusBlockId(null)}
         onIndent={handleIndent}
+        onMarkdownImported={(imported) => {
+          if (markdownTarget === "remote") {
+            void onMarkdownImported?.();
+            return;
+          }
+          onWorkspaceChange((current) => ({
+            ...current,
+            activeDocumentId: imported.id,
+            documents: [...current.documents, imported],
+            updatedAt: Math.max(current.updatedAt, imported.updatedAt),
+          }));
+        }}
         onDelete={handleDelete}
         onMove={handleMove}
         onOutdent={handleOutdent}

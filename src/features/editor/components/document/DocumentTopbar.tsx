@@ -1,4 +1,4 @@
-import { History, Keyboard, LogOut, Mail, Menu, MessageSquare, PanelRight, Share2 } from "lucide-react";
+import { FileDown, FileUp, History, Keyboard, LogOut, Mail, Menu, MessageSquare, PanelRight, Share2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -18,6 +18,10 @@ interface DocumentTopbarProps {
   isShortcutsOpen: boolean;
   isWorkspaceNavigationOpen: boolean;
   inviteCount: number;
+  markdownExportEnabled?: boolean;
+  markdownImportEnabled?: boolean;
+  onExportMarkdown?: () => void;
+  onImportMarkdown?: () => void;
   onOpenInvites?: () => void;
   onSignOut?: () => void;
   openCommentCount: number;
@@ -46,6 +50,10 @@ export function DocumentTopbar({
   isShortcutsOpen,
   isWorkspaceNavigationOpen,
   inviteCount,
+  markdownExportEnabled = false,
+  markdownImportEnabled = false,
+  onExportMarkdown,
+  onImportMarkdown,
   onOpenInvites,
   onSignOut,
   openCommentCount,
@@ -214,6 +222,28 @@ export function DocumentTopbar({
                 </Button>
               </TooltipTrigger>
               <TooltipContent>退出当前身份</TooltipContent>
+            </Tooltip>
+          ) : null}
+
+          {markdownImportEnabled && onImportMarkdown ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button aria-label="Import Markdown" className="size-8" onClick={onImportMarkdown} size="icon" type="button" variant="ghost">
+                  <FileUp aria-hidden="true" className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Import Markdown</TooltipContent>
+            </Tooltip>
+          ) : null}
+
+          {markdownExportEnabled && onExportMarkdown ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button aria-label="Export Markdown" className="size-8" onClick={onExportMarkdown} size="icon" type="button" variant="ghost">
+                  <FileDown aria-hidden="true" className="size-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Export Markdown</TooltipContent>
             </Tooltip>
           ) : null}
 

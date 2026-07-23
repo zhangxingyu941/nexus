@@ -31,6 +31,14 @@ export interface MarkdownResourceReference {
   url: string;
 }
 
+export interface MarkdownImportAsset {
+  key: string;
+  mimeType: string;
+  name: string;
+  path: string;
+  size: number;
+}
+
 export interface MarkdownExportResource {
   mimeType: string;
   name: string;
@@ -39,6 +47,7 @@ export interface MarkdownExportResource {
 }
 
 export interface MarkdownParseOptions {
+  assets?: ReadonlyMap<string, MarkdownImportAsset>;
   documentId?: string;
   filename: string;
   nextId?: () => string;
@@ -90,7 +99,7 @@ export function parseMarkdownDocument(source: string, options: MarkdownParseOpti
   const root = processor.parse(source) as unknown as MarkdownRoot;
   const diagnostics: MarkdownDiagnostic[] = [];
   const resources: MarkdownResourceReference[] = [];
-  collectSafetyDiagnostics(root, diagnostics, resources);
+  collectSafetyDiagnostics(root, diagnostics, resources, options.assets);
 
   if (diagnostics.some((diagnostic) => diagnostic.severity === "error")) {
     return { diagnostics, document: null, resources };
@@ -108,7 +117,7 @@ export function parseMarkdownDocument(source: string, options: MarkdownParseOpti
       continue;
     }
 
-    blocks.push(...blocksFromNode(node, nextId, options.now, diagnostics));
+    blocks.push(...blocksFromNode(node, nextId, options.now, diagnostics, options.assets));
   }
 
   if (blocks.length > MAX_MARKDOWN_BLOCKS) {
@@ -401,15 +410,20 @@ function collectSafetyDiagnostics(
   node: MarkdownNode,
   diagnostics: MarkdownDiagnostic[],
   resources: MarkdownResourceReference[],
+  assets?: ReadonlyMap<string, MarkdownImportAsset>,
 ) {
   if (node.type === "html") {
     diagnostics.push(createDiagnostic("markdown_html_unsupported", "不支持原始 HTML", node));
   }
-  if (node.type === "link" && (!node.url || !normalizeRichTextLink(node.url))) {
-    diagnostics.push(createDiagnostic("markdown_link_invalid", "Markdown 链接不安全", node));
+  if (node.type === "link") {
+    if (!node.url || (!normalizeRichTextLink(node.url) && !assets?.has(node.url))) {
+      diagnostics.push(createDiagnostic("markdown_link_invalid", "Markdown 链接不安全", node));
+    }
   }
   if (node.type === "image") {
-    if (!node.url || !normalizeRichTextLink(node.url)) {
+    if (node.url && assets?.has(node.url)) {
+      // Archive assets were validated before Markdown parsing and are not remote URLs.
+    } else if (!node.url || !normalizeRichTextLink(node.url)) {
       diagnostics.push(createDiagnostic("markdown_link_invalid", "Markdown 图片链接不安全", node));
     } else {
       diagnostics.push(createDiagnostic("markdown_remote_image_downgraded", "远程图片已降级为安全链接", node, "warning"));
@@ -418,7 +432,7 @@ function collectSafetyDiagnostics(
   }
 
   for (const child of node.children ?? []) {
-    collectSafetyDiagnostics(child, diagnostics, resources);
+    collectSafetyDiagnostics(child, diagnostics, resources, assets);
   }
 }
 
@@ -427,14 +441,17 @@ function blocksFromNode(
   nextId: () => string,
   now: number,
   diagnostics: MarkdownDiagnostic[],
+  assets?: ReadonlyMap<string, MarkdownImportAsset>,
 ): Block[] {
   if (node.type === "paragraph") {
-    return [createBlock("paragraph", nodeText(node), nextId(), now, { richText: richTextFromNode(node) })];
+    const attachment = attachmentFromParagraph(node, assets);
+    if (attachment) return [createAttachmentBlock(attachment, nextId(), now)];
+    return [createBlock("paragraph", nodeText(node), nextId(), now, { richText: richTextFromNode(node, assets) })];
   }
   if (node.type === "heading" && isHeadingLevel(node.depth)) {
     return [createBlock("heading", nodeText(node), nextId(), now, {
       headingLevel: node.depth,
-      richText: richTextFromNode(node),
+      richText: richTextFromNode(node, assets),
     })];
   }
   if (node.type === "blockquote") {
@@ -443,11 +460,11 @@ function blocksFromNode(
         diagnostics.push(createDiagnostic("markdown_node_unsupported", `不支持引用中的 Markdown 节点：${child.type}`, child));
         return [];
       }
-      return [createBlock("quote", nodeText(child), nextId(), now, { richText: richTextFromNode(child) })];
+      return [createBlock("quote", nodeText(child), nextId(), now, { richText: richTextFromNode(child, assets) })];
     });
   }
   if (node.type === "list") {
-    return blocksFromList(node, null, nextId, now, diagnostics, 1);
+    return blocksFromList(node, null, nextId, now, diagnostics, 1, assets);
   }
   if (node.type === "table") {
     return [blockFromTable(node, nextId(), now, diagnostics)];
@@ -473,6 +490,7 @@ function blocksFromList(
   now: number,
   diagnostics: MarkdownDiagnostic[],
   depth: number,
+  assets?: ReadonlyMap<string, MarkdownImportAsset>,
 ): Block[] {
   if (depth > MAX_MARKDOWN_DEPTH) {
     diagnostics.push(createDiagnostic("markdown_depth_limit", "Markdown 列表层级不能超过 10 层", node));
@@ -498,7 +516,7 @@ function blocksFromList(
     const block = createBlock(type, nodeText(contentNode), nextId(), now, {
       checked: item.checked === true,
       parentId,
-      richText: type === "todo" ? richTextFromNode(contentNode) : null,
+      richText: type === "todo" ? richTextFromNode(contentNode, assets) : null,
     });
     blocks.push(block);
 
@@ -508,12 +526,41 @@ function blocksFromList(
         diagnostics.push(createDiagnostic("markdown_node_unsupported", `不支持列表项中的 Markdown 节点：${child.type}`, child));
         continue;
       }
-      const nested = blocksFromList(child, block.id, nextId, now, diagnostics, depth + 1);
+      const nested = blocksFromList(child, block.id, nextId, now, diagnostics, depth + 1, assets);
       block.children.push(...nested.filter((nestedBlock) => nestedBlock.parentId === block.id).map((nestedBlock) => nestedBlock.id));
       blocks.push(...nested);
     }
   }
   return blocks;
+}
+
+function attachmentFromParagraph(
+  node: MarkdownNode,
+  assets?: ReadonlyMap<string, MarkdownImportAsset>,
+) {
+  const child = node.children?.[0];
+  if (!child || node.children?.length !== 1 || !child.url || !assets) return null;
+  const asset = assets.get(child.url);
+  if (!asset || (child.type !== "image" && child.type !== "link")) return null;
+  return { asset, kind: child.type === "image" ? "image" as const : "file" as const };
+}
+
+function createAttachmentBlock(
+  attachment: { asset: MarkdownImportAsset; kind: "file" | "image" },
+  id: string,
+  now: number,
+) {
+  const { asset, kind } = attachment;
+  return createBlock(kind, "", id, now, {
+    data: {
+      key: asset.key,
+      kind,
+      mimeType: asset.mimeType,
+      name: asset.name,
+      size: asset.size,
+      url: `/api/files/${asset.key.split("/").map(encodeURIComponent).join("/")}`,
+    },
+  });
 }
 
 function blockFromTable(node: MarkdownNode, id: string, now: number, diagnostics: MarkdownDiagnostic[]): Block {
@@ -559,16 +606,24 @@ function createBlock(
   };
 }
 
-function richTextFromNode(node: MarkdownNode): RichTextDocument {
+function richTextFromNode(
+  node: MarkdownNode,
+  assets?: ReadonlyMap<string, MarkdownImportAsset>,
+): RichTextDocument {
   const content: RichTextInlineNode[] = [];
-  appendInlineNodes(node.children ?? [], [], content);
+  appendInlineNodes(node.children ?? [], [], content, assets);
   return normalizeRichText({
     content: [{ ...(content.length > 0 ? { content } : {}), type: "paragraph" }],
     type: "doc",
   });
 }
 
-function appendInlineNodes(nodes: MarkdownNode[], marks: RichTextMark[], output: RichTextInlineNode[]) {
+function appendInlineNodes(
+  nodes: MarkdownNode[],
+  marks: RichTextMark[],
+  output: RichTextInlineNode[],
+  assets?: ReadonlyMap<string, MarkdownImportAsset>,
+) {
   for (const node of nodes) {
     if (node.type === "text" && typeof node.value === "string") {
       output.push({ ...(marks.length > 0 ? { marks } : {}), text: node.value, type: "text" });
@@ -583,20 +638,24 @@ function appendInlineNodes(nodes: MarkdownNode[], marks: RichTextMark[], output:
       continue;
     }
     if (node.type === "strong") {
-      appendInlineNodes(node.children ?? [], [...marks, { type: "bold" }], output);
+      appendInlineNodes(node.children ?? [], [...marks, { type: "bold" }], output, assets);
       continue;
     }
     if (node.type === "emphasis") {
-      appendInlineNodes(node.children ?? [], [...marks, { type: "italic" }], output);
+      appendInlineNodes(node.children ?? [], [...marks, { type: "italic" }], output, assets);
       continue;
     }
     if (node.type === "delete") {
-      appendInlineNodes(node.children ?? [], [...marks, { type: "strike" }], output);
+      appendInlineNodes(node.children ?? [], [...marks, { type: "strike" }], output, assets);
       continue;
     }
     if (node.type === "link" && node.url) {
       const href = normalizeRichTextLink(node.url);
-      if (href) appendInlineNodes(node.children ?? [], [...marks, { attrs: { href }, type: "link" }], output);
+      if (href) {
+        appendInlineNodes(node.children ?? [], [...marks, { attrs: { href }, type: "link" }], output, assets);
+      } else if (assets?.has(node.url)) {
+        appendInlineNodes(node.children ?? [], marks, output, assets);
+      }
       continue;
     }
     if (node.type === "image" && node.url) {
@@ -605,7 +664,7 @@ function appendInlineNodes(nodes: MarkdownNode[], marks: RichTextMark[], output:
       if (href) output.push({ marks: [...marks, { attrs: { href }, type: "link" }], text: label, type: "text" });
       continue;
     }
-    appendInlineNodes(node.children ?? [], marks, output);
+    appendInlineNodes(node.children ?? [], marks, output, assets);
   }
 }
 
