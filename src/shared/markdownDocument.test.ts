@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { parseMarkdownDocument } from "./markdownDocument";
+import { createRichTextFromPlainText } from "./richText";
+import type { EditorDocument } from "../features/editor/model/block";
+import { parseMarkdownDocument, serializeDocumentToMarkdown } from "./markdownDocument";
 
 describe("markdown document conversion", () => {
   it("uses the first top-level h1 as title and does not emit it as a body block", () => {
@@ -121,9 +123,56 @@ describe("markdown document conversion", () => {
     ]));
     expect(result.resources).toEqual([{ alt: "架构图", url: "https://example.com/diagram.png" }]);
   });
+
+  it("serializes supported text blocks deterministically", () => {
+    const document: EditorDocument = {
+      blocks: [
+        markdownBlock("paragraph", "正文"),
+        markdownBlock("heading", "二级标题", { headingLevel: 2 }),
+        markdownBlock("quote", "引用"),
+        markdownBlock("todo", "完成", { checked: true }),
+        markdownBlock("code", "const value = 1;"),
+        markdownBlock("divider", ""),
+      ],
+      id: "document-1",
+      title: "设计说明",
+      updatedAt: 10,
+    };
+
+    const first = serializeDocumentToMarkdown(document);
+    const second = serializeDocumentToMarkdown(document);
+
+    expect(second).toEqual(first);
+    expect(first).toMatchObject({
+      diagnostics: [],
+      markdown: "# 设计说明\n\n正文\n\n## 二级标题\n\n> 引用\n\n- [x] 完成\n\n```\nconst value = 1;\n```\n\n---\n",
+      resources: [],
+    });
+  });
 });
 
 function createIds() {
   let index = 0;
   return () => `block-${index++}`;
+}
+
+function markdownBlock(type: EditorDocument["blocks"][number]["type"], content: string, overrides: Partial<EditorDocument["blocks"][number]> = {}) {
+  return {
+    assignee: "",
+    checked: false,
+    children: [],
+    comments: [],
+    content,
+    createdAt: 10,
+    data: null,
+    dueDate: "",
+    headingLevel: 1 as const,
+    id: `block-${type}`,
+    parentId: null,
+    richText: ["paragraph", "heading", "quote", "todo"].includes(type) ? createRichTextFromPlainText(content) : null,
+    status: "unset" as const,
+    type,
+    updatedAt: 10,
+    ...overrides,
+  };
 }

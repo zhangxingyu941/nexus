@@ -124,6 +124,42 @@ export function parseMarkdownDocument(source: string, options: MarkdownParseOpti
   };
 }
 
+export function serializeDocumentToMarkdown(document: EditorDocument): MarkdownSerializeResult {
+  const diagnostics: MarkdownDiagnostic[] = [];
+  const sections = [`# ${document.title || "未命名文档"}`];
+
+  for (const block of document.blocks) {
+    const markdown = serializeBlock(block, diagnostics);
+    if (markdown !== null) {
+      sections.push(markdown);
+    }
+  }
+
+  return {
+    diagnostics,
+    markdown: `${sections.join("\n\n")}\n`,
+    resources: [],
+  };
+}
+
+function serializeBlock(block: Block, diagnostics: MarkdownDiagnostic[]): string | null {
+  if (block.type === "paragraph") return block.content;
+  if (block.type === "heading") return `${"#".repeat(block.headingLevel)} ${block.content}`;
+  if (block.type === "quote") return `> ${block.content}`;
+  if (block.type === "todo") return `- [${block.checked ? "x" : " "}] ${block.content}`;
+  if (block.type === "code") return `\`\`\`\n${block.content}\n\`\`\``;
+  if (block.type === "divider") return "---";
+
+  diagnostics.push({
+    code: "markdown_block_downgraded",
+    column: 1,
+    line: 1,
+    message: `尚未支持导出块类型：${block.type}`,
+    severity: "warning",
+  });
+  return null;
+}
+
 function collectSafetyDiagnostics(
   node: MarkdownNode,
   diagnostics: MarkdownDiagnostic[],
