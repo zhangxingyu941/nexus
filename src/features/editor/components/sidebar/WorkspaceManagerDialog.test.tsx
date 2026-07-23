@@ -162,6 +162,7 @@ describe("WorkspaceManagerDialog", () => {
 
   it("opens the global trash view and restores through the server transition", async () => {
     const user = userEvent.setup();
+    vi.spyOn(Date, "now").mockReturnValue(Date.UTC(2026, 6, 17));
     const session = {
       runServerTransition: vi.fn(async (operation: () => Promise<unknown>) => operation()),
     };

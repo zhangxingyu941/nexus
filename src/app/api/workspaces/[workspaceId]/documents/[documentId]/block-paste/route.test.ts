@@ -5,7 +5,7 @@ import {
   BlockClipboardPasteCleanupError,
 } from "@/server/blockClipboardPasteService";
 import { DocumentNotFoundError } from "@/server/documentAuthorization";
-import { createBlockClipboardPasteRouteHandlers } from "./route";
+import { createBlockClipboardPasteRouteHandlers } from "./blockClipboardPasteRouteHandlers";
 
 describe("block clipboard paste route", () => {
   it("returns materialized blocks after accepting a same-workspace payload", async () => {
