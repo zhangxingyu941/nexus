@@ -1,9 +1,12 @@
-import type { CSSProperties, DragEvent as ReactDragEvent, FocusEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import type { CSSProperties, FocusEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { searchEditorCommands } from "../commands/editorCommands";
 import type { EditorCommandDefinition } from "../commands/editorCommands";
 import type { CollaborationDocument } from "../collaboration/collaborationTypes";
 import type { Block, BlockData, BlockStatus, BlockType, HeadingLevel, MoveDirection } from "../model/block";
+import type { BlockSelectionMode } from "../model/blockSelection";
 import { createRichTextFromPlainText, type RichTextUpdate } from "@/shared/richText";
 import type { EditorSessionUser } from "../session/sessionTypes";
 import { getCursorColor } from "../collaboration/remoteCursorColors";
@@ -39,9 +42,12 @@ interface BlockRowProps {
   depth: number;
   documentId: string;
   focusRequest: boolean;
+  isDraggable?: boolean;
   isFirst: boolean;
   isLast: boolean;
   isReadOnly: boolean;
+  isSelected?: boolean;
+  isSelectionActive?: boolean;
   onAddAfter: (blockId: string) => void;
   onAddBlockComment: (blockId: string, body: string) => void;
   onChangeBlockAssignee: (blockId: string, assignee: string) => void;
@@ -57,8 +63,8 @@ interface BlockRowProps {
   onMove: (blockId: string, direction: MoveDirection) => void;
   onOutdent: (blockId: string) => void;
   onResolveBlockComment: (blockId: string, commentId: string) => void;
+  onSelectBlock?: (blockId: string, mode: BlockSelectionMode) => void;
   onToggleTodo: (blockId: string) => void;
-  onReorder?: (fromId: string, toId: string, position: "before" | "after") => void;
   sessionUser: EditorSessionUser | null;
   showBlockActions: boolean;
   workspaceId: string;
@@ -74,9 +80,12 @@ export function BlockRow({
   depth,
   documentId,
   focusRequest,
+  isDraggable = false,
   isFirst,
   isLast,
   isReadOnly,
+  isSelected = false,
+  isSelectionActive = false,
   onAddAfter,
   onAddBlockComment,
   onChangeBlockAssignee,
@@ -92,8 +101,8 @@ export function BlockRow({
   onMove,
   onOutdent,
   onResolveBlockComment,
+  onSelectBlock,
   onToggleTodo,
-  onReorder,
   sessionUser,
   showBlockActions,
   workspaceId,
@@ -109,9 +118,17 @@ export function BlockRow({
   const [mentionQuery, setMentionQuery] = useState("");
   const [mentionTab, setMentionTab] = useState<MentionTab>("all");
   const [activeMentionIndex, setActiveMentionIndex] = useState(0);
-  const [dragOverPosition, setDragOverPosition] = useState<"before" | "after" | null>(null);
   const mentionApiRef = useRef<{ insertMention: (item: MentionItem) => void } | null>(null);
   const rowRef = useRef<HTMLElement | null>(null);
+  const {
+    attributes: dragAttributes,
+    isDragging,
+    listeners: dragListeners,
+    setActivatorNodeRef,
+    setNodeRef,
+    transform,
+    transition,
+  } = useSortable({ disabled: !isDraggable, id: block.id });
   const slashCommands = useMemo(() => searchEditorCommands(slashQuery), [slashQuery]);
   const searchMentionItems = useMentionSearchContext();
   const mentionItems = useMemo(() => searchMentionItems(mentionQuery), [searchMentionItems, mentionQuery]);
@@ -349,81 +366,61 @@ export function BlockRow({
     setCommentDraft("");
   };
 
-  const handleDragStart = (event: ReactDragEvent) => {
-    if (!onReorder) {
-      return;
-    }
-    event.dataTransfer.setData("application/x-block-id", block.id);
-    event.dataTransfer.effectAllowed = "move";
-  };
-
-  const handleDragOver = (event: ReactDragEvent) => {
-    if (!onReorder) {
-      return;
-    }
-    event.preventDefault();
-    const rect = rowRef.current?.getBoundingClientRect();
-    if (!rect) {
-      return;
-    }
-    const offset = event.clientY - rect.top;
-    setDragOverPosition(offset < rect.height / 2 ? "before" : "after");
-  };
-
-  const handleDragLeave = () => {
-    setDragOverPosition(null);
-  };
-
-  const handleDrop = (event: ReactDragEvent) => {
-    if (!onReorder) {
-      return;
-    }
-    const fromId = event.dataTransfer.getData("application/x-block-id");
-    if (fromId && dragOverPosition) {
-      onReorder(fromId, block.id, dragOverPosition);
-    }
-    setDragOverPosition(null);
-  };
-
   return (
     <article
-      className={`block-row block-row-${block.type}${openMenu ? " block-row-menu-open" : ""}${dragOverPosition ? ` drag-over drag-over-${dragOverPosition}` : ""}`}
+      className={`block-row block-row-${block.type}${openMenu ? " block-row-menu-open" : ""}${isDragging ? " block-row-dragging" : ""}`}
       data-active={isActive || openMenu !== null}
       data-block-depth={depth}
-      data-draggable={onReorder ? "true" : "false"}
+      data-draggable={isDraggable ? "true" : "false"}
+      data-dragging={isDragging ? "true" : "false"}
       data-heading-level={block.headingLevel}
+      data-selected={isSelected ? "true" : "false"}
       data-testid={`block-row-${block.id}`}
-      draggable={onReorder ? true : undefined}
+      aria-selected={isSelected}
       onBlurCapture={handleBlur}
-      onDragLeave={handleDragLeave}
-      onDragOver={handleDragOver}
-      onDragStart={handleDragStart}
-      onDrop={handleDrop}
-      onFocusCapture={() => setIsActive(true)}
+      onFocusCapture={(event) => {
+        setIsActive(true);
+        const target = event.target as HTMLElement;
+        if (target.isContentEditable || target.matches("input, textarea, [contenteditable='true']")) {
+          onFocused();
+        }
+      }}
       onKeyDownCapture={(event) => {
         handleSlashMenuKeyDown(event);
         handleMentionMenuKeyDown(event);
       }}
-      ref={rowRef}
-      style={{ "--block-depth": Math.min(depth, 6) } as CSSProperties}
+      ref={(element) => {
+        rowRef.current = element;
+        setNodeRef(element);
+      }}
+      style={{
+        "--block-depth": Math.min(depth, 6),
+        transform: CSS.Transform.toString(transform),
+        transition,
+      } as CSSProperties}
     >
-      {!isReadOnly ? (
-        <BlockControls
-          blockId={block.id}
-          canIndent={canIndent}
-          canOutdent={canOutdent}
-          isFirst={isFirst}
-          isLast={isLast}
-          isMenuOpen={openMenu === "block"}
-          onAddAfter={onAddAfter}
-          onChangeType={handleChangeType}
-          onDelete={handleDelete}
-          onIndent={() => onIndent(block.id)}
-          onMenuOpenChange={(open) => setOpenMenu(open ? "block" : null)}
-          onMove={handleMove}
-          onOutdent={() => onOutdent(block.id)}
-        />
-      ) : <span aria-hidden="true" className="readonly-block-gutter" />}
+      <BlockControls
+        blockId={block.id}
+        canIndent={canIndent}
+        canOutdent={canOutdent}
+        dragHandleAttributes={isDraggable ? dragAttributes : undefined}
+        dragHandleListeners={isDraggable ? dragListeners : undefined}
+        dragHandleRef={isDraggable ? setActivatorNodeRef : undefined}
+        isFirst={isFirst}
+        isLast={isLast}
+        isMenuOpen={openMenu === "block"}
+        isReadOnly={isReadOnly}
+        isSelected={isSelected}
+        isSelectionActive={isSelectionActive}
+        onAddAfter={onAddAfter}
+        onChangeType={handleChangeType}
+        onDelete={handleDelete}
+        onIndent={() => onIndent(block.id)}
+        onMenuOpenChange={(open) => setOpenMenu(open ? "block" : null)}
+        onMove={handleMove}
+        onOutdent={() => onOutdent(block.id)}
+        onSelect={(mode) => onSelectBlock?.(block.id, mode)}
+      />
 
       <div className="block-editor-shell">
         {showBlockActions ? (

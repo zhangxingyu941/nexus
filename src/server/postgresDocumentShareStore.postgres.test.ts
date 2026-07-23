@@ -126,6 +126,7 @@ async function waitForLock(pool: Pool, pid: number) {
 
 function emptyObjectStorage(): ObjectStorage {
   return {
+    deleteObject: async () => undefined,
     deletePrefix: async () => undefined,
     getObject: async () => {
       throw new Error("missing");

@@ -7,6 +7,10 @@ import { createFileRouteHandlers } from "./handlers";
 class MemoryObjectStorage implements ObjectStorage {
   readonly objects = new Map<string, StoredObject>();
 
+  async deleteObject(key: string) {
+    this.objects.delete(key);
+  }
+
   async deletePrefix(prefix: string) {
     for (const key of this.objects.keys()) {
       if (key.startsWith(prefix)) {

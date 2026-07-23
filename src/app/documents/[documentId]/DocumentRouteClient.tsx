@@ -14,7 +14,6 @@ import {
   insertBlockAfter,
   moveBlock,
   outdentBlock,
-  reorderBlock,
   resolveBlockComment,
   setBlockAssignee,
   setBlockDueDate,
@@ -25,6 +24,7 @@ import {
   updateBlockData,
   updateDocumentTitle,
 } from "@/features/editor/model/documentOperations";
+import { moveBlockRoots } from "@/features/editor/model/batchBlockOperations";
 import {
   createDocumentRepository,
   type DocumentSnapshot,
@@ -208,9 +208,12 @@ export function DocumentRouteClient({ publicId }: DocumentRouteClientProps) {
         moveBlock(current, blockId, direction, now()),
       )}
       onOutdent={(blockId) => updateDocument((current) => outdentBlock(current, blockId, now()))}
-      onReorder={(fromId, toId, position) => updateDocument((current) =>
-        reorderBlock(current, fromId, toId, position, now()),
-      )}
+      onReorder={(rootBlockIds, targetBlockId, position) => {
+        updateDocument((current) =>
+          moveBlockRoots(current, rootBlockIds, targetBlockId, position, now()).document,
+        );
+        return true;
+      }}
       onResolveBlockComment={(blockId, commentId) => updateDocument((current) =>
         resolveBlockComment(current, blockId, commentId, now()),
       )}

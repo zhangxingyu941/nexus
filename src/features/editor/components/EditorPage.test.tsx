@@ -1,12 +1,15 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
 import type { EditorWorkspace } from "../model/block";
 import { createRichTextFromPlainText } from "@/shared/richText";
 import { createDemoWorkspaceFixture } from "../../../test/fixtures/workspace";
+import { createBlockClipboardPayload, NEXUS_BLOCK_CLIPBOARD_MIME } from "../model/blockClipboard";
 import { createDefaultWorkspace, createWorkspaceDocument } from "../model/workspaceOperations";
 import { EditorPage } from "./EditorPage";
+
+const originalClipboardDescriptor = Object.getOwnPropertyDescriptor(globalThis.navigator, "clipboard");
 
 async function renderEditor({
   inviteCount = 0,
@@ -16,6 +19,8 @@ async function renderEditor({
   onDeleteDocument,
   onDuplicateDocument,
   onOpenInvites,
+  beforeWorkspaceUpdate,
+  onWorkspaceChange,
   role = "owner",
   seedFixture = true,
   workspace,
@@ -27,6 +32,8 @@ async function renderEditor({
   onDeleteDocument?: (documentId: string) => Promise<void> | void;
   onDuplicateDocument?: (documentId: string) => Promise<void> | void;
   onOpenInvites?: () => void;
+  beforeWorkspaceUpdate?: (workspace: EditorWorkspace) => EditorWorkspace;
+  onWorkspaceChange?: () => void;
   role?: "owner" | "editor" | "viewer";
   seedFixture?: boolean;
   workspace?: EditorWorkspace;
@@ -44,7 +51,10 @@ async function renderEditor({
         onDuplicateDocument={onDuplicateDocument}
         onManageWorkspaces={vi.fn()}
         onOpenInvites={onOpenInvites}
-        onWorkspaceChange={(updater) => setCurrent(updater)}
+        onWorkspaceChange={(updater) => {
+          onWorkspaceChange?.();
+          setCurrent((current) => updater(beforeWorkspaceUpdate ? beforeWorkspaceUpdate(current) : current));
+        }}
         saveStatus={role === "viewer" ? "readonly" : "local"}
         workspace={current}
         workspaceId="workspace-test"
@@ -58,6 +68,24 @@ async function renderEditor({
 
 async function getRows() {
   return screen.findAllByTestId(/^block-row-/);
+}
+
+function clipboardData(values: Record<string, string>) {
+  return {
+    getData: (type: string) => values[type] ?? "",
+  };
+}
+
+function stubClipboardWrite(write: ReturnType<typeof vi.fn>) {
+  class ClipboardItemMock {
+    constructor(_items: Record<string, Blob>) {}
+  }
+
+  vi.stubGlobal("ClipboardItem", ClipboardItemMock);
+  Object.defineProperty(globalThis.navigator, "clipboard", {
+    configurable: true,
+    value: { write },
+  });
 }
 
 function getTodoEditorByText(content: string) {
@@ -88,6 +116,12 @@ describe("EditorPage", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    if (originalClipboardDescriptor) {
+      Object.defineProperty(globalThis.navigator, "clipboard", originalClipboardDescriptor);
+    } else {
+      Reflect.deleteProperty(globalThis.navigator, "clipboard");
+    }
   });
 
   it("renders a collaborative workspace shell with an editable document", async () => {
@@ -120,6 +154,335 @@ describe("EditorPage", () => {
 
     expect(row).toHaveAttribute("data-active", "true");
     expect(within(row).getByRole("toolbar", { name: "当前块操作" })).toBeVisible();
+  });
+
+  it("shows batch controls for a selected block and clears the selection while editing", async () => {
+    const user = userEvent.setup();
+    await renderEditor({ seedFixture: false });
+    const row = (await getRows())[0];
+
+    await user.click(within(row).getByRole("button", { name: /选择块/ }));
+    expect(row).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("toolbar", { name: "批量块操作" })).toBeVisible();
+
+    await user.click(within(row).getByTestId(/^block-editor-/));
+    expect(screen.queryByRole("toolbar", { name: "批量块操作" })).not.toBeInTheDocument();
+  });
+
+  it("lets viewers select displayed blocks with copy-only batch controls", async () => {
+    const user = userEvent.setup();
+    await renderEditor({ role: "viewer", seedFixture: false });
+    const row = (await getRows())[0];
+
+    await user.click(within(row).getByRole("button", { name: /选择块/ }));
+
+    expect(row).toHaveAttribute("aria-selected", "true");
+    const toolbar = screen.getByRole("toolbar", { name: "批量块操作" });
+    expect(within(toolbar).getByRole("button", { name: "复制所选块" })).toBeVisible();
+    expect(within(toolbar).queryByRole("button", { name: "删除所选块" })).not.toBeInTheDocument();
+  });
+
+  it("deletes selected blocks through one workspace update", async () => {
+    const user = userEvent.setup();
+    const onWorkspaceChange = vi.fn();
+    await renderEditor({ onWorkspaceChange, seedFixture: false });
+    const row = (await getRows())[0];
+
+    await user.click(within(row).getByRole("button", { name: /选择块/ }));
+    onWorkspaceChange.mockClear();
+    await user.click(screen.getByRole("button", { name: "删除所选块" }));
+
+    expect(onWorkspaceChange).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.queryByTestId(row.dataset.testid!)).not.toBeInTheDocument());
+  });
+
+  it("changes selected block types through one workspace update", async () => {
+    const user = userEvent.setup();
+    const onWorkspaceChange = vi.fn();
+    await renderEditor({ onWorkspaceChange, seedFixture: false });
+    const row = (await getRows())[0];
+
+    await user.click(within(row).getByRole("button", { name: /选择块/ }));
+    onWorkspaceChange.mockClear();
+    await user.click(screen.getByRole("button", { name: "转换所选块类型" }));
+    await user.click(screen.getByRole("menuitem", { name: "转换为标题" }));
+
+    expect(onWorkspaceChange).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.getByTestId(row.dataset.testid!)).toHaveClass("block-row-heading"));
+  });
+
+  it("applies a batch mutation to the latest document after a remote structure update", async () => {
+    const user = userEvent.setup();
+    await renderEditor({
+      beforeWorkspaceUpdate: (workspace) => ({
+        ...workspace,
+        documents: workspace.documents.map((document) => document.id === workspace.activeDocumentId
+          ? {
+              ...document,
+              blocks: [
+                ...document.blocks,
+                {
+                  ...document.blocks[0],
+                  content: "远端新增内容",
+                  id: "remote-block",
+                  parentId: null,
+                  richText: createRichTextFromPlainText("远端新增内容"),
+                },
+              ],
+            }
+          : document),
+      }),
+      seedFixture: false,
+    });
+    const row = (await getRows())[0];
+
+    await user.click(within(row).getByRole("button", { name: /选择块/ }));
+    await user.click(screen.getByRole("button", { name: "删除所选块" }));
+
+    expect(await screen.findByText("远端新增内容")).toBeInTheDocument();
+  });
+
+  it("restores a batch deletion from one undo record", async () => {
+    const user = userEvent.setup();
+    await renderEditor({ seedFixture: false });
+    const row = (await getRows())[0];
+    const rowTestId = row.dataset.testid!;
+
+    await user.click(within(row).getByRole("button", { name: /选择块/ }));
+    await user.click(screen.getByRole("button", { name: "删除所选块" }));
+    await user.click(screen.getByRole("button", { name: "撤销批量操作" }));
+
+    expect(await screen.findByTestId(rowTestId)).toBeInTheDocument();
+  });
+
+  it("pastes plain text after the selected root through one workspace update", async () => {
+    const user = userEvent.setup();
+    const onWorkspaceChange = vi.fn();
+    await renderEditor({ onWorkspaceChange, seedFixture: false });
+    const row = (await getRows())[0];
+
+    await user.click(within(row).getByRole("button", { name: /选择块/ }));
+    onWorkspaceChange.mockClear();
+    const pasteEvent = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(pasteEvent, "clipboardData", {
+      value: clipboardData({ "text/plain": "Pasted plain text" }),
+    });
+
+    act(() => {
+      document.dispatchEvent(pasteEvent);
+    });
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(onWorkspaceChange).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("Pasted plain text")).toBeInTheDocument();
+  });
+
+  it("pastes same-workspace attachments through the authorized block paste route", async () => {
+    const user = userEvent.setup();
+    const workspace = createDefaultWorkspace(1000);
+    const [target] = workspace.documents[0].blocks;
+    const source = {
+      ...target,
+      content: "diagram.png",
+      data: {
+        key: "workspace-test/source/diagram.png",
+        kind: "image" as const,
+        mimeType: "image/png",
+        name: "diagram.png",
+        size: 42,
+        url: "/api/files/workspace-test/source/diagram.png",
+      },
+      id: "source-image",
+      richText: null,
+      type: "image" as const,
+    };
+    workspace.documents[0].blocks = [target, source];
+    const payload = createBlockClipboardPayload(
+      workspace.documents[0],
+      [source.id],
+      "workspace-test",
+      2000,
+    );
+    const copied = {
+      ...source,
+      data: {
+        ...source.data,
+        key: "workspace-test/target/diagram-copy.png",
+        url: "/api/files/workspace-test/target/diagram-copy.png",
+      },
+      id: "copied-image",
+    };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ blocks: [copied] }), {
+      headers: { "Content-Type": "application/json" },
+      status: 200,
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    await renderEditor({ seedFixture: false, workspace });
+    const row = (await getRows())[0];
+
+    await user.click(within(row).getByRole("button", { name: /选择块/ }));
+    const pasteEvent = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(pasteEvent, "clipboardData", {
+      value: clipboardData({ [NEXUS_BLOCK_CLIPBOARD_MIME]: JSON.stringify(payload) }),
+    });
+
+    act(() => {
+      document.dispatchEvent(pasteEvent);
+    });
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(await screen.findByTestId("block-row-copied-image")).toBeInTheDocument();
+  });
+
+  it("deletes a cut source only after its Nexus payload is inserted", async () => {
+    const user = userEvent.setup();
+    const sourceWorkspace = createDefaultWorkspace(1000);
+    const sourceDocument = {
+      ...sourceWorkspace.documents[0],
+      blocks: [{
+        ...sourceWorkspace.documents[0].blocks[0],
+        content: "Cut source block",
+        richText: createRichTextFromPlainText("Cut source block"),
+      }],
+    };
+    const sourceBlock = sourceDocument.blocks[0];
+    const withTargetDocument = createWorkspaceDocument(
+      { ...sourceWorkspace, documents: [sourceDocument] },
+      2000,
+      "Target",
+    );
+    const workspace = { ...withTargetDocument, activeDocumentId: sourceDocument.id };
+    const payload = createBlockClipboardPayload(sourceDocument, [sourceBlock.id], "workspace-test", 5000);
+    const clipboardWrite = vi.fn().mockResolvedValue(undefined);
+    stubClipboardWrite(clipboardWrite);
+    vi.spyOn(Date, "now").mockReturnValue(5000);
+
+    await renderEditor({ seedFixture: false, workspace });
+    const sourceRow = (await getRows())[0];
+    await user.click(within(sourceRow).getByRole("button", { name: /选择块/ }));
+    await user.click(screen.getByRole("button", { name: "剪切所选块" }));
+    await waitFor(() => expect(clipboardWrite).toHaveBeenCalledTimes(1));
+
+    await user.click(screen.getByTestId(`document-nav-${withTargetDocument.activeDocumentId}`));
+    const targetRow = (await getRows())[0];
+    await user.click(within(targetRow).getByRole("button", { name: /选择块/ }));
+    const pasteEvent = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(pasteEvent, "clipboardData", {
+      value: clipboardData({ [NEXUS_BLOCK_CLIPBOARD_MIME]: JSON.stringify(payload) }),
+    });
+
+    act(() => {
+      document.dispatchEvent(pasteEvent);
+    });
+
+    expect(pasteEvent.defaultPrevented).toBe(true);
+    expect(await screen.findByText("Cut source block")).toBeInTheDocument();
+    await user.click(screen.getByTestId(`document-nav-${sourceDocument.id}`));
+    await waitFor(() => expect(screen.queryByTestId(`block-row-${sourceBlock.id}`)).not.toBeInTheDocument());
+  });
+
+  it("does not delete a cut source when writing the system clipboard fails", async () => {
+    const user = userEvent.setup();
+    const sourceWorkspace = createDefaultWorkspace(1000);
+    const sourceDocument = {
+      ...sourceWorkspace.documents[0],
+      blocks: [{
+        ...sourceWorkspace.documents[0].blocks[0],
+        content: "Clipboard failure source",
+        richText: createRichTextFromPlainText("Clipboard failure source"),
+      }],
+    };
+    const sourceBlock = sourceDocument.blocks[0];
+    const withTargetDocument = createWorkspaceDocument(
+      { ...sourceWorkspace, documents: [sourceDocument] },
+      2000,
+      "Target",
+    );
+    const workspace = { ...withTargetDocument, activeDocumentId: sourceDocument.id };
+    const payload = createBlockClipboardPayload(sourceDocument, [sourceBlock.id], "workspace-test", 5000);
+    const clipboardWrite = vi.fn().mockRejectedValue(new Error("clipboard unavailable"));
+    stubClipboardWrite(clipboardWrite);
+    vi.spyOn(Date, "now").mockReturnValue(5000);
+
+    await renderEditor({ seedFixture: false, workspace });
+    const sourceRow = (await getRows())[0];
+    await user.click(within(sourceRow).getByRole("button", { name: /选择块/ }));
+    await user.click(screen.getByRole("button", { name: "剪切所选块" }));
+    await waitFor(() => expect(clipboardWrite).toHaveBeenCalledTimes(1));
+
+    await user.click(screen.getByTestId(`document-nav-${withTargetDocument.activeDocumentId}`));
+    const targetRow = (await getRows())[0];
+    await user.click(within(targetRow).getByRole("button", { name: /选择块/ }));
+    const pasteEvent = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(pasteEvent, "clipboardData", {
+      value: clipboardData({ [NEXUS_BLOCK_CLIPBOARD_MIME]: JSON.stringify(payload) }),
+    });
+
+    act(() => {
+      document.dispatchEvent(pasteEvent);
+    });
+
+    await screen.findByText("Clipboard failure source");
+    await user.click(screen.getByTestId(`document-nav-${sourceDocument.id}`));
+    expect(screen.getByTestId(`block-row-${sourceBlock.id}`)).toBeInTheDocument();
+  });
+
+  it("does not delete a cut source when attachment paste fails", async () => {
+    const user = userEvent.setup();
+    const sourceWorkspace = createDefaultWorkspace(1000);
+    const sourceDocument = {
+      ...sourceWorkspace.documents[0],
+      blocks: [{
+        ...sourceWorkspace.documents[0].blocks[0],
+        content: "cut-image.png",
+        data: {
+          key: "workspace-test/source/cut-image.png",
+          kind: "image" as const,
+          mimeType: "image/png",
+          name: "cut-image.png",
+          size: 42,
+          url: "/api/files/workspace-test/source/cut-image.png",
+        },
+        richText: null,
+        type: "image" as const,
+      }],
+    };
+    const sourceBlock = sourceDocument.blocks[0];
+    const withTargetDocument = createWorkspaceDocument(
+      { ...sourceWorkspace, documents: [sourceDocument] },
+      2000,
+      "Target",
+    );
+    const workspace = { ...withTargetDocument, activeDocumentId: sourceDocument.id };
+    const payload = createBlockClipboardPayload(sourceDocument, [sourceBlock.id], "workspace-test", 5000);
+    const clipboardWrite = vi.fn().mockResolvedValue(undefined);
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 500 }));
+    stubClipboardWrite(clipboardWrite);
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(Date, "now").mockReturnValue(5000);
+
+    await renderEditor({ seedFixture: false, workspace });
+    const sourceRow = (await getRows())[0];
+    await user.click(within(sourceRow).getByRole("button", { name: /选择块/ }));
+    await user.click(screen.getByRole("button", { name: "剪切所选块" }));
+    await waitFor(() => expect(clipboardWrite).toHaveBeenCalledTimes(1));
+
+    await user.click(screen.getByTestId(`document-nav-${withTargetDocument.activeDocumentId}`));
+    const targetRow = (await getRows())[0];
+    await user.click(within(targetRow).getByRole("button", { name: /选择块/ }));
+    const pasteEvent = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(pasteEvent, "clipboardData", {
+      value: clipboardData({ [NEXUS_BLOCK_CLIPBOARD_MIME]: JSON.stringify(payload) }),
+    });
+
+    act(() => {
+      document.dispatchEvent(pasteEvent);
+    });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByTestId(`document-nav-${sourceDocument.id}`));
+    expect(screen.getByTestId(`block-row-${sourceBlock.id}`)).toBeInTheDocument();
   });
 
   it("opens the fixed shortcut center from the keyboard and topbar", async () => {
@@ -742,7 +1105,7 @@ describe("EditorPage", () => {
     await user.click(screen.getByRole("menuitem", { name: "删除文档" }));
     expect(confirmSpy).toHaveBeenCalledWith("确定删除“Second document”吗？此操作无法撤销。");
     expect(onDeleteDocument).toHaveBeenCalledWith(activeDocumentId);
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "撤销删除" })).not.toBeInTheDocument();
   });
 
   it("deletes a newly created document from the document action menu after confirmation", async () => {
@@ -775,14 +1138,14 @@ describe("EditorPage", () => {
     await user.click(screen.getByLabelText("打开文档操作 客户复盘"));
     await user.click(screen.getByRole("menuitem", { name: "删除文档" }));
 
-    expect(screen.getByRole("status")).toHaveTextContent("已删除“客户复盘”");
+    expect(screen.getByText("已删除“客户复盘”")).toBeInTheDocument();
     expect(await getDocumentButtons()).toHaveLength(4);
 
     await user.click(screen.getByRole("button", { name: "撤销删除" }));
 
     await waitFor(async () => expect(await getDocumentButtons()).toHaveLength(5));
     expect(screen.getByLabelText("文档标题")).toHaveValue("客户复盘");
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "撤销删除" })).not.toBeInTheDocument();
   });
 
   it("switches documents without leaking edited content", async () => {
@@ -888,14 +1251,14 @@ describe("EditorPage", () => {
     await user.click(within(rows[1]).getByLabelText("打开块菜单"));
     await user.click(screen.getByRole("menuitem", { name: "删除块" }));
 
-    expect(screen.getByRole("status")).toHaveTextContent("已删除块“需要恢复的块”");
+    expect(screen.getByText("已删除块“需要恢复的块”")).toBeInTheDocument();
     expect(await getRows()).toHaveLength(1);
 
     await user.click(screen.getByRole("button", { name: "撤销删除" }));
 
     await waitFor(async () => expect(await getRows()).toHaveLength(2));
     expect(screen.getByText("需要恢复的块")).toBeInTheDocument();
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "撤销删除" })).not.toBeInTheDocument();
   });
 
   it("changes a block to todo from the block menu and toggles it", async () => {

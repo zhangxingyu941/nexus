@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { extname, relative, resolve, sep } from "node:path";
 import {
+  DeleteObjectCommand,
   DeleteObjectsCommand,
   GetObjectCommand,
   ListObjectsV2Command,
@@ -16,6 +17,7 @@ export interface StoredObject {
 }
 
 export interface ObjectStorage {
+  deleteObject: (key: string) => Promise<void>;
   deletePrefix: (prefix: string) => Promise<void>;
   getObject: (key: string) => Promise<StoredObject>;
   putObject: (key: string, body: Uint8Array, contentType: string) => Promise<void>;
@@ -91,6 +93,15 @@ export class LocalObjectStorage implements ObjectStorage {
     const workspacePath = this.resolveWorkspacePath(prefix);
 
     await rm(workspacePath, { force: true, recursive: true });
+  }
+
+  async deleteObject(key: string) {
+    const objectPath = this.resolveObjectPath(key);
+
+    await Promise.all([
+      rm(objectPath, { force: true }),
+      rm(`${objectPath}.metadata.json`, { force: true }),
+    ]);
   }
 
   private resolveObjectPath(key: string) {
@@ -207,6 +218,11 @@ export class S3ObjectStorage implements ObjectStorage {
         throw new Error("对象列表分页令牌缺失");
       }
     } while (continuationToken);
+  }
+
+  async deleteObject(key: string) {
+    validateObjectKey(key);
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
   }
 }
 

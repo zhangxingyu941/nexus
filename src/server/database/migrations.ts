@@ -111,6 +111,8 @@ const DOCUMENT_PUBLIC_ID_MIGRATION_ID = "2026-07-20-document-public-id";
 const DOCUMENT_ATTACHMENTS_MIGRATION_ID = "2026-07-20-document-attachments";
 const DOCUMENT_SHARE_LINKS_MIGRATION_ID = "2026-07-21-document-share-links";
 const STRUCTURED_RICH_TEXT_MIGRATION_ID = "2026-07-22-structured-rich-text";
+const DOCUMENT_ATTACHMENT_RESERVATIONS_MIGRATION_ID =
+  "2026-07-22-document-attachment-reservations";
 const MIGRATION_LOCK_ID = "__migration_lock__";
 
 const WORKSPACE_SCOPED_CONTENT_SCHEMA = [
@@ -388,6 +390,10 @@ const DOCUMENT_SHARE_LINKS_SCHEMA = [
 
 const STRUCTURED_RICH_TEXT_SCHEMA = [
   "ALTER TABLE editor_blocks ADD COLUMN rich_text JSONB",
+];
+
+const DOCUMENT_ATTACHMENT_RESERVATIONS_SCHEMA = [
+  "ALTER TABLE document_attachments ADD COLUMN cleanup_pending BOOLEAN NOT NULL DEFAULT FALSE",
 ];
 
 async function migrateDocumentPermissions(client: PoolClient) {
@@ -727,6 +733,22 @@ export async function migrateDatabase(pool: Pool) {
       await client.query(
         "INSERT INTO schema_migrations (id, applied_at) VALUES ($1, $2)",
         [STRUCTURED_RICH_TEXT_MIGRATION_ID, Date.now()],
+      );
+    }
+
+    const documentAttachmentReservationsResult = await client.query(
+      "SELECT id FROM schema_migrations WHERE id = $1",
+      [DOCUMENT_ATTACHMENT_RESERVATIONS_MIGRATION_ID],
+    );
+
+    if (documentAttachmentReservationsResult.rows.length === 0) {
+      for (const statement of DOCUMENT_ATTACHMENT_RESERVATIONS_SCHEMA) {
+        await client.query(statement);
+      }
+
+      await client.query(
+        "INSERT INTO schema_migrations (id, applied_at) VALUES ($1, $2)",
+        [DOCUMENT_ATTACHMENT_RESERVATIONS_MIGRATION_ID, Date.now()],
       );
     }
 

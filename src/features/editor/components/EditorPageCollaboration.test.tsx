@@ -1,5 +1,6 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
+import { within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { insertBlockAfter, updateDocumentTitle } from "../model/documentOperations";
@@ -115,6 +116,38 @@ describe("EditorPage collaboration wiring", () => {
     expect(screen.getByTestId("block-row-block-remote")).toBeInTheDocument();
   });
 
+  it("prunes remotely deleted blocks from the current selection", async () => {
+    const user = userEvent.setup();
+    const initialWorkspace = createDefaultWorkspace(1000);
+    const documentWithSecondBlock = insertBlockAfter(
+      initialWorkspace.documents[0],
+      initialWorkspace.documents[0].blocks[0].id,
+      2000,
+      "block-b",
+    );
+    const workspace = { ...initialWorkspace, documents: [documentWithSecondBlock], updatedAt: 2000 };
+    renderControlledEditor(workspace);
+
+    const [firstRow, secondRow] = await screen.findAllByTestId(/^block-row-/);
+    await user.click(within(firstRow).getByRole("button", { name: /选择块/ }));
+    await user.keyboard("{Control>}");
+    await user.click(within(secondRow).getByRole("button", { name: /选择块/ }));
+    await user.keyboard("{/Control}");
+
+    act(() => {
+      collaborationMock.getLatestOptions()?.onRemoteDocumentStructurePatch?.({
+        blocks: [documentWithSecondBlock.blocks[1]],
+        documentId: documentWithSecondBlock.id,
+        title: documentWithSecondBlock.title,
+        updatedAt: 3000,
+      });
+    });
+
+    await waitFor(() => expect(screen.queryByTestId(`block-row-${documentWithSecondBlock.blocks[0].id}`)).not.toBeInTheDocument());
+    expect(screen.getByTestId(`block-row-${documentWithSecondBlock.blocks[1].id}`)).toHaveAttribute("aria-selected", "true");
+    expect(within(screen.getByRole("toolbar", { name: "批量块操作" })).getByRole("status")).toHaveTextContent("已选择 1 个块");
+  });
+
   it("passes the active Yjs document into rich text block editors", async () => {
     renderControlledEditor();
 
@@ -150,9 +183,9 @@ describe("EditorPage collaboration wiring", () => {
   });
 });
 
-function renderControlledEditor() {
+function renderControlledEditor(initialWorkspace = createDefaultWorkspace(1000)) {
   function ControlledEditor() {
-    const [workspace, setWorkspace] = useState(createDefaultWorkspace(1000));
+    const [workspace, setWorkspace] = useState(initialWorkspace);
     return (
       <EditorPage
         membersEnabled={false}

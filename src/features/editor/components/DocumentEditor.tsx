@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type {
   CollaborationConnectionState,
@@ -13,6 +13,8 @@ import type {
   EditorSessionUser,
 } from "../session/sessionTypes";
 import { BlockList } from "./BlockList";
+import { BlockSelectionToolbar, type BlockSelectionToolbarAction } from "./BlockSelectionToolbar";
+import { useBlockSelection } from "./useBlockSelection";
 import { getEditorShortcut, matchesEditorShortcut } from "../commands/editorShortcuts";
 import { DocumentContextPanel } from "./DocumentContextPanel";
 import { EditorShortcutCenter } from "./commands/EditorShortcutCenter";
@@ -46,6 +48,9 @@ interface DocumentEditorProps {
   workspaceId: string;
   titleFocusRequest: number;
   onAddAfter: (blockId: string) => void;
+  onBlockSelectionAction?: (action: BlockSelectionToolbarAction, blockIds: string[]) => boolean;
+  onBlockSelectionTypeChange?: (type: BlockType, blockIds: string[]) => boolean;
+  onBlockClipboardPaste?: (clipboardData: DataTransfer, targetBlockId: string) => boolean;
   onAddBlockComment: (blockId: string, body: string) => void;
   onChangeBlockAssignee: (blockId: string, assignee: string) => void;
   onChangeBlockDueDate: (blockId: string, dueDate: string) => void;
@@ -60,7 +65,7 @@ interface DocumentEditorProps {
   onIndent: (blockId: string) => void;
   onMove: (blockId: string, direction: MoveDirection) => void;
   onOutdent: (blockId: string) => void;
-  onReorder?: (fromId: string, toId: string, position: "before" | "after") => void;
+  onReorder?: (rootBlockIds: string[], targetBlockId: string, position: "before" | "after") => boolean | void;
   onResolveBlockComment: (blockId: string, commentId: string) => void;
   onRestoreDocumentVersion: (document: EditorDocument) => void;
   onToggleTodo: (blockId: string) => void;
@@ -87,6 +92,9 @@ export function DocumentEditor({
   workspaceId,
   titleFocusRequest,
   onAddAfter,
+  onBlockSelectionAction,
+  onBlockSelectionTypeChange,
+  onBlockClipboardPaste,
   onAddBlockComment,
   onChangeBlockAssignee,
   onChangeBlockDueDate,
@@ -117,6 +125,8 @@ export function DocumentEditor({
   const [commentFilter, setCommentFilter] = useState<CommentFilter>("open");
   const titleInputRef = useRef<HTMLTextAreaElement | null>(null);
   const documentScrollRef = useRef<HTMLDivElement | null>(null);
+  const blockSelection = useBlockSelection(document.blocks);
+  const [blockSelectionAnchor, setBlockSelectionAnchor] = useState<{ left: number; top: number } | null>(null);
   const blockComments = useMemo(
     () =>
       document.blocks.flatMap((block) =>
@@ -157,7 +167,52 @@ export function DocumentEditor({
   useEffect(() => {
     setIsContextOpen(false);
     setIsShortcutOpen(false);
+    blockSelection.clear();
   }, [document.id]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && blockSelection.state.selectedBlockIds.length > 0) {
+        blockSelection.clear();
+      }
+    }
+
+    globalThis.document.addEventListener("keydown", handleKeyDown);
+    return () => globalThis.document.removeEventListener("keydown", handleKeyDown);
+  }, [blockSelection]);
+
+  useEffect(() => {
+    function handlePaste(event: ClipboardEvent) {
+      const targetBlockId = blockSelection.resolved.rootBlockIds.at(-1);
+      if (!targetBlockId || !event.clipboardData) {
+        return;
+      }
+
+      if (onBlockClipboardPaste?.(event.clipboardData, targetBlockId)) {
+        event.preventDefault();
+      }
+    }
+
+    globalThis.document.addEventListener("paste", handlePaste);
+    return () => globalThis.document.removeEventListener("paste", handlePaste);
+  }, [blockSelection.resolved.rootBlockIds, onBlockClipboardPaste]);
+
+  useLayoutEffect(() => {
+    const firstRootId = blockSelection.resolved.rootBlockIds[0];
+    if (!firstRootId) {
+      setBlockSelectionAnchor(null);
+      return;
+    }
+
+    const row = globalThis.document.querySelector<HTMLElement>(`[data-testid="block-row-${firstRootId}"]`);
+    if (!row) {
+      setBlockSelectionAnchor(null);
+      return;
+    }
+
+    const bounds = row.getBoundingClientRect();
+    setBlockSelectionAnchor({ left: bounds.left + Math.min(bounds.width / 2, 240), top: bounds.top - 8 });
+  }, [blockSelection.resolved.rootBlockIds]);
 
   useEffect(() => {
     const shortcut = getEditorShortcut("shortcut-center");
@@ -246,12 +301,24 @@ export function DocumentEditor({
               onChangeRichText={onChangeRichText}
               onChangeType={onChangeType}
               onDelete={onDelete}
-              onFocusedBlock={onFocusedBlock}
+              onFocusedBlock={() => {
+                blockSelection.clear();
+                onFocusedBlock();
+              }}
               onIndent={onIndent}
               onMove={onMove}
               onOutdent={onOutdent}
-              onReorder={onReorder}
+              onReorder={(rootBlockIds, targetBlockId, position) => {
+                const moved = onReorder?.(rootBlockIds, targetBlockId, position);
+                if (moved === true) {
+                  blockSelection.clear();
+                }
+                return moved === true;
+              }}
               onResolveBlockComment={onResolveBlockComment}
+              onSelectBlock={blockSelection.select}
+              selectedBlockIds={blockSelection.resolved.orderedBlockIds}
+              selectedRootIds={blockSelection.resolved.rootBlockIds}
               onToggleTodo={onToggleTodo}
               scrollElementRef={documentScrollRef}
               sessionUser={sessionUser}
@@ -271,6 +338,21 @@ export function DocumentEditor({
           document={document}
           isOpen={isContextOpen}
           onClose={() => setIsContextOpen(false)}
+        />
+        <BlockSelectionToolbar
+          anchor={blockSelectionAnchor}
+          isReadOnly={isReadOnly}
+          onAction={(action) => {
+            if (onBlockSelectionAction?.(action, blockSelection.resolved.rootBlockIds)) {
+              blockSelection.clear();
+            }
+          }}
+          onChangeType={onBlockSelectionTypeChange ? (type) => {
+            if (onBlockSelectionTypeChange(type, blockSelection.resolved.rootBlockIds)) {
+              blockSelection.clear();
+            }
+          } : undefined}
+          selectedCount={blockSelection.resolved.orderedBlockIds.length}
         />
       </div>
 

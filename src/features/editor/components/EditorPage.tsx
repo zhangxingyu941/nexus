@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { CollaborationSessionProvider } from "../collaboration/CollaborationSessionContext";
 import { useDocumentCollaboration } from "../collaboration/useDocumentCollaboration";
@@ -6,17 +6,17 @@ import { MentionSearchProvider } from "./MentionSearchContext";
 import { useMentionSearchFn } from "./commands/useMentionSearch";
 import type { WorkspaceSummary } from "../../../shared/workspace";
 import type { Block, BlockData, BlockStatus, BlockType, EditorDocument, EditorWorkspace, HeadingLevel, MoveDirection } from "../model/block";
-import type { RichTextUpdate } from "@/shared/richText";
+import { projectRichTextContent, type RichTextUpdate } from "@/shared/richText";
 import {
   addBlockComment,
   changeBlockType,
   createBlockId,
+  createBlock,
   deleteBlock,
   insertBlockAfter,
   indentBlock,
   moveBlock,
   outdentBlock,
-  reorderBlock,
   resolveBlockComment,
   restoreBlock,
   setBlockAssignee,
@@ -28,6 +28,22 @@ import {
   updateBlockData,
   updateDocumentTitle,
 } from "../model/documentOperations";
+import {
+  createBlockClipboardPayload,
+  insertClipboardBlocksAfter,
+  materializeClipboardBlocks,
+  type NexusBlockClipboardPayload,
+} from "../model/blockClipboard";
+import {
+  deleteBlocks,
+  changeBlockTypes,
+  duplicateBlockRoots,
+  indentBlockRoots,
+  moveBlockRoots,
+  outdentBlockRoots,
+  toggleMarkForBlocks,
+  type BatchBlockMutationResult,
+} from "../model/batchBlockOperations";
 import {
   type CreateWorkspaceDocumentInput,
   createWorkspaceDocument,
@@ -47,12 +63,15 @@ import {
   updateActiveDocument,
 } from "../model/workspaceOperations";
 import { loadWorkspaceMembers } from "../persistence/workspaceMemberRepository";
+import { pasteBlockClipboard } from "../persistence/blockClipboardRepository";
 import type {
   DatabaseWorkspaceMember,
   EditorSessionUser,
 } from "../session/sessionTypes";
 import type { WorkspaceSaveStatus } from "../session/useWorkspaceSession";
 import { DocumentEditor } from "./DocumentEditor";
+import type { BlockSelectionToolbarAction } from "./BlockSelectionToolbar";
+import { useBlockClipboard } from "./useBlockClipboard";
 import { WorkspaceSidebar } from "./WorkspaceSidebar";
 
 type UndoDeleteNotice =
@@ -61,11 +80,23 @@ type UndoDeleteNotice =
       document: EditorDocument;
     }
   | {
+      type: "batch";
+      document: EditorDocument;
+      documentId: string;
+    }
+  | {
       type: "block";
       block: Block;
       documentId: string;
       index: number;
     };
+
+interface PendingBlockCut {
+  copiedAt: number;
+  rootBlockIds: string[];
+  sourceDocumentId: string;
+  sourceWorkspaceId: string;
+}
 
 function nextTimestamp(document: EditorDocument) {
   // 快速连续新增块时，用块数量错开时间戳，降低本地 ID 碰撞概率。
@@ -114,6 +145,8 @@ export function EditorPage({
   const [titleFocusRequest, setTitleFocusRequest] = useState(0);
   const [undoDeleteNotice, setUndoDeleteNotice] = useState<UndoDeleteNotice | null>(null);
   const [focusBlockId, setFocusBlockId] = useState<string | null>(null);
+  const pendingBlockCutRef = useRef<PendingBlockCut | null>(null);
+  const { copy: copyBlocks, read: readBlockClipboard } = useBlockClipboard();
   const workspaceRole = workspaceSummary.role;
   const canWriteActiveDocument = documentCanWrite ?? workspaceRole !== "viewer";
 
@@ -285,6 +318,17 @@ export function EditorPage({
         return restoreWorkspaceDocument(current, undoDeleteNotice.document, now);
       }
 
+      if (undoDeleteNotice.type === "batch") {
+        return {
+          ...current,
+          activeDocumentId: undoDeleteNotice.documentId,
+          documents: current.documents.map((document) =>
+            document.id === undoDeleteNotice.documentId ? undoDeleteNotice.document : document,
+          ),
+          updatedAt: now,
+        };
+      }
+
       const restoredDocuments = current.documents.map((document) =>
         document.id === undoDeleteNotice.documentId
           ? restoreBlock(document, undoDeleteNotice.block, undoDeleteNotice.index, now)
@@ -364,6 +408,204 @@ export function EditorPage({
     [applyActiveDocumentChange],
   );
 
+  const applyBatchMutation = useCallback(
+    (
+      operation: (document: EditorDocument, now: number) => BatchBlockMutationResult,
+      documentId = activeDocument?.id,
+    ) => {
+      if (!documentId) {
+        return false;
+      }
+
+      const now = Date.now();
+      const mutationResult: {
+        value: { previousDocument: EditorDocument; result: BatchBlockMutationResult } | null;
+      } = { value: null };
+
+      flushSync(() => {
+        onWorkspaceChange((current) => {
+          const latestDocument = current.documents.find((document) => document.id === documentId);
+          if (!latestDocument) {
+            return current;
+          }
+
+          const result = operation(latestDocument, now);
+          if (result.affectedBlockIds.length === 0) {
+            return current;
+          }
+
+          mutationResult.value = { previousDocument: latestDocument, result };
+          return {
+            ...current,
+            documents: current.documents.map((document) =>
+              document.id === latestDocument.id ? result.document : document,
+            ),
+            updatedAt: now,
+          };
+        });
+      });
+
+      const mutation = mutationResult.value;
+      if (!mutation) {
+        return false;
+      }
+
+      setUndoDeleteNotice({
+        document: mutation.previousDocument,
+        documentId: mutation.previousDocument.id,
+        type: "batch",
+      });
+      setFocusBlockId(mutation.result.focusBlockId);
+      return true;
+    },
+    [activeDocument, onWorkspaceChange],
+  );
+
+  const completePendingBlockCut = useCallback(
+    (payload: NexusBlockClipboardPayload) => {
+      const pendingCut = pendingBlockCutRef.current;
+      if (
+        !pendingCut ||
+        pendingCut.copiedAt !== payload.copiedAt ||
+        pendingCut.sourceDocumentId !== payload.sourceDocumentId ||
+        pendingCut.sourceWorkspaceId !== payload.sourceWorkspaceId
+      ) {
+        return;
+      }
+
+      pendingBlockCutRef.current = null;
+      applyBatchMutation(
+        (document, now) => deleteBlocks(document, pendingCut.rootBlockIds, now),
+        pendingCut.sourceDocumentId,
+      );
+    },
+    [applyBatchMutation],
+  );
+
+  const handleBlockSelectionAction = useCallback(
+    (action: BlockSelectionToolbarAction, blockIds: string[]) => {
+      if (blockIds.length === 0) {
+        return false;
+      }
+
+      if (action === "cut" && !canWriteActiveDocument) {
+        return false;
+      }
+
+      if (action === "copy" || action === "cut") {
+        if (!activeDocument) {
+          return false;
+        }
+
+        const payload = createBlockClipboardPayload(activeDocument, blockIds, workspaceId, Date.now());
+        void copyBlocks(payload).then(({ ok }) => {
+          if (!ok) {
+            return;
+          }
+
+          pendingBlockCutRef.current = action === "cut"
+            ? {
+                copiedAt: payload.copiedAt,
+                rootBlockIds: blockIds,
+                sourceDocumentId: payload.sourceDocumentId,
+                sourceWorkspaceId: payload.sourceWorkspaceId,
+              }
+            : null;
+        });
+        return false;
+      }
+      if (!canWriteActiveDocument) {
+        return false;
+      }
+      if (action === "delete") {
+        return applyBatchMutation((document, now) => deleteBlocks(document, blockIds, now));
+      }
+      if (action === "duplicate") {
+        return applyBatchMutation((document, now) => {
+          let nextOffset = document.blocks.length + 1;
+          return duplicateBlockRoots(document, blockIds, {
+            nextId: () => createBlockId(now + nextOffset++),
+            now,
+          });
+        });
+      }
+      if (action === "indent") {
+        return applyBatchMutation((document, now) => indentBlockRoots(document, blockIds, now));
+      }
+      if (action === "outdent") {
+        return applyBatchMutation((document, now) => outdentBlockRoots(document, blockIds, now));
+      }
+      if (action === "bold" || action === "italic" || action === "strike" || action === "code") {
+        return applyBatchMutation((document, now) => toggleMarkForBlocks(document, blockIds, action, now));
+      }
+
+      return false;
+    },
+    [activeDocument, applyBatchMutation, canWriteActiveDocument, copyBlocks, workspaceId],
+  );
+
+  const handleBlockSelectionTypeChange = useCallback(
+    (type: BlockType, blockIds: string[]) => {
+      if (!canWriteActiveDocument || blockIds.length === 0) {
+        return false;
+      }
+
+      return applyBatchMutation((document, now) => changeBlockTypes(document, blockIds, type, now));
+    },
+    [applyBatchMutation, canWriteActiveDocument],
+  );
+
+  const handleBlockClipboardPaste = useCallback(
+    (clipboardData: DataTransfer, targetBlockId: string) => {
+      if (!canWriteActiveDocument) {
+        return false;
+      }
+
+      const clipboard = readBlockClipboard(clipboardData);
+      if (
+        clipboard.kind === "nexus" &&
+        clipboard.payload.sourceWorkspaceId === workspaceId &&
+        clipboard.payload.blocks.some((block) => block.data?.kind === "image" || block.data?.kind === "file")
+      ) {
+        if (!activeDocument) {
+          return true;
+        }
+
+        void pasteBlockClipboard(workspaceId, activeDocument.id, clipboard.payload)
+          .then((blocks) => {
+            const inserted = applyBatchMutation((document, now) =>
+              insertClipboardBlocksAfter(document, targetBlockId, blocks, now),
+            );
+            if (inserted) {
+              completePendingBlockCut(clipboard.payload);
+            }
+          })
+          .catch(() => undefined);
+        return true;
+      }
+
+      const inserted = applyBatchMutation((document, now) => {
+        let nextOffset = document.blocks.length + 1;
+        const nextId = () => createBlockId(now + nextOffset++);
+        const insertedBlocks: Block[] = clipboard.kind === "nexus"
+          ? materializeClipboardBlocks(clipboard.payload, { nextId, now, targetWorkspaceId: workspaceId })
+          : clipboard.kind === "rich-text"
+            ? [{
+                ...createBlock("paragraph", now, projectRichTextContent(clipboard.richText), nextId()),
+                richText: clipboard.richText,
+              }]
+            : [createBlock("paragraph", now, clipboard.text, nextId())];
+
+        return insertClipboardBlocksAfter(document, targetBlockId, insertedBlocks, now);
+      });
+      if (inserted && clipboard.kind === "nexus") {
+        completePendingBlockCut(clipboard.payload);
+      }
+      return inserted;
+    },
+    [activeDocument, applyBatchMutation, canWriteActiveDocument, completePendingBlockCut, readBlockClipboard, workspaceId],
+  );
+
   const handleDelete = useCallback(
     (blockId: string) => {
       if (!activeDocument) {
@@ -410,10 +652,12 @@ export function EditorPage({
   );
 
   const handleReorder = useCallback(
-    (fromId: string, toId: string, position: "before" | "after") => {
-      applyActiveDocumentChange((current) => reorderBlock(current, fromId, toId, position, Date.now()));
+    (rootBlockIds: string[], targetBlockId: string, position: "before" | "after") => {
+      return applyBatchMutation((document, now) =>
+        moveBlockRoots(document, rootBlockIds, targetBlockId, position, now),
+      );
     },
-    [applyActiveDocumentChange],
+    [applyBatchMutation],
   );
 
   const handleToggleTodo = useCallback(
@@ -537,6 +781,9 @@ export function EditorPage({
         onOpenInvites={onOpenInvites}
         onSignOut={onSignOut}
         onAddAfter={handleAddAfter}
+        onBlockClipboardPaste={handleBlockClipboardPaste}
+        onBlockSelectionAction={handleBlockSelectionAction}
+        onBlockSelectionTypeChange={handleBlockSelectionTypeChange}
         onAddBlockComment={handleAddBlockComment}
         onChangeBlockAssignee={handleChangeBlockAssignee}
         onChangeBlockDueDate={handleChangeBlockDueDate}
@@ -567,10 +814,12 @@ export function EditorPage({
           <span>
             {undoDeleteNotice.type === "document"
               ? `已删除“${undoDeleteNotice.document.title.trim() || "未命名文档"}”`
-              : `已删除块“${undoDeleteNotice.block.content.trim() || "空白块"}”`}
+              : undoDeleteNotice.type === "batch"
+                ? "已应用批量块操作"
+                : `已删除块“${undoDeleteNotice.block.content.trim() || "空白块"}”`}
           </span>
           <button onClick={handleRestoreDeletedDocument} type="button">
-            撤销删除
+            {undoDeleteNotice.type === "batch" ? "撤销批量操作" : "撤销删除"}
           </button>
         </div>
       ) : null}

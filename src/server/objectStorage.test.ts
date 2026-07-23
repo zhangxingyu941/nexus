@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DeleteObjectsCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, DeleteObjectsCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createObjectKey, LocalObjectStorage, S3ObjectStorage } from "./objectStorage";
 
@@ -56,6 +56,21 @@ describe("LocalObjectStorage", () => {
     await expect(storage.deletePrefix("workspace-1/")).resolves.toBeUndefined();
   });
 
+  it("deletes one object and its metadata without touching another object", async () => {
+    const storage = new LocalObjectStorage(storageDir);
+    const bytes = new TextEncoder().encode("image-bytes");
+
+    await storage.putObject("workspace-1/a.png", bytes, "image/png");
+    await storage.putObject("workspace-1/b.png", bytes, "image/png");
+
+    await storage.deleteObject("workspace-1/a.png");
+
+    await expect(storage.getObject("workspace-1/a.png")).rejects.toThrow();
+    await expect(storage.getObject("workspace-1/b.png")).resolves.toMatchObject({
+      size: bytes.byteLength,
+    });
+  });
+
   it("rejects a prefix that does not name exactly one workspace directory", async () => {
     const storage = new LocalObjectStorage(storageDir);
 
@@ -64,6 +79,24 @@ describe("LocalObjectStorage", () => {
 });
 
 describe("S3ObjectStorage", () => {
+  it("deletes exactly one validated object key", async () => {
+    const storage = new S3ObjectStorage({ bucket: "uploads", region: "us-east-1" });
+    const commands: DeleteObjectCommand[] = [];
+    const client = storage as unknown as {
+      client: { send: (command: DeleteObjectCommand) => Promise<unknown> };
+    };
+    client.client.send = async (command) => {
+      commands.push(command);
+      return {};
+    };
+
+    await storage.deleteObject("workspace-1/a.png");
+
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toBeInstanceOf(DeleteObjectCommand);
+    expect(commands[0].input).toEqual({ Bucket: "uploads", Key: "workspace-1/a.png" });
+  });
+
   it("paginates and deletes objects in batches of at most 1000", async () => {
     const storage = new S3ObjectStorage({ bucket: "uploads", region: "us-east-1" });
     const commands: Array<ListObjectsV2Command | DeleteObjectsCommand> = [];

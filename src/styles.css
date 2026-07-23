@@ -1375,6 +1375,16 @@ textarea:focus-visible {
   opacity: 1;
 }
 
+.block-row[data-selected="true"] {
+  border-color: #d4d4d8;
+  background: #f4f4f5;
+}
+
+.block-row[data-selected="true"]::before {
+  background: #64748b;
+  opacity: 1;
+}
+
 .block-row:hover,
 .block-row:focus-within {
   border-color: transparent;
@@ -3327,6 +3337,81 @@ textarea:focus-visible {
   background: #d4d4d8;
 }
 
+.block-selection-toolbar {
+  position: fixed;
+  z-index: 92;
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  max-width: calc(100vw - 24px);
+  padding: 4px;
+  border: 1px solid #d4d4d8;
+  border-radius: 7px;
+  color: #27272a;
+  background: #fafafa;
+  box-shadow: 0 8px 24px rgba(24, 24, 27, 0.14);
+  transform: translate(-50%, -100%);
+}
+
+.block-selection-toolbar-count {
+  min-width: 76px;
+  padding: 0 6px;
+  color: #52525b;
+  font-size: 12px;
+  line-height: 32px;
+  white-space: nowrap;
+}
+
+.block-selection-toolbar-button {
+  display: inline-grid;
+  flex: 0 0 32px;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  color: #27272a;
+  background: transparent;
+  cursor: pointer;
+}
+
+.block-selection-toolbar-button:hover,
+.block-selection-toolbar-button:focus-visible {
+  color: #18181b;
+  background: #e4e4e7;
+  outline: none;
+}
+
+.block-selection-toolbar-button:focus-visible {
+  box-shadow: 0 0 0 2px rgba(113, 113, 122, 0.28);
+}
+
+.block-selection-toolbar-divider {
+  flex: 0 0 1px;
+  width: 1px;
+  height: 18px;
+  margin: 0 2px;
+  background: #d4d4d8;
+}
+
+@media (max-width: 720px) {
+  .block-selection-toolbar {
+    right: max(12px, env(safe-area-inset-right));
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + 8px);
+    left: max(12px, env(safe-area-inset-left)) !important;
+    max-width: none;
+    overflow-x: auto;
+    transform: none;
+  }
+
+  .block-selection-toolbar-count {
+    position: sticky;
+    left: 0;
+    background: #fafafa;
+  }
+}
+
 .link-popover {
   position: fixed;
   z-index: 91;
@@ -3547,23 +3632,34 @@ textarea:focus-visible {
   cursor: default;
 }
 
-.block-row.drag-over-before::before,
-.block-row.drag-over-after::after {
-  content: "";
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  height: 2px;
-  border-radius: 2px;
-  background: #2563eb;
+.block-row-dragging {
+  opacity: 0.35;
 }
 
-.block-row.drag-over-before {
-  box-shadow: inset 0 2px 0 #2563eb;
+.block-drag-overlay {
+  display: flex;
+  max-width: min(360px, calc(100vw - 32px));
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgb(15 23 42 / 18%);
+  color: #1e293b;
+  font-size: 13px;
+  line-height: 20px;
+  padding: 8px 10px;
 }
 
-.block-row.drag-over-after {
-  box-shadow: inset 0 -2px 0 #2563eb;
+.block-drag-overlay span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.block-drag-overlay span + span {
+  flex: 0 0 auto;
+  color: #64748b;
 }
 
 /* ===== Mention 标签 ===== */

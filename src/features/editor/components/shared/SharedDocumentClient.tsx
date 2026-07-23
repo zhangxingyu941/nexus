@@ -151,7 +151,6 @@ function SharedDocumentView({
               onIndent={NOOP}
               onMove={NOOP}
               onOutdent={NOOP}
-              onReorder={NOOP}
               onResolveBlockComment={NOOP}
               onToggleTodo={NOOP}
               scrollElementRef={scrollRef}

@@ -20,6 +20,7 @@ import { WorkspaceInviteTokenService } from "./workspaceInviteTokens";
 import { WorkspacePurgeService } from "./workspacePurgeService";
 import { DocumentShareTokenService } from "./documentShareTokens";
 import { PostgresDocumentShareStore } from "./postgresDocumentShareStore";
+import { BlockClipboardPasteService } from "./blockClipboardPasteService";
 
 let workspaceInviteLimiter: WorkspaceInviteRateLimiter | null = null;
 
@@ -31,6 +32,11 @@ export function createPostgresServices(pool: Pool = getDatabasePool()) {
   const documentStore = new PostgresDocumentStore(pool, documentAuthorization);
   const attachmentStore = new PostgresAttachmentStore(pool);
   const objectStorage = createObjectStorage();
+  const blockClipboardPasteService = new BlockClipboardPasteService(pool, {
+    attachmentStore,
+    authorization: documentAuthorization,
+    objectStorage,
+  });
   const production = process.env.NODE_ENV === "production";
   const workspaceInviteSecret = process.env.AUTH_HASH_SECRET?.trim()
     || (production
@@ -67,6 +73,7 @@ export function createPostgresServices(pool: Pool = getDatabasePool()) {
   return {
     authStore,
     attachmentStore,
+    blockClipboardPasteService,
     documentAuthorization,
     documentShareStore,
     documentShareTokenService,

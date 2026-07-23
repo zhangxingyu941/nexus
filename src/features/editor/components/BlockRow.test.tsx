@@ -7,6 +7,7 @@ import { BlockRow } from "./BlockRow";
 import { MentionSearchProvider } from "./MentionSearchContext";
 import type { Block } from "../model/block";
 import type { DatabaseWorkspaceMember } from "../session/sessionTypes";
+import { BlockDndContext } from "./BlockDndContext";
 
 const baseBlock: Block = {
   id: "block-1",
@@ -31,6 +32,59 @@ const workspaceMembers: DatabaseWorkspaceMember[] = [
 ];
 
 describe("BlockRow mention menu", () => {
+  it("selects a block from the gutter and exposes its selected state", async () => {
+    const onSelectBlock = vi.fn();
+
+    render(
+      <TooltipProvider>
+        <MentionSearchProvider value={() => []}>
+          <BlockDndContext blocks={[baseBlock]} onDrop={vi.fn()} selectedRootIds={[baseBlock.id]}>
+          <BlockRow
+            block={baseBlock}
+            canIndent={false}
+            canOutdent={false}
+            collaborationDocument={null}
+            depth={0}
+            documentId="document-1"
+            focusRequest={false}
+            isFirst={true}
+            isLast={true}
+            isReadOnly={false}
+            isSelected
+            isDraggable
+            onAddAfter={vi.fn()}
+            onAddBlockComment={vi.fn()}
+            onChangeBlockAssignee={vi.fn()}
+            onChangeBlockData={vi.fn()}
+            onChangeBlockDueDate={vi.fn()}
+            onChangeBlockStatus={vi.fn()}
+            onChangeContent={vi.fn()}
+            onChangeRichText={vi.fn()}
+            onChangeType={vi.fn()}
+            onDelete={vi.fn()}
+            onFocused={vi.fn()}
+            onIndent={vi.fn()}
+            onMove={vi.fn()}
+            onOutdent={vi.fn()}
+            onResolveBlockComment={vi.fn()}
+            onSelectBlock={onSelectBlock}
+            onToggleTodo={vi.fn()}
+            sessionUser={{ id: "me", email: "me@example.com", displayName: "Me" }}
+            showBlockActions
+            workspaceId="ws-1"
+          />
+          </BlockDndContext>
+        </MentionSearchProvider>
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByRole("article")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("article")).not.toHaveAttribute("draggable");
+    expect(screen.getByRole("button", { name: "拖动块" })).toHaveAttribute("aria-roledescription", "sortable");
+    fireEvent.click(screen.getByRole("button", { name: "选择块 block-1" }), { ctrlKey: true });
+    expect(onSelectBlock).toHaveBeenCalledWith("block-1", "toggle");
+  });
+
   it("forwards a structured update from a text block", async () => {
     const user = userEvent.setup();
     const onChangeRichText = vi.fn();

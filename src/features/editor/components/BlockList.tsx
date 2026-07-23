@@ -3,8 +3,10 @@ import type { RefObject } from "react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CollaborationDocument } from "../collaboration/collaborationTypes";
 import type { Block, BlockData, BlockStatus, BlockType, HeadingLevel } from "../model/block";
+import type { BlockSelectionMode } from "../model/blockSelection";
 import type { RichTextUpdate } from "@/shared/richText";
 import type { EditorSessionUser } from "../session/sessionTypes";
+import { BlockDndContext } from "./BlockDndContext";
 import { BlockRow } from "./BlockRow";
 
 interface BlockListProps {
@@ -28,11 +30,14 @@ interface BlockListProps {
   onMove: (blockId: string, direction: "up" | "down") => void;
   onOutdent: (blockId: string) => void;
   onResolveBlockComment: (blockId: string, commentId: string) => void;
+  onSelectBlock?: (blockId: string, mode: BlockSelectionMode) => void;
   onToggleTodo: (blockId: string) => void;
-  onReorder?: (fromId: string, toId: string, position: "before" | "after") => void;
+  onReorder?: (rootBlockIds: string[], targetBlockId: string, position: "before" | "after") => boolean | void;
   scrollElementRef: RefObject<HTMLElement | null>;
   sessionUser: EditorSessionUser | null;
   showBlockActions: boolean;
+  selectedBlockIds?: string[];
+  selectedRootIds?: string[];
   workspaceId: string;
 }
 
@@ -75,16 +80,20 @@ export function BlockList({
   onMove,
   onOutdent,
   onResolveBlockComment,
+  onSelectBlock,
   onToggleTodo,
   onReorder,
   scrollElementRef,
   sessionUser,
   showBlockActions,
+  selectedBlockIds = [],
+  selectedRootIds = [],
   workspaceId,
 }: BlockListProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const [scrollMargin, setScrollMargin] = useState(0);
   const shouldVirtualize = blocks.length >= VIRTUALIZATION_THRESHOLD;
+  const selectedBlockIdSet = useMemo(() => new Set(selectedBlockIds), [selectedBlockIds]);
   const blockMeta = useMemo(() => {
     const blocksById = new Map(blocks.map((block) => [block.id, block]));
     const siblingCounts = new Map<string | null, number>();
@@ -166,6 +175,9 @@ export function BlockList({
       isFirst={meta.isFirst}
       isLast={meta.isLast}
       isReadOnly={isReadOnly}
+      isDraggable={Boolean(onReorder) && !isReadOnly}
+      isSelected={selectedBlockIdSet.has(block.id)}
+      isSelectionActive={selectedBlockIds.length > 0}
       key={block.id}
       onAddAfter={onAddAfter}
       onAddBlockComment={onAddBlockComment}
@@ -182,16 +194,15 @@ export function BlockList({
       onMove={onMove}
       onOutdent={onOutdent}
       onResolveBlockComment={onResolveBlockComment}
+      onSelectBlock={onSelectBlock}
       onToggleTodo={onToggleTodo}
-      onReorder={onReorder}
       sessionUser={sessionUser}
       showBlockActions={showBlockActions}
       workspaceId={workspaceId}
     />;
   };
 
-  if (shouldVirtualize) {
-    return (
+  const content = shouldVirtualize ? (
       <div
         className={`block-list virtual-block-list${isReadOnly ? " block-list-readonly" : ""}`}
         ref={listRef}
@@ -209,12 +220,25 @@ export function BlockList({
           </div>
         ))}
       </div>
+    ) : (
+      <div className={`block-list${isReadOnly ? " block-list-readonly" : ""}`} ref={listRef}>
+        {blocks.map(renderBlock)}
+      </div>
     );
+
+  if (!onReorder || isReadOnly) {
+    return content;
   }
 
   return (
-    <div className={`block-list${isReadOnly ? " block-list-readonly" : ""}`} ref={listRef}>
-      {blocks.map(renderBlock)}
-    </div>
+    <BlockDndContext
+      blocks={blocks}
+      onDrop={(rootBlockIds, targetBlockId, position) => {
+        onReorder(rootBlockIds, targetBlockId, position);
+      }}
+      selectedRootIds={selectedRootIds}
+    >
+      {content}
+    </BlockDndContext>
   );
 }

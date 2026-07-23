@@ -272,6 +272,19 @@ describe("authentication database migration", () => {
     expect(Number(migration.rows[0].count)).toBe(1);
   });
 
+  it("adds a durable cleanup-pending marker for attachment reservations", async () => {
+    await migrateDatabase(pool);
+    await migrateDatabase(pool);
+
+    expect(await columnNames(pool, "document_attachments")).toContain("cleanup_pending");
+    const migration = await pool.query(
+      "SELECT COUNT(*)::int AS count FROM schema_migrations WHERE id = $1",
+      ["2026-07-22-document-attachment-reservations"],
+    );
+
+    expect(Number(migration.rows[0].count)).toBe(1);
+  });
+
   it("enforces provider account uniqueness", async () => {
     await migrateDatabase(pool);
     await pool.query(

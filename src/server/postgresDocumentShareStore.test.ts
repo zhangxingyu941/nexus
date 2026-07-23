@@ -23,6 +23,10 @@ const TEST_SECRET = "test-document-share-store-secret-at-least-32-bytes";
 class MemoryObjectStorage implements ObjectStorage {
   readonly objects = new Map<string, StoredObject>();
 
+  async deleteObject(key: string) {
+    this.objects.delete(key);
+  }
+
   async deletePrefix() {}
 
   async getObject(key: string) {
