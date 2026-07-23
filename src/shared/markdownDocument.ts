@@ -9,7 +9,14 @@ import {
   type RichTextInlineNode,
   type RichTextMark,
 } from "./richText";
-import type { Block, BlockType, EditorDocument, HeadingLevel } from "../features/editor/model/block";
+import type {
+  AttachmentBlockData,
+  Block,
+  BlockType,
+  EditorDocument,
+  HeadingLevel,
+  TableBlockData,
+} from "../features/editor/model/block";
 
 export interface MarkdownDiagnostic {
   code: string;
@@ -48,6 +55,10 @@ export interface MarkdownSerializeResult {
   diagnostics: MarkdownDiagnostic[];
   markdown: string;
   resources: MarkdownExportResource[];
+}
+
+export interface MarkdownSerializeOptions {
+  attachmentPath?: (attachment: AttachmentBlockData) => string | null;
 }
 
 interface MarkdownPosition {
@@ -124,12 +135,21 @@ export function parseMarkdownDocument(source: string, options: MarkdownParseOpti
   };
 }
 
-export function serializeDocumentToMarkdown(document: EditorDocument): MarkdownSerializeResult {
+export function serializeDocumentToMarkdown(
+  document: EditorDocument,
+  options: MarkdownSerializeOptions = {},
+): MarkdownSerializeResult {
   const diagnostics: MarkdownDiagnostic[] = [];
+  const resources: MarkdownExportResource[] = [];
+  const blocksById = new Map(document.blocks.map((block) => [block.id, block]));
+  const listChildren = collectListChildren(document.blocks, blocksById, diagnostics);
   const sections = [`# ${document.title || "未命名文档"}`];
 
   for (const block of document.blocks) {
-    const markdown = serializeBlock(block, diagnostics);
+    if (isListBlock(block) && block.parentId) continue;
+    const markdown = isListBlock(block)
+      ? serializeList(block, listChildren, diagnostics)
+      : serializeBlock(block, diagnostics, resources, options);
     if (markdown !== null) {
       sections.push(markdown);
     }
@@ -138,11 +158,11 @@ export function serializeDocumentToMarkdown(document: EditorDocument): MarkdownS
   return {
     diagnostics,
     markdown: `${sections.join("\n\n")}\n`,
-    resources: [],
+    resources,
   };
 }
 
-function serializeBlock(block: Block, diagnostics: MarkdownDiagnostic[]): string | null {
+function serializeBasicBlock(block: Block, diagnostics: MarkdownDiagnostic[]): string | null {
   if (block.type === "paragraph") return block.content;
   if (block.type === "heading") return `${"#".repeat(block.headingLevel)} ${block.content}`;
   if (block.type === "quote") return `> ${block.content}`;
@@ -158,6 +178,223 @@ function serializeBlock(block: Block, diagnostics: MarkdownDiagnostic[]): string
     severity: "warning",
   });
   return null;
+}
+
+function serializeBlock(
+  block: Block,
+  diagnostics: MarkdownDiagnostic[],
+  resources: MarkdownExportResource[],
+  options: MarkdownSerializeOptions,
+): string | null {
+  if (block.type === "paragraph") return serializeRichText(block, diagnostics);
+  if (block.type === "heading") return `${"#".repeat(block.headingLevel)} ${serializeRichText(block, diagnostics)}`;
+  if (block.type === "quote") return serializeRichText(block, diagnostics).split("\n").map((line) => `> ${line}`).join("\n");
+  if (block.type === "todo") return `- [${block.checked ? "x" : " "}] ${serializeRichText(block, diagnostics)}`;
+  if (block.type === "code") return serializeFencedCode(block.content);
+  if (block.type === "divider") return "---";
+  if (block.type === "table") return serializeTable(block, diagnostics);
+  if (block.type === "formula") {
+    const latex = block.data?.kind === "formula" ? block.data.latex : block.content;
+    return `\`\`\`math\n${latex}\n\`\`\``;
+  }
+  if (block.type === "image" || block.type === "file") return serializeAttachment(block, diagnostics, resources, options);
+  if (block.type === "toggle") {
+    diagnostics.push(serializeDiagnostic("markdown_toggle_downgraded", "Toggle blocks were exported as plain text", "warning"));
+    return serializeRichText(block, diagnostics);
+  }
+  if (block.type === "kanban") return serializeKanban(block, diagnostics);
+  if (block.type === "linkCard") return serializeLinkCard(block, diagnostics);
+  return serializeBasicBlock(block, diagnostics);
+}
+
+function isListBlock(block: Block) {
+  return block.type === "bulletedList" || block.type === "numberedList";
+}
+
+function collectListChildren(blocks: Block[], blocksById: Map<string, Block>, diagnostics: MarkdownDiagnostic[]) {
+  const children = new Map<string, Block[]>();
+
+  for (const block of blocks) {
+    if (!isListBlock(block) || !block.parentId) continue;
+    const parent = blocksById.get(block.parentId);
+    if (!parent || !isListBlock(parent) || parent.id === block.id) {
+      diagnostics.push(serializeDiagnostic("markdown_list_relation_invalid", "List parent relation is invalid", "error"));
+      continue;
+    }
+    const related = children.get(parent.id) ?? [];
+    related.push(block);
+    children.set(parent.id, related);
+  }
+
+  for (const block of blocks) {
+    if (!isListBlock(block)) continue;
+    const seen = new Set<string>();
+    let current: Block | undefined = block;
+    while (current?.parentId) {
+      if (seen.has(current.id)) {
+        diagnostics.push(serializeDiagnostic("markdown_list_relation_invalid", "List parent relation contains a cycle", "error"));
+        children.delete(block.id);
+        break;
+      }
+      seen.add(current.id);
+      const parent = blocksById.get(current.parentId);
+      if (!parent || !isListBlock(parent)) break;
+      current = parent;
+    }
+  }
+
+  return children;
+}
+
+function serializeList(
+  block: Block,
+  children: Map<string, Block[]>,
+  diagnostics: MarkdownDiagnostic[],
+  depth = 0,
+  ancestry = new Set<string>(),
+): string | null {
+  if (ancestry.has(block.id) || depth >= MAX_MARKDOWN_DEPTH) {
+    diagnostics.push(serializeDiagnostic("markdown_list_relation_invalid", "List nesting is invalid", "error"));
+    return null;
+  }
+
+  const nextAncestry = new Set(ancestry).add(block.id);
+  const marker = block.type === "numberedList" ? "1." : "-";
+  const line = `${"  ".repeat(depth)}${marker} ${escapeMarkdownText(block.content)}`;
+  const nested = (children.get(block.id) ?? []).flatMap((child) => {
+    const result = serializeList(child, children, diagnostics, depth + 1, nextAncestry);
+    return result ? [result] : [];
+  });
+  return [line, ...nested].join("\n");
+}
+
+function serializeRichText(block: Block, diagnostics: MarkdownDiagnostic[]) {
+  const nodes = block.richText?.content[0].content;
+  if (!nodes) return escapeMarkdownText(block.content);
+
+  return nodes.map((node) => {
+    if (node.type === "hardBreak") return "  \n";
+    if (node.type === "mention") {
+      if (node.attrs.kind === "document") {
+        return `[${escapeMarkdownText(node.attrs.label)}](/documents/${encodeURIComponent(node.attrs.targetId)})`;
+      }
+      diagnostics.push(serializeDiagnostic("markdown_mention_downgraded", "Mention was exported as readable text", "warning"));
+      return `@${escapeMarkdownText(node.attrs.label)}`;
+    }
+    return applyMarkdownMarks(node.text, node.marks ?? []);
+  }).join("");
+}
+
+function applyMarkdownMarks(text: string, marks: RichTextMark[]) {
+  let value = escapeMarkdownText(text);
+  if (marks.some((mark) => mark.type === "code")) {
+    const fence = "`".repeat(Math.max(1, ...Array.from(text.matchAll(/`+/g), (match) => match[0].length + 1)));
+    value = `${fence}${text}${fence}`;
+  }
+  if (marks.some((mark) => mark.type === "bold")) value = `**${value}**`;
+  if (marks.some((mark) => mark.type === "italic")) value = `*${value}*`;
+  if (marks.some((mark) => mark.type === "strike")) value = `~~${value}~~`;
+  const link = marks.find((mark) => mark.type === "link");
+  if (link?.type === "link") value = `[${value}](${link.attrs.href})`;
+  return value;
+}
+
+function serializeFencedCode(content: string) {
+  const fence = "`".repeat(Math.max(3, ...Array.from(content.matchAll(/`+/g), (match) => match[0].length + 1)));
+  return `${fence}\n${content}\n${fence}`;
+}
+
+function serializeTable(block: Block, diagnostics: MarkdownDiagnostic[]) {
+  if (block.data?.kind !== "table") {
+    diagnostics.push(serializeDiagnostic("markdown_table_invalid", "Table block has no exportable data", "error"));
+    return null;
+  }
+
+  const data: TableBlockData = block.data;
+  if (data.columns.length === 0) {
+    diagnostics.push(serializeDiagnostic("markdown_table_invalid", "Table must have at least one column", "error"));
+    return null;
+  }
+
+  const cell = (value: string) => value.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\n/g, "<br>");
+  const header = `| ${data.columns.map((column) => cell(column.name)).join(" | ")} |`;
+  const divider = `| ${data.columns.map(() => "---").join(" | ")} |`;
+  const rows = data.rows.map((row) => `| ${data.columns.map((column) => cell(row.cells[column.id] ?? "")).join(" | ")} |`);
+  return [header, divider, ...rows].join("\n");
+}
+
+function serializeAttachment(
+  block: Block,
+  diagnostics: MarkdownDiagnostic[],
+  resources: MarkdownExportResource[],
+  options: MarkdownSerializeOptions,
+) {
+  if (!block.data || (block.data.kind !== "image" && block.data.kind !== "file")) {
+    diagnostics.push(serializeDiagnostic("markdown_attachment_invalid", "Attachment block has no exportable data", "error"));
+    return null;
+  }
+
+  const attachment = block.data;
+  const path = options.attachmentPath?.(attachment) ?? defaultAttachmentPath(attachment);
+  if (!path || !isSafeArchivePath(path)) {
+    diagnostics.push(serializeDiagnostic("markdown_attachment_invalid", "Attachment path is invalid", "error"));
+    return null;
+  }
+
+  resources.push({ mimeType: attachment.mimeType, name: attachment.name, path, size: attachment.size });
+  const marker = attachment.kind === "image" ? `![${escapeMarkdownText(attachment.name)}]` : `[${escapeMarkdownText(attachment.name)}]`;
+  return `${marker}(${encodeURI(path)})`;
+}
+
+function serializeKanban(block: Block, diagnostics: MarkdownDiagnostic[]) {
+  diagnostics.push(serializeDiagnostic("markdown_kanban_downgraded", "Kanban block was exported as lists", "warning"));
+  if (block.data?.kind !== "kanban") return escapeMarkdownText(block.content);
+  return block.data.columns.map((column) => [
+    escapeMarkdownText(column.title),
+    ...column.cards.map((card) => `- ${escapeMarkdownText(card.title)}`),
+  ].join("\n")).join("\n\n");
+}
+
+function serializeLinkCard(block: Block, diagnostics: MarkdownDiagnostic[]) {
+  diagnostics.push(serializeDiagnostic("markdown_link_card_downgraded", "Link card was exported as a link", "warning"));
+  if (block.data?.kind !== "linkCard") return escapeMarkdownText(block.content);
+  const label = block.data.title || block.content || block.data.url;
+  const href = normalizeRichTextLink(block.data.url);
+  return href ? `[${escapeMarkdownText(label)}](${href})` : escapeMarkdownText(label);
+}
+
+function defaultAttachmentPath(attachment: AttachmentBlockData) {
+  const baseName = attachment.name
+    .trim()
+    .replace(/[\\/]+/g, "-")
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "attachment";
+  return `assets/${baseName}-${stableShortHash(`${attachment.key}:${attachment.mimeType}:${attachment.size}`)}`;
+}
+
+function stableShortHash(value: string) {
+  let hash = 2166136261;
+  for (const character of value) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function isSafeArchivePath(path: string) {
+  return /^assets\/[A-Za-z0-9._-]+$/.test(path);
+}
+
+function escapeMarkdownText(value: string) {
+  return value.replace(/\\/g, "\\\\").replace(/([\[\]*_~])/g, "\\$1");
+}
+
+function serializeDiagnostic(
+  code: string,
+  message: string,
+  severity: MarkdownDiagnostic["severity"],
+): MarkdownDiagnostic {
+  return { code, column: 1, line: 1, message, severity };
 }
 
 function collectSafetyDiagnostics(

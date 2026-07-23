@@ -149,6 +149,96 @@ describe("markdown document conversion", () => {
       resources: [],
     });
   });
+
+  it("serializes marked text, nested lists, tables, formulas, and attachments", () => {
+    const document: EditorDocument = {
+      blocks: [
+        markdownBlock("bulletedList", "parent", { children: ["child"], id: "parent" }),
+        markdownBlock("bulletedList", "child", { id: "child", parentId: "parent" }),
+        markdownBlock("paragraph", "plain", {
+          id: "marked",
+          richText: {
+            content: [{ content: [
+              { marks: [{ type: "bold" }], text: "bold", type: "text" },
+              { text: " and ", type: "text" },
+              { marks: [{ attrs: { href: "https://example.com" }, type: "link" }], text: "link", type: "text" },
+              { type: "hardBreak" },
+              { marks: [{ type: "code" }], text: "code", type: "text" },
+            ], type: "paragraph" }],
+            type: "doc",
+          },
+        }),
+        markdownBlock("table", "", {
+          data: {
+            columns: [{ id: "name", name: "Name" }, { id: "value", name: "Value" }],
+            kind: "table",
+            rows: [{ cells: { name: "one", value: "two" }, id: "row-1" }],
+          },
+        }),
+        markdownBlock("formula", "x^2", { data: { kind: "formula", latex: "x^2" } }),
+        markdownBlock("image", "", {
+          data: {
+            key: "documents/private-image",
+            kind: "image",
+            mimeType: "image/png",
+            name: "diagram.png",
+            size: 12,
+            url: "/api/files/diagram",
+          },
+        }),
+      ],
+      id: "document-1",
+      title: "Export",
+      updatedAt: 10,
+    };
+
+    const result = serializeDocumentToMarkdown(document);
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.markdown).toContain("- parent\n  - child");
+    expect(result.markdown).toContain("**bold** and [link](https://example.com)  \n`code`");
+    expect(result.markdown).toContain("| Name | Value |\n| --- | --- |\n| one | two |");
+    expect(result.markdown).toContain("```math\nx^2\n```");
+    expect(result.markdown).toContain("![diagram.png](assets/diagram.png-");
+    expect(result.resources).toEqual([expect.objectContaining({ mimeType: "image/png", name: "diagram.png", size: 12 })]);
+    expect(result.resources[0]?.path).not.toContain("documents/private-image");
+  });
+
+  it("downgrades mentions and complex blocks visibly, and rejects invalid list relations", () => {
+    const document: EditorDocument = {
+      blocks: [
+        markdownBlock("paragraph", "@Ada", {
+          richText: {
+            content: [{ content: [{
+              attrs: { kind: "person", label: "Ada", targetId: "person-1" },
+              type: "mention",
+            }], type: "paragraph" }],
+            type: "doc",
+          },
+        }),
+        markdownBlock("toggle", "Details"),
+        markdownBlock("kanban", "", {
+          data: { columns: [{ cards: [{ id: "card-1", title: "Ship" }], id: "todo", title: "Todo" }], kind: "kanban" },
+        }),
+        markdownBlock("numberedList", "orphan", { id: "orphan", parentId: "missing" }),
+      ],
+      id: "document-1",
+      title: "Export",
+      updatedAt: 10,
+    };
+
+    const result = serializeDocumentToMarkdown(document);
+
+    expect(result.markdown).toContain("@Ada");
+    expect(result.markdown).toContain("Details");
+    expect(result.markdown).toContain("Todo\n- Ship");
+    expect(result.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(expect.arrayContaining([
+      "markdown_mention_downgraded",
+      "markdown_toggle_downgraded",
+      "markdown_kanban_downgraded",
+      "markdown_list_relation_invalid",
+    ]));
+  });
 });
 
 function createIds() {
